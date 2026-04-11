@@ -660,6 +660,7 @@ function handlePDF(inp, tipo) {
       const texto = extrairTextoPDF(arr);
       if(texto && texto.length > 50) {
         pdfTextos[tipo] = texto;
+        console.log('PDF ['+tipo+'] primeiros 500 chars:', texto.substring(0,500));
         okEl.style.display = 'block';
         okEl.textContent = '✅ ' + f.name;
         slotEl.classList.add('done');
@@ -770,21 +771,32 @@ function parsearPDFBebidas(txt) {
 function parsearPDFSorvetes(txt) {
   const PRODS = ['Sorbet Moranja','Sorbet Manga+Maracujá','Sorbet Frutas Vermelhas','Gelato Doce de Leite','Gelato Chocolatudo','Gelato Iogurte+Frutas Amarelas','Gelato Cacau com Laranja 0%','Gelato Ninho Trufado','Gelato Paçoca Proteica','Chocolate Proteico','Gelato Cookie e Crean Proteico','Embalagem P','Embalagem M','Embalagem G','Kit Festa','Espátula Descartável'];
   const ini={}, fin={};
-  const txtNorm = normPDF(txt);
-  const idxFinal = txtNorm.indexOf('final do dia');
-  const txtIniNorm = idxFinal>0 ? txtNorm.substring(0,idxFinal) : txtNorm;
-  const txtFinNorm = idxFinal>0 ? txtNorm.substring(idxFinal) : '';
+
+  // Remove coordenadas de posição (números > 100)
+  const tokens = txt.split(/\s+/);
+  const seqLimpa = tokens.filter(t => {
+    const n = parseInt(t);
+    return isNaN(n) || n <= 100 || t !== String(n);
+  }).join(' ');
+  
+  const seqNorm = normPDF(seqLimpa);
+  const idxFinal = seqNorm.indexOf('final do dia');
+  const txtIniNorm = idxFinal>0 ? seqNorm.substring(0,idxFinal) : seqNorm;
+  const txtFinNorm = idxFinal>0 ? seqNorm.substring(idxFinal) : '';
+
   PRODS.forEach(prod => {
     const prodNorm = normPDF(prod);
+    
     const idx1 = txtIniNorm.indexOf(prodNorm);
     if(idx1>=0) {
-      const nums=(txtIniNorm.substring(idx1+prodNorm.length,idx1+prodNorm.length+50).match(/\d+/g)||[]).map(Number).filter(n=>n<9999);
+      const nums=(txtIniNorm.substring(idx1+prodNorm.length,idx1+prodNorm.length+40).match(/\d{1,3}/g)||[]).map(Number).filter(n=>n<=999);
       ini[prod]={qtd:nums[0]||0};
     } else ini[prod]={qtd:0};
+
     if(txtFinNorm) {
       const idx2=txtFinNorm.indexOf(prodNorm);
       if(idx2>=0) {
-        const nums=(txtFinNorm.substring(idx2+prodNorm.length,idx2+prodNorm.length+50).match(/\d+/g)||[]).map(Number).filter(n=>n<9999);
+        const nums=(txtFinNorm.substring(idx2+prodNorm.length,idx2+prodNorm.length+40).match(/\d{1,3}/g)||[]).map(Number).filter(n=>n<=999);
         fin[prod]={abastecido:nums[0]||0,final:nums[1]||0};
       } else fin[prod]={abastecido:0,final:0};
     } else fin[prod]={abastecido:0,final:0};
