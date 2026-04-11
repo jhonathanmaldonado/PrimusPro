@@ -789,14 +789,14 @@ function parsearPDFSorvetes(txt) {
     
     const idx1 = txtIniNorm.indexOf(prodNorm);
     if(idx1>=0) {
-      const nums=(txtIniNorm.substring(idx1+prodNorm.length,idx1+prodNorm.length+40).match(/\d{1,3}/g)||[]).map(Number).filter(n=>n<=999);
+      const nums=(txtIniNorm.substring(idx1+prodNorm.length,idx1+prodNorm.length+40).match(/\b\d{1,3}\b/g)||[]).map(Number).filter(n=>n<=999);
       ini[prod]={qtd:nums[0]||0};
     } else ini[prod]={qtd:0};
 
     if(txtFinNorm) {
       const idx2=txtFinNorm.indexOf(prodNorm);
       if(idx2>=0) {
-        const nums=(txtFinNorm.substring(idx2+prodNorm.length,idx2+prodNorm.length+40).match(/\d{1,3}/g)||[]).map(Number).filter(n=>n<=999);
+        const nums=(txtFinNorm.substring(idx2+prodNorm.length,idx2+prodNorm.length+40).match(/\b\d{1,3}\b/g)||[]).map(Number).filter(n=>n<=999);
         fin[prod]={abastecido:nums[0]||0,final:nums[1]||0};
       } else fin[prod]={abastecido:0,final:0};
     } else fin[prod]={abastecido:0,final:0};
