@@ -860,42 +860,8 @@ function processarD1PDF() {
 }
 
 function popularTabelaD1ComEstruturado() {
-  const tbodyBeb = document.getElementById('rev-d1-beb');
-  if(tbodyBeb) {
-    tbodyBeb.innerHTML = '';
-    PRODUTOS_BEB.forEach(prod => {
-      const v = S.d1Estruturado.bebFin[prod] || {};
-      const fr=v.freezer||0, est=v.estoque||0, rec=v.recebido||0, tot=v.total||(fr+est);
-      const chave = normalizar(prod);
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="prod-nome">${prod}</td>
-        <td><input class="input-num" type="number" min="0" value="${fr}" data-sec="d1beb" data-prod="${chave}" data-campo="freezer" oninput="atualizarTotalD1(this)"></td>
-        <td><input class="input-num" type="number" min="0" value="${est}" data-sec="d1beb" data-prod="${chave}" data-campo="estoque" oninput="atualizarTotalD1(this)"></td>
-        <td class="total-cell" id="tot-d1beb-${chave}">${tot||''}</td>
-        <td><input class="input-num" type="number" min="0" value="${rec}" data-sec="d1beb" data-prod="${chave}" data-campo="recebido"></td>`;
-      tbodyBeb.appendChild(tr);
-    });
-  }
-
-  const tbodySorv = document.getElementById('rev-d1-sorv');
-  if(tbodySorv) {
-    tbodySorv.innerHTML = '';
-    PRODUTOS_SORV.forEach(prod => {
-      const v = S.d1Estruturado.sorvFin[prod] || {};
-      const chave = normalizar(prod);
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="prod-nome">${prod}</td>
-        <td><input class="input-num" type="number" min="0" value="${v.abastecido||0}" data-sec="d1sorv" data-prod="${chave}" data-campo="abastecido"></td>
-        <td><input class="input-num" type="number" min="0" value="${v.final||0}" data-sec="d1sorv" data-prod="${chave}" data-campo="final"></td>`;
-      tbodySorv.appendChild(tr);
-    });
-  }
-
-  document.getElementById('revisao-d1-wrap').classList.add('show');
-  document.getElementById('btn-av2').style.display = 'inline-flex';
-  setTimeout(() => document.getElementById('revisao-d1-wrap').scrollIntoView({behavior:'smooth',block:'start'}), 100);
+  // D-1 lido do PDF — avança direto sem tabela de revisão
+  setTimeout(() => avancarD1(), 300);
 }
 
 function handleFoto(inp, tipo) {
@@ -1242,37 +1208,9 @@ function coletarRevisao() {
 }
 
 function confirmarRevisao() {
-  // Salva texto E também monta estrutura direta para consolidação
-  S.estoqueTexto = coletarRevisao();
-
-  // Monta estoqueEstruturado para usar direto na consolidação sem depender de parse
-  S.estoqueEstruturado = { bebIni:{}, bebFin:{}, sorvIni:{}, sorvFin:{} };
-  PRODUTOS_BEB.forEach(prod => {
-    const chave = normalizar(prod);
-    const fr  = parseInt(document.querySelector(`#rev-beb-ini input[data-prod="${chave}"][data-campo="freezer"]`)?.value) || 0;
-    const est = parseInt(document.querySelector(`#rev-beb-ini input[data-prod="${chave}"][data-campo="estoque"]`)?.value) || 0;
-    S.estoqueEstruturado.bebIni[prod] = { freezer:fr, estoque:est, total:fr+est };
-  });
-  PRODUTOS_BEB.forEach(prod => {
-    const chave = normalizar(prod);
-    const fr  = parseInt(document.querySelector(`#rev-beb-fin input[data-prod="${chave}"][data-campo="freezer"]`)?.value) || 0;
-    const est = parseInt(document.querySelector(`#rev-beb-fin input[data-prod="${chave}"][data-campo="estoque"]`)?.value) || 0;
-    const rec = parseInt(document.querySelector(`#rev-beb-fin input[data-prod="${chave}"][data-campo="recebido"]`)?.value) || 0;
-    S.estoqueEstruturado.bebFin[prod] = { freezer:fr, estoque:est, total:fr+est, recebido:rec };
-  });
-  PRODUTOS_SORV.forEach(prod => {
-    const chave = normalizar(prod);
-    const qtd = parseInt(document.querySelector(`#rev-sorv-ini input[data-prod="${chave}"][data-campo="qtd"]`)?.value) || 0;
-    S.estoqueEstruturado.sorvIni[prod] = { qtd };
-  });
-  PRODUTOS_SORV.forEach(prod => {
-    const chave = normalizar(prod);
-    const abast = parseInt(document.querySelector(`#rev-sorv-fin input[data-prod="${chave}"][data-campo="abastecido"]`)?.value) || 0;
-    const fin   = parseInt(document.querySelector(`#rev-sorv-fin input[data-prod="${chave}"][data-campo="final"]`)?.value) || 0;
-    S.estoqueEstruturado.sorvFin[prod] = { abastecido:abast, final:fin };
-  });
-
-  document.getElementById('revisao-ok-banner').style.display = 'flex';
+  // estoqueEstruturado já foi preenchido por processarPDFs — só monta o texto e avança
+  if (!S.estoqueEstruturado) S.estoqueEstruturado = { bebIni:{}, bebFin:{}, sorvIni:{}, sorvFin:{} };
+  S.estoqueTexto = montarEstoqueTexto(S.estoqueEstruturado);
   avancarEtapa(2);
 }
 
