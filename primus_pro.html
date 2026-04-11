@@ -782,7 +782,7 @@ function extrairTextoPDF(uint8arr) {
 
     // Método 2: todas as strings entre parênteses com conteúdo legível
     if(partes.length < 10) {
-      const allStrings = raw.match(/\(([^)(\]{1,100})\)/g) || [];
+      const allStrings = raw.match(/\(([^)(]{1,100})\)/g) || [];
       allStrings.forEach(m => {
         const t = m.slice(1,-1).trim();
         if(t.length >= 2 && /[a-zA-Z0-9À-ž]/.test(t)) {
