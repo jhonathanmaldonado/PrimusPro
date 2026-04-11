@@ -822,8 +822,8 @@ function popularTabelaRevisaoDeEstruturado() {
   renderRevSorvIni('rev-sorv-ini', PRODUTOS_SORV, 'sorvIni');
   renderRevSorvFin('rev-sorv-fin', PRODUTOS_SORV, 'sorvFin');
 
-  document.getElementById('revisao-wrap').classList.add('show');
-  setTimeout(() => document.getElementById('revisao-wrap').scrollIntoView({behavior:'smooth',block:'start'}), 100);
+  // Avança direto sem mostrar tabela de revisão
+  setTimeout(() => confirmarRevisao(), 300);
 }
 
 function processarD1PDF() {
@@ -976,13 +976,9 @@ S.revisao = {
 };
 
 function popularTabelaRevisaoVazia() {
+  // Sem tabela de revisão — avança direto
   S.revisao = { bebIni:{}, bebFin:{}, sorvIni:{}, sorvFin:{} };
-  renderRevBeb('rev-beb-ini', PRODUTOS_BEB, 'bebIni', ['freezer','estoque','recebido']);
-  renderRevBeb('rev-beb-fin', PRODUTOS_BEB, 'bebFin', ['freezer','estoque','recebido']);
-  renderRevSorvIni('rev-sorv-ini', PRODUTOS_SORV, 'sorvIni');
-  renderRevSorvFin('rev-sorv-fin', PRODUTOS_SORV, 'sorvFin');
-  document.getElementById('revisao-wrap').classList.add('show');
-  setTimeout(() => document.getElementById('revisao-wrap').scrollIntoView({behavior:'smooth',block:'start'}), 100);
+  setTimeout(() => confirmarRevisao(), 300);
 }
 
 
@@ -1020,8 +1016,8 @@ function popularTabelaRevisao(txtIni, txtFin, txtSorv) {
   renderRevSorvIni('rev-sorv-ini', PRODUTOS_SORV, 'sorvIni');
   renderRevSorvFin('rev-sorv-fin', PRODUTOS_SORV, 'sorvFin');
 
-  document.getElementById('revisao-wrap').classList.add('show');
-  setTimeout(() => document.getElementById('revisao-wrap').scrollIntoView({behavior:'smooth',block:'start'}), 100);
+  // Avança direto sem mostrar tabela de revisão
+  setTimeout(() => confirmarRevisao(), 300);
 }
 
 function extrairLinhas(texto) {
@@ -1269,7 +1265,7 @@ function confirmarRevisao() {
 
 function relereComIA() {
   if (confirm('Deseja recarregar os PDFs? Os valores atuais serão substituídos.')) {
-    document.getElementById('revisao-wrap').classList.remove('show');
+    // revisao-wrap removido
     processarPDFs();
   }
 }
