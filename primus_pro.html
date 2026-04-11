@@ -812,22 +812,21 @@ function parsearPDFBebidas(texto) {
   const txt = normalizarTextoPDF(texto);
 
   PRODS.forEach(prod => {
-    const escaped = prod.replace(/[.*+?^${}()|[\]\]/g,'\$&');
-    // Captura até 4 números após o produto (freezer, estoque, total, recebido)
-    const regex = new RegExp(escaped + '[^\d]{0,30}?(\d+)[^\d]{0,10}?(\d+)[^\d]{0,10}?(\d+)(?:[^\d]{0,10}?(\d+))?', 'i');
-    const m = txt.match(regex);
-    if(m) {
-      const n1 = parseInt(m[1])||0;
-      const n2 = parseInt(m[2])||0;
-      const n3 = parseInt(m[3])||0;
-      const n4 = m[4] ? parseInt(m[4])||0 : 0;
-      // n3 deve ser n1+n2 (total) — se bater, ótimo; senão usa n1 como total
+    // Busca o produto no texto e extrai números após ele
+    const idx = txt.toLowerCase().indexOf(prod.toLowerCase());
+    if(idx >= 0) {
+      const trecho = txt.substring(idx + prod.length, idx + prod.length + 80);
+      const nums = (trecho.match(/\d+/g) || []).map(Number);
+      const n1 = nums[0] || 0;
+      const n2 = nums[1] || 0;
+      const n3 = nums[2] || 0;
+      const n4 = nums[3] || 0;
       const totalCalc = n1 + n2;
-      const ehTotal = Math.abs(n3 - totalCalc) <= 1;
+      const ehTotal = n3 > 0 && Math.abs(n3 - totalCalc) <= 1;
       resultado[prod] = {
         freezer: n1, estoque: n2,
         total: ehTotal ? n3 : totalCalc,
-        recebido: ehTotal ? n4 : (n3 > 0 ? n3 : 0)
+        recebido: ehTotal ? n4 : (n3 > 0 && !ehTotal ? n3 : 0)
       };
     } else {
       resultado[prod] = { freezer:0, estoque:0, total:0, recebido:0 };
@@ -850,24 +849,27 @@ function parsearPDFSorvetes(texto) {
   const txtFin = idxFinal > 0 ? txt.substring(idxFinal) : '';
 
   PRODS.forEach(prod => {
-    const escaped = prod.replace(/[.*+?^${}()|[\]\]/g,'\$&');
-    
-    // Parseia INÍCIO — captura 1 número (quantidade)
-    const regexIni = new RegExp(escaped + '[^\d]{0,50}?(\d+)', 'i');
-    const mIni = txtIni.match(regexIni);
-    resultadoIni[prod] = { qtd: mIni ? parseInt(mIni[1])||0 : 0 };
+    const prodLower = prod.toLowerCase();
 
-    // Parseia FINAL — captura 2 números (abastecido, final)
+    // Parseia INÍCIO
+    const idxIni = txtIni.toLowerCase().indexOf(prodLower);
+    if(idxIni >= 0) {
+      const trecho = txtIni.substring(idxIni + prod.length, idxIni + prod.length + 60);
+      const nums = (trecho.match(/\d+/g) || []).map(Number);
+      resultadoIni[prod] = { qtd: nums[0] || 0 };
+    } else {
+      resultadoIni[prod] = { qtd: 0 };
+    }
+
+    // Parseia FINAL
     if(txtFin) {
-      const regexFin = new RegExp(escaped + '[^\d]{0,50}?(\d+)[^\d]{0,20}?(\d+)', 'i');
-      const mFin = txtFin.match(regexFin);
-      if(mFin) {
-        resultadoFin[prod] = { abastecido: parseInt(mFin[1])||0, final: parseInt(mFin[2])||0 };
+      const idxFin = txtFin.toLowerCase().indexOf(prodLower);
+      if(idxFin >= 0) {
+        const trecho = txtFin.substring(idxFin + prod.length, idxFin + prod.length + 60);
+        const nums = (trecho.match(/\d+/g) || []).map(Number);
+        resultadoFin[prod] = { abastecido: nums[0] || 0, final: nums[1] || 0 };
       } else {
-        // Tenta com 1 número (só final sem abastecido)
-        const regexFin1 = new RegExp(escaped + '[^\d]{0,50}?(\d+)', 'i');
-        const mFin1 = txtFin.match(regexFin1);
-        resultadoFin[prod] = { abastecido: 0, final: mFin1 ? parseInt(mFin1[1])||0 : 0 };
+        resultadoFin[prod] = { abastecido: 0, final: 0 };
       }
     } else {
       resultadoFin[prod] = { abastecido: 0, final: 0 };
