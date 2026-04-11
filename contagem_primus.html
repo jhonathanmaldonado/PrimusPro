@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Contagem — Peixaria Primus</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;600;800;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 
 <style>
@@ -528,8 +528,7 @@
 </button>
 
 <!-- ÁREA DE IMPRESSÃO -->
-<div id="print-area"></div>
-<div id="pdf-content" style="display:none"></div>
+
 
 <script>
 // ===== DADOS =====
@@ -1038,16 +1037,7 @@ async function gerarPDF() {
       </div>
     </div>`;
 
-  // Popula área oculta e gera PDF direto
-  const el = document.getElementById('pdf-content');
-  el.style.display = 'block';
-  el.style.width = '700px';
-  el.style.position = 'absolute';
-  el.style.left = '-9999px';
-  el.style.top = '0';
-  el.innerHTML = html;
-  // Aguarda renderização antes de capturar
-  await new Promise(r => setTimeout(r, 300));
+  // PDF gerado via jsPDF com texto real
 
   // Atualiza botão
   const fab = document.getElementById('fab-gerar');
@@ -1055,39 +1045,205 @@ async function gerarPDF() {
   fab.disabled = true;
 
   try {
-    await html2pdf().set({
-      margin: [8, 8, 8, 8],
-      filename: nomeArquivo,
-      image: { type: 'jpeg', quality: 0.90 },
-      html2canvas: {
-        scale: 1.5,
-        useCORS: true,
-        logging: false,
-        allowTaint: true,
-        scrollY: 0
-      },
-      jsPDF: {
-        unit: 'mm',
-        format: 'a4',
-        orientation: 'portrait',
-        compress: true
-      },
-      pagebreak: {
-        mode: ['css', 'legacy'],
-        avoid: ['tr', '.grupo-header']
-      }
-    }).from(el).save();
+    gerarPDFcomJsPDF(nomeArquivo, tipoLabel[tipoAtual], dataFmt, nome);
   } catch(err) {
     alert('Erro ao gerar PDF: ' + err.message);
   }
 
-  el.style.display = 'none';
-  el.style.position = '';
-  el.style.left = '';
-  el.style.top = '';
-  el.style.width = '';
   fab.innerHTML = '📄 Gerar PDF da Contagem';
   fab.disabled = false;
+}
+
+// ===== GERAR PDF COM JSPDF (texto real, selecionável) =====
+function gerarPDFcomJsPDF(nomeArquivo, titulo, dataFmt, conferente) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  const PW = 210, PH = 297, M = 12;
+  const CW = PW - M * 2;
+  let y = M;
+
+  function checkPage(needed) {
+    if (y + needed > PH - M) { doc.addPage(); y = M; }
+  }
+
+  // HEADER
+  doc.setFillColor(124, 0, 71);
+  doc.rect(0, 0, PW, 28, 'F');
+  doc.setFillColor(250, 185, 0);
+  doc.rect(0, 0, PW, 3, 'F');
+  // Logo box
+  doc.setFillColor(250, 185, 0);
+  doc.roundedRect(M, 7, 14, 14, 2, 2, 'F');
+  doc.setTextColor(124, 0, 71);
+  doc.setFontSize(9); doc.setFont('helvetica','bold');
+  doc.text('PP', M+7, 16, {align:'center'});
+  // Título
+  doc.setTextColor(255,255,255);
+  doc.setFontSize(7); doc.setFont('helvetica','normal');
+  doc.text('PEIXARIA PRIMUS — CONTAGEM DE ESTOQUE', M+18, 10);
+  doc.setFontSize(13); doc.setFont('helvetica','bold');
+  doc.text(titulo, M+18, 17);
+  doc.setFontSize(7); doc.setFont('helvetica','normal');
+  doc.text(dataFmt + (conferente ? ' · Conferente: ' + conferente : ''), M+18, 23);
+  y = 34;
+
+  const lista = tipoAtual === 'sorv' ? SORVETES : BEBIDAS;
+  const grupos = {};
+  lista.forEach(item => {
+    if (!grupos[item.grupo]) grupos[item.grupo] = [];
+    grupos[item.grupo].push(item);
+  });
+
+  function drawHeader(cols) {
+    doc.setFillColor(245,243,240);
+    doc.rect(M, y, CW, 7, 'F');
+    doc.setTextColor(100,100,100);
+    doc.setFontSize(7); doc.setFont('helvetica','bold');
+    cols.forEach(col => doc.text(col.label, col.x, y+5, {align: col.align||'left'}));
+    y += 7;
+  }
+
+  function drawGrupoHeader(nome) {
+    checkPage(8);
+    doc.setFillColor(26, 23, 20);
+    doc.rect(M, y, CW, 7, 'F');
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(8); doc.setFont('helvetica','bold');
+    doc.text(nome, M+3, y+5);
+    y += 7;
+  }
+
+  function drawRow(cols, obs, zerado) {
+    checkPage(8);
+    const bg = obs ? [255,251,234] : zerado ? [252,252,252] : [255,255,255];
+    doc.setFillColor(...bg);
+    doc.rect(M, y, CW, 7, 'F');
+    doc.setDrawColor(230,227,220);
+    doc.line(M, y+7, M+CW, y+7);
+    doc.setTextColor(zerado ? 180 : 40, zerado ? 180 : 40, zerado ? 180 : 40);
+    doc.setFontSize(8); doc.setFont('helvetica', zerado ? 'normal' : 'normal');
+    cols.forEach(col => {
+      if(col.bold) doc.setFont('helvetica','bold');
+      doc.text(String(col.value ?? '—'), col.x, y+5, {align: col.align||'left'});
+      if(col.bold) doc.setFont('helvetica','normal');
+    });
+    if(obs) {
+      doc.setTextColor(138, 96, 0);
+      doc.setFontSize(6.5);
+      // obs já está na última coluna
+    }
+    y += 7;
+  }
+
+  if (tipoAtual === 'ini' || tipoAtual === 'fin') {
+    // BEBIDAS
+    const isFin = tipoAtual === 'fin';
+    const cols = isFin
+      ? [{label:'PRODUTO',x:M+2},{label:'FREEZER',x:M+CW*0.58,align:'center'},{label:'ESTOQUE',x:M+CW*0.70,align:'center'},{label:'TOTAL',x:M+CW*0.81,align:'center'},{label:'RECEB.',x:M+CW*0.91,align:'center'},{label:'OBS',x:M+CW-2,align:'right'}]
+      : [{label:'PRODUTO',x:M+2},{label:'FREEZER',x:M+CW*0.62,align:'center'},{label:'ESTOQUE',x:M+CW*0.75,align:'center'},{label:'TOTAL',x:M+CW*0.87,align:'center'},{label:'OBS',x:M+CW-2,align:'right'}];
+
+    Object.entries(grupos).forEach(([grupo, itens]) => {
+      const [icon, ...np] = grupo.split(' ');
+      drawGrupoHeader(icon + ' ' + np.join(' '));
+      drawHeader(cols);
+      itens.forEach(item => {
+        const id = slugify(item.nome);
+        const d = dados[id] || {};
+        const fr = d.fr || 0, est = d.est || 0, tot = d.total || (fr+est), rec = d.rec || 0;
+        const obs = d.obs || '';
+        const zerado = fr===0 && est===0;
+        const tag = item.ks ? ' [KS]' : item.saindo ? ' [saindo]' : '';
+        if(isFin) {
+          drawRow([
+            {value: item.nome + tag, x: M+2},
+            {value: fr||'—', x: M+CW*0.58, align:'center'},
+            {value: est||'—', x: M+CW*0.70, align:'center'},
+            {value: tot||'—', x: M+CW*0.81, align:'center', bold: tot>0},
+            {value: rec||'—', x: M+CW*0.91, align:'center'},
+            {value: obs, x: M+CW-2, align:'right'},
+          ], obs, zerado);
+        } else {
+          drawRow([
+            {value: item.nome + tag, x: M+2},
+            {value: fr||'—', x: M+CW*0.62, align:'center'},
+            {value: est||'—', x: M+CW*0.75, align:'center'},
+            {value: tot||'—', x: M+CW*0.87, align:'center', bold: tot>0},
+            {value: obs, x: M+CW-2, align:'right'},
+          ], obs, zerado);
+        }
+      });
+    });
+
+  } else {
+    // SORVETES — duas seções
+    // INÍCIO
+    checkPage(10);
+    doc.setFillColor(250, 185, 0);
+    doc.rect(M, y, CW, 8, 'F');
+    doc.setTextColor(124,0,71);
+    doc.setFontSize(9); doc.setFont('helvetica','bold');
+    doc.text('INÍCIO DO DIA', M+3, y+5.5);
+    y += 8;
+    drawHeader([{label:'PRODUTO',x:M+2},{label:'QUANTIDADE',x:M+CW*0.72,align:'center'},{label:'OBS',x:M+CW-2,align:'right'}]);
+
+    Object.entries(grupos).forEach(([grupo, itens]) => {
+      const [icon, ...np] = grupo.split(' ');
+      drawGrupoHeader(icon + ' ' + np.join(' '));
+      itens.forEach(item => {
+        const id = slugify(item.nome) + '_ini';
+        const d = dados[id] || {};
+        const qtd = d.qtd || 0;
+        drawRow([
+          {value: item.nome, x: M+2},
+          {value: qtd||'—', x: M+CW*0.72, align:'center', bold: qtd>0},
+          {value: d.obs||'', x: M+CW-2, align:'right'},
+        ], d.obs||'', qtd===0);
+      });
+    });
+
+    // FINAL
+    checkPage(12);
+    y += 4;
+    doc.setFillColor(124, 0, 71);
+    doc.rect(M, y, CW, 8, 'F');
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(9); doc.setFont('helvetica','bold');
+    doc.text('FINAL DO DIA', M+3, y+5.5);
+    y += 8;
+    drawHeader([{label:'PRODUTO',x:M+2},{label:'ABAST.',x:M+CW*0.62,align:'center'},{label:'FINAL',x:M+CW*0.75,align:'center'},{label:'TOTAL',x:M+CW*0.87,align:'center'},{label:'OBS',x:M+CW-2,align:'right'}]);
+
+    Object.entries(grupos).forEach(([grupo, itens]) => {
+      const [icon, ...np] = grupo.split(' ');
+      drawGrupoHeader(icon + ' ' + np.join(' '));
+      itens.forEach(item => {
+        const id = slugify(item.nome) + '_fin';
+        const d = dados[id] || {};
+        const ab = d.abast||0, fin = d.final||0, tot = ab+fin;
+        drawRow([
+          {value: item.nome, x: M+2},
+          {value: ab||'—', x: M+CW*0.62, align:'center'},
+          {value: fin||'—', x: M+CW*0.75, align:'center'},
+          {value: tot||'—', x: M+CW*0.87, align:'center', bold: tot>0},
+          {value: d.obs||'', x: M+CW-2, align:'right'},
+        ], d.obs||'', ab===0&&fin===0);
+      });
+    });
+  }
+
+  // RODAPÉ
+  const totalPages = doc.getNumberOfPages();
+  for(let p = 1; p <= totalPages; p++) {
+    doc.setPage(p);
+    doc.setFillColor(245,243,240);
+    doc.rect(0, PH-12, PW, 12, 'F');
+    doc.setTextColor(170,170,170);
+    doc.setFontSize(7); doc.setFont('helvetica','normal');
+    doc.text('Gerado em ' + new Date().toLocaleString('pt-BR') + ' · Peixaria Primus', M, PH-5);
+    doc.setTextColor(124,0,71); doc.setFont('helvetica','bold');
+    doc.text(nomeArquivo, PW-M, PH-5, {align:'right'});
+  }
+
+  doc.save(nomeArquivo);
 }
 
 // ===== UTILS =====

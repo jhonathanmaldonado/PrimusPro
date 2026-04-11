@@ -264,30 +264,30 @@
       </div>
       <div class="banner banner-info" style="margin-bottom:16px">
         <span>💡</span>
-        <span>Suba os JSONs gerados pelo <strong>Sistema de Contagem Primus</strong>: <code>INICIO_DD_MM_AAAA.json</code>, <code>FINAL_DD_MM_AAAA.json</code> e <code>SORVETES_DD_MM_AAAA.json</code></span>
+        <span>Suba os PDFs gerados pelo <strong>Sistema de Contagem Primus</strong>: <code>INICIO_DD_MM_AAAA.pdf</code>, <code>FINAL_DD_MM_AAAA.pdf</code> e <code>SORVETES_DD_MM_AAAA.pdf</code></span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
         <div class="upload-slot" id="slot-beb-ini">
-          <input type="file" id="up-beb-ini" accept=".json,application/json" onchange="handleJSON(this,'bebIni')">
-          <span class="slot-badge badge-beb">🍺 JSON 1</span>
+          <input type="file" id="up-beb-ini" accept=".pdf,application/pdf" onchange="handlePDF(this,'bebIni')">
+          <span class="slot-badge badge-beb">🍺 PDF 1</span>
           <div class="slot-icon">📄</div>
-          <div class="slot-title">INICIO_DD_MM_AAAA.json</div>
+          <div class="slot-title">INICIO_DD_MM_AAAA.pdf</div>
           <div class="slot-sub">Contagem início do dia</div>
           <div id="ok-beb-ini" class="slot-ok">✅ Carregado!</div>
         </div>
         <div class="upload-slot" id="slot-beb-fin">
-          <input type="file" id="up-beb-fin" accept=".json,application/json" onchange="handleJSON(this,'bebFin')">
-          <span class="slot-badge badge-beb">🍺 JSON 2</span>
+          <input type="file" id="up-beb-fin" accept=".pdf,application/pdf" onchange="handlePDF(this,'bebFin')">
+          <span class="slot-badge badge-beb">🍺 PDF 2</span>
           <div class="slot-icon">📄</div>
-          <div class="slot-title">FINAL_DD_MM_AAAA.json</div>
+          <div class="slot-title">FINAL_DD_MM_AAAA.pdf</div>
           <div class="slot-sub">Contagem final do dia</div>
           <div id="ok-beb-fin" class="slot-ok">✅ Carregado!</div>
         </div>
         <div class="upload-slot" id="slot-sorv">
-          <input type="file" id="up-sorv" accept=".json,application/json" onchange="handleJSON(this,'sorv')">
-          <span class="slot-badge badge-sorv">🍨 JSON 3</span>
+          <input type="file" id="up-sorv" accept=".pdf,application/pdf" onchange="handlePDF(this,'sorv')">
+          <span class="slot-badge badge-sorv">🍨 PDF 3</span>
           <div class="slot-icon">📄</div>
-          <div class="slot-title">SORVETES_DD_MM_AAAA.json</div>
+          <div class="slot-title">SORVETES_DD_MM_AAAA.pdf</div>
           <div class="slot-sub">Sorvetes & Embalagens</div>
           <div id="ok-sorv" class="slot-ok">✅ Carregado!</div>
         </div>
@@ -356,7 +356,7 @@
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-primary" id="btn-analisar" onclick="processarPDFs()" disabled>📄 Processar JSONs</button>
+        <button class="btn btn-primary" id="btn-analisar" onclick="processarPDFs()" disabled>📄 Processar PDFs</button>
       </div>
     </div>
 
@@ -369,7 +369,7 @@
       <div class="banner banner-info" id="d1-banner"><span>📅</span><span id="d1-txt">O estoque inicial de hoje deve bater com o final do dia anterior.</span></div>
       <div class="upload-duplo" style="margin-top:12px">
         <div class="upload-slot" id="slot-d1b">
-          <input type="file" id="up-d1b" accept=".json,application/json" onchange="handleD1JSON(this,'beb')">
+          <input type="file" id="up-d1b" accept=".pdf,application/pdf" onchange="handleD1PDF(this,'beb')">
           <span class="slot-badge badge-beb">🍺 D-1 BEBIDAS</span>
           <div class="slot-icon">📄</div>
           <div class="slot-title">Foto/PDF D-1 -- Bebidas Final</div>
@@ -377,7 +377,7 @@
           <div id="ok-d1b" class="slot-ok">✅ Carregado!</div>
         </div>
         <div class="upload-slot" id="slot-d1s">
-          <input type="file" id="up-d1s" accept=".json,application/json" onchange="handleD1JSON(this,'sorv')">
+          <input type="file" id="up-d1s" accept=".pdf,application/pdf" onchange="handleD1PDF(this,'sorv')">
           <span class="slot-badge badge-sorv">🍨 D-1 SORVETES</span>
           <div class="slot-icon">📄</div>
           <div class="slot-title">Foto/PDF D-1 -- Sorvetes Final</div>
@@ -716,11 +716,10 @@ let _currentController = null;
 const pdfTextos = { bebIni:'', bebFin:'', sorv:'' };
 const d1PDFTextos = { beb:'', sorv:'' };
 
-// Dados JSON dos arquivos de contagem
-const jsonDados = { bebIni: null, bebFin: null, sorv: null };
-const d1JSONDados = { beb: null, sorv: null };
+const pdfTextos = { bebIni:'', bebFin:'', sorv:'' };
+const d1PDFTextos = { beb:'', sorv:'' };
 
-function handleJSON(inp, tipo) {
+function handlePDF(inp, tipo) {
   const f = inp.files[0]; if(!f) return;
   const idMap = { bebIni:'beb-ini', bebFin:'beb-fin', sorv:'sorv' };
   const slotId = idMap[tipo];
@@ -729,37 +728,61 @@ function handleJSON(inp, tipo) {
 
   const reader = new FileReader();
   reader.onload = e => {
-    try {
-      jsonDados[tipo] = JSON.parse(e.target.result);
-      okEl.style.display = 'block';
-      okEl.textContent = '✅ ' + f.name;
-      slotEl.classList.add('done');
-      if(jsonDados.bebIni || jsonDados.bebFin || jsonDados.sorv)
-        document.getElementById('btn-analisar').disabled = false;
-    } catch(err) {
-      alert('Erro ao ler JSON: ' + err.message);
+    // PDF do jsPDF tem texto real — extrai strings entre parênteses
+    const arr = new Uint8Array(e.target.result);
+    let raw = '';
+    for(let i=0; i<arr.length; i+=4096)
+      raw += String.fromCharCode.apply(null, arr.subarray(i, Math.min(i+4096, arr.length)));
+
+    // Extrai todo texto legível do PDF
+    const partes = [];
+    // Strings de texto do PDF (formato Tj/TJ do jsPDF)
+    const m1 = raw.match(/\(([^)(]{1,200})\)\s*Tj/g) || [];
+    m1.forEach(m => { const t=m.replace(/\(|\)\s*Tj/g,'').trim(); if(t) partes.push(t); });
+    // TJ arrays
+    const m2 = raw.match(/\[([^\]]+)\]\s*TJ/g) || [];
+    m2.forEach(m => {
+      const ss = m.match(/\(([^)]{1,100})\)/g)||[];
+      ss.forEach(s => { const t=s.slice(1,-1); if(t.trim()) partes.push(t); });
+    });
+    // Fallback: todas strings entre parênteses
+    if(partes.length < 5) {
+      const m3 = raw.match(/\(([^)(]{2,100})\)/g) || [];
+      m3.forEach(m => { const t=m.slice(1,-1).trim(); if(t.length>1 && /[a-zA-Z0-9À-ÿ]/.test(t)) partes.push(t); });
     }
+
+    pdfTextos[tipo] = partes.join(' ');
+    console.log('PDF ['+tipo+'] primeiros 300 chars:', pdfTextos[tipo].substring(0,300));
+    okEl.style.display = 'block';
+    okEl.textContent = '✅ ' + f.name;
+    slotEl.classList.add('done');
+    if(pdfTextos.bebIni || pdfTextos.bebFin || pdfTextos.sorv)
+      document.getElementById('btn-analisar').disabled = false;
   };
-  reader.readAsText(f);
+  reader.readAsArrayBuffer(f);
 }
 
-function handleD1JSON(inp, tipo) {
+function handleD1PDF(inp, tipo) {
   const f = inp.files[0]; if(!f) return;
   const reader = new FileReader();
   reader.onload = e => {
-    try {
-      d1JSONDados[tipo] = JSON.parse(e.target.result);
-      document.getElementById('ok-d1'+(tipo==='beb'?'b':'s')).style.display = 'block';
-      document.getElementById('slot-d1'+(tipo==='beb'?'b':'s')).classList.add('done');
-      if(d1JSONDados.beb || d1JSONDados.sorv) processarD1JSON();
-    } catch(err) { alert('Erro ao ler JSON D-1: ' + err.message); }
+    const arr = new Uint8Array(e.target.result);
+    let raw = '';
+    for(let i=0; i<arr.length; i+=4096)
+      raw += String.fromCharCode.apply(null, arr.subarray(i, Math.min(i+4096, arr.length)));
+    const partes = [];
+    const m1 = raw.match(/\(([^)(]{1,200})\)\s*Tj/g) || [];
+    m1.forEach(m => { const t=m.replace(/\(|\)\s*Tj/g,'').trim(); if(t) partes.push(t); });
+    if(partes.length < 5) {
+      const m3 = raw.match(/\(([^)(]{2,100})\)/g) || [];
+      m3.forEach(m => { const t=m.slice(1,-1).trim(); if(t.length>1 && /[a-zA-Z0-9À-ÿ]/.test(t)) partes.push(t); });
+    }
+    d1PDFTextos[tipo] = partes.join(' ');
+    document.getElementById('ok-d1'+(tipo==='beb'?'b':'s')).style.display = 'block';
+    document.getElementById('slot-d1'+(tipo==='beb'?'b':'s')).classList.add('done');
+    if(d1PDFTextos.beb || d1PDFTextos.sorv) processarD1PDF();
   };
-  reader.readAsText(f);
-}
-
-function handlePDF(inp, tipo) {
-  // Legado — redireciona para handleJSON
-  handleJSON(inp, tipo);
+  reader.readAsArrayBuffer(f);
 }
 
 function handleD1PDF(inp, tipo) {
@@ -791,11 +814,6 @@ function normalizarTextoPDF(texto) {
 
 
 async function processarPDFs() {
-  // Agora usa JSON em vez de PDF
-  return processarJSONs();
-}
-
-async function processarJSONs() {
   const load = document.getElementById('load-est');
   const loadTxt = document.getElementById('load-est-txt');
   if(load) load.classList.add('show');
@@ -803,29 +821,21 @@ async function processarJSONs() {
   try {
     S.estoqueEstruturado = { bebIni:{}, bebFin:{}, sorvIni:{}, sorvFin:{} };
 
-    if(jsonDados.bebIni) {
+    if(pdfTextos.bebIni) {
       if(loadTxt) loadTxt.textContent = '📄 Lendo INÍCIO...';
-      const j = jsonDados.bebIni;
-      Object.entries(j.produtos || {}).forEach(([prod, v]) => {
-        S.estoqueEstruturado.bebIni[prod] = { freezer: v.freezer||0, estoque: v.estoque||0, total: v.total||0 };
-      });
+      const dados = parsearTextoBebidas(pdfTextos.bebIni);
+      Object.entries(dados).forEach(([prod,v]) => { S.estoqueEstruturado.bebIni[prod] = v; });
     }
-
-    if(jsonDados.bebFin) {
+    if(pdfTextos.bebFin) {
       if(loadTxt) loadTxt.textContent = '📄 Lendo FINAL...';
-      const j = jsonDados.bebFin;
-      Object.entries(j.produtos || {}).forEach(([prod, v]) => {
-        S.estoqueEstruturado.bebFin[prod] = { freezer: v.freezer||0, estoque: v.estoque||0, total: v.total||0, recebido: v.recebido||0 };
-      });
+      const dados = parsearTextoBebidas(pdfTextos.bebFin);
+      Object.entries(dados).forEach(([prod,v]) => { S.estoqueEstruturado.bebFin[prod] = v; });
     }
-
-    if(jsonDados.sorv) {
+    if(pdfTextos.sorv) {
       if(loadTxt) loadTxt.textContent = '📄 Lendo SORVETES...';
-      const j = jsonDados.sorv;
-      Object.entries(j.produtos || {}).forEach(([prod, v]) => {
-        S.estoqueEstruturado.sorvIni[prod] = { qtd: v.inicio?.qtd || 0 };
-        S.estoqueEstruturado.sorvFin[prod] = { abastecido: v.final?.abastecido||0, final: v.final?.final||0 };
-      });
+      const dados = parsearTextoSorvetes(pdfTextos.sorv);
+      Object.entries(dados.ini).forEach(([prod,v]) => { S.estoqueEstruturado.sorvIni[prod] = v; });
+      Object.entries(dados.fin).forEach(([prod,v]) => { S.estoqueEstruturado.sorvFin[prod] = v; });
     }
 
     // Monta estoqueTexto para compatibilidade
@@ -841,6 +851,57 @@ async function processarJSONs() {
   }
 
   if(load) load.classList.remove('show');
+}
+
+function parsearTextoBebidas(txt) {
+  const PRODS = ['Louvada Primus','Heineken 600ml','Original','Heineken Zero Long Neck','Louvada German Longneck','Louvada German 500','Stella SG Longneck','Louvada Hop Zero','Coca Cola KS','Coca Cola KS Zero','Fanta Laranja KS','Sprite KS','Kuat KS','Coca Cola 1L','Guarana 1L','Coca Zero 1L','Coca Cola Lata','Coca Cola Zero Lata','Sprite Lata','Guarana Lata','Fanta Laranja Lata','Agua Tonica','Agua Tonica Zero','Schweppes Citrus','Sprite Lemon Fresch','Agua Prata Com Gas','Agua Prata Sem Gas','Agua Premium Com Gas','Agua Premium Sem Gas','Kombucha Guarana','Kombucha Morango','Kombucha de Limao','Cappuccino','Cafe Ameno','Cafe Forza','Cafe Gourmet','Suco Acerola 500ml','Suco Abacaxi Hort. 500ml','Suco Maracuja 500ml','Suco Morango 500ml'];
+  const PRODS_ORIG = ['Louvada Primus','Heineken 600ml','Original','Heineken Zero Long Neck','Louvada German Longneck','Louvada German 500','Stella SG Longneck','Louvada Hop Zero','Coca Cola KS','Coca Cola KS Zero','Fanta Laranja KS','Sprite KS','Kuat KS','Coca Cola 1L','Guaraná 1L','Coca Zero 1L','Coca Cola Lata','Coca Cola Zero Lata','Sprite Lata','Guaraná Lata','Fanta Laranja Lata','Água Tônica','Água Tônica Zero','Schweppes Citrus','Sprite Lemon Fresch','Água Prata Com Gás','Água Prata Sem Gás','Água Premium Com Gás','Água Premium Sem Gás','Kombucha Guaraná','Kombucha Morango','Kombucha de Limão','Cappuccino','Café Ameno','Café Forza','Café Gourmet','Suco Acerola 500ml','Suco Abacaxi Hort. 500ml','Suco Maracujá 500ml','Suco Morango 500ml'];
+  const resultado = {};
+  const txtLow = txt.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+
+  PRODS.forEach((prod, i) => {
+    const idx = txtLow.indexOf(prod.toLowerCase());
+    if(idx >= 0) {
+      const trecho = txt.substring(idx + prod.length, idx + prod.length + 60);
+      const nums = (trecho.match(/\d+/g)||[]).map(Number).filter(n=>n<9999);
+      const n1=nums[0]||0, n2=nums[1]||0, n3=nums[2]||0, n4=nums[3]||0;
+      const tot = n1+n2;
+      const ehTotal = n3>0 && Math.abs(n3-tot)<=1;
+      resultado[PRODS_ORIG[i]] = { freezer:n1, estoque:n2, total:ehTotal?n3:tot, recebido:ehTotal?n4:(n3>0?n3:0) };
+    } else {
+      resultado[PRODS_ORIG[i]] = { freezer:0, estoque:0, total:0, recebido:0 };
+    }
+  });
+  return resultado;
+}
+
+function parsearTextoSorvetes(txt) {
+  const PRODS = ['Sorbet Moranja','Sorbet Manga+Maracuja','Sorbet Frutas Vermelhas','Gelato Doce de Leite','Gelato Chocolatudo','Gelato Iogurte+Frutas Amarelas','Gelato Cacau com Laranja 0%','Gelato Ninho Trufado','Gelato Pacoca Proteica','Chocolate Proteico','Gelato Cookie e Crean Proteico','Embalagem P','Embalagem M','Embalagem G','Kit Festa','Espatula Descartavel'];
+  const PRODS_ORIG = ['Sorbet Moranja','Sorbet Manga+Maracujá','Sorbet Frutas Vermelhas','Gelato Doce de Leite','Gelato Chocolatudo','Gelato Iogurte+Frutas Amarelas','Gelato Cacau com Laranja 0%','Gelato Ninho Trufado','Gelato Paçoca Proteica','Chocolate Proteico','Gelato Cookie e Crean Proteico','Embalagem P','Embalagem M','Embalagem G','Kit Festa','Espátula Descartável'];
+  const ini={}, fin={};
+  const txtNorm = txt.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const idxFinal = txtNorm.indexOf('final do dia');
+  const txtIni = idxFinal>0 ? txtNorm.substring(0,idxFinal) : txtNorm;
+  const txtFin = idxFinal>0 ? txt.substring(idxFinal) : '';
+  const txtFinNorm = txtFin.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+
+  PRODS.forEach((prod, i) => {
+    const prodL = prod.toLowerCase();
+    const idx1 = txtIni.indexOf(prodL);
+    if(idx1>=0) {
+      const nums = (txtIni.substring(idx1+prod.length, idx1+prod.length+40).match(/\d+/g)||[]).map(Number);
+      ini[PRODS_ORIG[i]] = { qtd: nums[0]||0 };
+    } else ini[PRODS_ORIG[i]] = { qtd:0 };
+
+    if(txtFinNorm) {
+      const idx2 = txtFinNorm.indexOf(prodL);
+      if(idx2>=0) {
+        const nums = (txtFinNorm.substring(idx2+prod.length, idx2+prod.length+40).match(/\d+/g)||[]).map(Number);
+        fin[PRODS_ORIG[i]] = { abastecido:nums[0]||0, final:nums[1]||0 };
+      } else fin[PRODS_ORIG[i]] = { abastecido:0, final:0 };
+    } else fin[PRODS_ORIG[i]] = { abastecido:0, final:0 };
+  });
+  return { ini, fin };
 }
 
 function montarEstoqueTexto(est) {
