@@ -524,8 +524,11 @@
 </div>
 
 <button class="fab" id="fab-gerar" style="display:none" onclick="gerarPDF()">
-  📄 Gerar PDF da Contagem
+  📄 Gerar PDF + JSON
 </button>
+<div id="fab-hint" style="display:none;text-align:center;font-size:11px;color:#888;font-family:'DM Mono',monospace;padding:0 20px 16px;position:fixed;bottom:0;left:0;right:0;background:rgba(245,243,240,0.95)">
+  📋 JSON → Primus Pro &nbsp;|&nbsp; 📄 PDF → conferência e arquivo
+</div>
 
 <!-- ÁREA DE IMPRESSÃO -->
 
@@ -607,6 +610,7 @@ function selecionarTipo(tipo) {
   renderizarFormulario();
   document.getElementById('progresso-bar').style.display = 'flex';
   document.getElementById('fab-gerar').style.display = 'flex';
+    document.getElementById('fab-hint').style.display = 'block';
   atualizarProgresso();
 }
 
@@ -1017,7 +1021,7 @@ async function gerarPDF() {
     alert('Erro ao gerar PDF: ' + err.message);
   }
 
-  fab.innerHTML = '📄 Gerar PDF da Contagem';
+  fab.innerHTML = '📄 Gerar PDF + JSON';
   fab.disabled = false;
 }
 

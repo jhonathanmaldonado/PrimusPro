@@ -249,8 +249,8 @@
     <!-- ETAPA 1 -->
     <div class="card" id="etapa1-card">
       <div class="card-header">
-        <div class="card-icon">📄</div>
-        <div><div class="card-title">ETAPA 1 -- Contagem Física</div><div class="card-subtitle">Suba os PDFs gerados pelo Sistema de Contagem</div></div>
+        <div class="card-icon">📋</div>
+        <div><div class="card-title">ETAPA 1 -- Contagem Física</div><div class="card-subtitle">Suba os JSONs gerados pelo Sistema de Contagem</div></div>
       </div>
       <div style="margin-bottom:16px">
         <label style="font-size:10px;font-family:'DM Mono',monospace;color:#999;display:block;margin-bottom:5px">DATA DA AUDITORIA</label>
@@ -288,7 +288,7 @@
       </div>
       <div class="loading" id="load-est">
         <div class="spinner"></div>
-        <span id="load-est-txt">Lendo PDFs...</span>
+        <span id="load-est-txt">Lendo JSONs...</span>
       </div>
 
       <!-- TABELA DE REVISÃO -->
@@ -296,11 +296,11 @@
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
           <div>
             <div style="font-family:'Raleway',sans-serif;font-weight:800;font-size:15px;color:var(--preto)">✏️ Revise e corrija os valores lidos</div>
-            <div style="font-size:11px;color:#999;font-family:'DM Mono',monospace;margin-top:2px">Confira cada número lido do PDF. Corrija se necessário e confirme.</div>
+            <div style="font-size:11px;color:#999;font-family:'DM Mono',monospace;margin-top:2px">Confira cada número importado do JSON. Corrija se necessário e confirme.</div>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <span id="revisao-alertas" style="font-size:11px;color:var(--amarelo-status);font-family:'DM Mono',monospace"></span>
-            <button class="btn btn-ghost" onclick="relereComIA()" style="font-size:12px;padding:7px 14px">🔄 Reler com IA</button>
+            <button class="btn btn-ghost" onclick="relereComIA()" style="font-size:12px;padding:7px 14px">🔄 Reimportar JSONs</button>
           </div>
         </div>
 
@@ -348,7 +348,7 @@
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-primary" id="btn-analisar" onclick="processarPDFs()" disabled>📄 Processar JSONs</button>
+        <button class="btn btn-primary" id="btn-analisar" onclick="processarJSONs()" disabled>📋 Processar JSONs</button>
       </div>
     </div>
 
@@ -362,18 +362,18 @@
       <div class="upload-duplo" style="margin-top:12px">
         <div class="upload-slot" id="slot-d1b">
           <input type="file" id="up-d1b" accept=".json,application/json" onchange="handleD1JSON(this,'beb')">
-          <span class="slot-badge badge-beb">🍺 D-1 BEBIDAS</span>
+          <span class="slot-badge badge-beb">🍺 JSON D-1 BEBIDAS</span>
           <div class="slot-icon">📄</div>
-          <div class="slot-title">Foto/PDF D-1 -- Bebidas Final</div>
-          <div class="slot-sub">Estoque final contado no dia anterior</div>
+          <div class="slot-title">FINAL_DD_MM_AAAA.json</div>
+          <div class="slot-sub">FINAL_DD_MM_AAAA.json do dia anterior</div>
           <div id="ok-d1b" class="slot-ok">✅ Carregado!</div>
         </div>
         <div class="upload-slot" id="slot-d1s">
           <input type="file" id="up-d1s" accept=".json,application/json" onchange="handleD1JSON(this,'sorv')">
-          <span class="slot-badge badge-sorv">🍨 D-1 SORVETES</span>
+          <span class="slot-badge badge-sorv">🍨 JSON D-1 SORVETES</span>
           <div class="slot-icon">📄</div>
-          <div class="slot-title">Foto/PDF D-1 -- Sorvetes Final</div>
-          <div class="slot-sub">Estoque final contado no dia anterior</div>
+          <div class="slot-title">SORVETES_DD_MM_AAAA.json</div>
+          <div class="slot-sub">SORVETES_DD_MM_AAAA.json do dia anterior</div>
           <div id="ok-d1s" class="slot-ok">✅ Carregado!</div>
         </div>
       </div>
@@ -590,8 +590,8 @@
   <!-- VIEW HISTÓRICO -->
   <div id="view-historico" class="view">
     <div class="card">
-      <div class="card-header"><div class="card-icon">📁</div><div><div class="card-title">HISTÓRICO</div><div class="card-subtitle">PDFs gerados nesta sessão</div></div></div>
-      <div class="banner banner-info">💡 Salve os PDFs gerados. Para o D-1, suba o PDF do dia anterior na Etapa 2.</div>
+      <div class="card-header"><div class="card-icon">📁</div><div><div class="card-title">HISTÓRICO</div><div class="card-subtitle">Arquivos gerados nesta sessão</div></div></div>
+      <div class="banner banner-info">💡 O JSON é para o Primus Pro. O PDF é para conferência humana e arquivo.</div>
       <div id="hist-lista" style="margin-top:12px"><div class="empty-state"><div class="icon">📂</div><p>Nenhuma auditoria gerada ainda</p></div></div>
     </div>
   </div>
@@ -611,7 +611,6 @@ const S = {
 };
 const CH = {};
 
-// API KEY
 
 
 
@@ -637,7 +636,6 @@ function avancarEtapa(e) {
   if(map[e]){const el=document.getElementById(map[e]);if(el){el.style.display='block';setTimeout(()=>el.scrollIntoView({behavior:'smooth',block:'start'}),100);}}
 }
 
-// UPLOAD FOTOS
 // ===== HANDLE PDF DO SISTEMA DE CONTAGEM =====
 const jsonDados   = { bebIni: null, bebFin: null, sorv: null };
 const d1JSONDados  = { beb: null, sorv: null };
@@ -682,47 +680,10 @@ function handleD1JSON(inp, tipo) {
 }
 
 // Mantém handlePDF como alias para compatibilidade
-function handlePDF(inp, tipo) { handleJSON(inp, tipo); }
-function handleD1PDF(inp, tipo) { handleD1JSON(inp, tipo); }
 
 const pdfTextos = { bebIni:'', bebFin:'', sorv:'' };
-const d1PDFTextos = { beb:'', sorv:'' };
 
-function handlePDF_legacy(inp, tipo) {
-  const f = inp.files[0]; if(!f) return;
 
-  const idMap = { bebIni:'beb-ini', bebFin:'beb-fin', sorv:'sorv' };
-  const slotId = idMap[tipo];
-
-  // Mostra nome do arquivo no slot
-  const slotEl = document.getElementById('slot-'+slotId);
-  const okEl   = document.getElementById('ok-'+slotId);
-
-  // Tenta ler como ArrayBuffer (melhor para PDFs)
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      const arr = new Uint8Array(e.target.result);
-      const texto = extrairTextoPDF(arr);
-      if(texto && texto.length > 50) {
-        pdfTextos[tipo] = texto;
-        console.log('PDF ['+tipo+'] primeiros 500 chars:', texto.substring(0,500));
-        okEl.style.display = 'block';
-        okEl.textContent = '✅ ' + f.name;
-        slotEl.classList.add('done');
-        if(pdfTextos.bebIni || pdfTextos.bebFin || pdfTextos.sorv)
-          document.getElementById('btn-analisar').disabled = false;
-      } else {
-        // Fallback: tenta ler como texto binário
-        lerPDFcomoTexto(f, tipo, slotId, okEl, slotEl);
-      }
-    } catch(err) {
-      lerPDFcomoTexto(f, tipo, slotId, okEl, slotEl);
-    }
-  };
-  reader.onerror = () => lerPDFcomoTexto(f, tipo, slotId, okEl, slotEl);
-  reader.readAsArrayBuffer(f);
-}
 
 function lerPDFcomoTexto(f, tipo, slotId, okEl, slotEl) {
   const r2 = new FileReader();
@@ -851,7 +812,7 @@ function parsearPDFSorvetes(txt) {
 }
 
 
-async function processarPDFs() {
+async function processarJSONs() {
   const load = document.getElementById('load-est');
   const loadTxt = document.getElementById('load-est-txt');
   if(load) load.classList.add('show');
@@ -876,7 +837,7 @@ async function processarPDFs() {
     }
 
     if(pdfTextos.sorv) {
-      if(loadTxt) loadTxt.textContent = '📄 Lendo SORVETES...';
+      if(loadTxt) loadTxt.textContent = '📋 Lendo SORVETES...';
       const dados = parsearPDFSorvetes(pdfTextos.sorv);
       Object.entries(dados.ini).forEach(([prod, v]) => {
         S.estoqueEstruturado.sorvIni[prod] = v;
@@ -1370,7 +1331,7 @@ function cancelarAnalise() {
   const load = document.getElementById('load-est');
   if(load) load.classList.remove('show');
   const txt = document.getElementById('load-est-txt');
-  if(txt) txt.textContent = 'Analisando fotos com IA...';
+  if(txt) txt.textContent = 'Processando...';
   popularTabelaRevisaoVazia();
 }
 
