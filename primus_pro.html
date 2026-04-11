@@ -820,30 +820,32 @@ async function processarJSONs() {
   try {
     S.estoqueEstruturado = { bebIni:{}, bebFin:{}, sorvIni:{}, sorvFin:{} };
 
-    if(pdfTextos.bebIni) {
-      if(loadTxt) loadTxt.textContent = '📄 Lendo INÍCIO das bebidas...';
-      const dados = parsearPDFBebidas(pdfTextos.bebIni);
-      Object.entries(dados).forEach(([prod, v]) => {
-        S.estoqueEstruturado.bebIni[prod] = { freezer:v.freezer, estoque:v.estoque, total:v.total };
+    // Lê diretamente do JSON estruturado
+    if(jsonDados.bebIni) {
+      if(loadTxt) loadTxt.textContent = '📋 Lendo INÍCIO...';
+      const j = jsonDados.bebIni;
+      Object.entries(j.produtos || {}).forEach(([prod, v]) => {
+        S.estoqueEstruturado.bebIni[prod] = { freezer: v.freezer||0, estoque: v.estoque||0, total: v.total||0 };
       });
     }
 
-    if(pdfTextos.bebFin) {
-      if(loadTxt) loadTxt.textContent = '📄 Lendo FINAL das bebidas...';
-      const dados = parsearPDFBebidas(pdfTextos.bebFin);
-      Object.entries(dados).forEach(([prod, v]) => {
-        S.estoqueEstruturado.bebFin[prod] = { freezer:v.freezer, estoque:v.estoque, total:v.total, recebido:v.recebido };
+    if(jsonDados.bebFin) {
+      if(loadTxt) loadTxt.textContent = '📋 Lendo FINAL...';
+      const j = jsonDados.bebFin;
+      Object.entries(j.produtos || {}).forEach(([prod, v]) => {
+        S.estoqueEstruturado.bebFin[prod] = { freezer: v.freezer||0, estoque: v.estoque||0, total: v.total||0, recebido: v.recebido||0 };
       });
     }
 
-    if(pdfTextos.sorv) {
+    if(jsonDados.sorv) {
       if(loadTxt) loadTxt.textContent = '📋 Lendo SORVETES...';
-      const dados = parsearPDFSorvetes(pdfTextos.sorv);
-      Object.entries(dados.ini).forEach(([prod, v]) => {
-        S.estoqueEstruturado.sorvIni[prod] = v;
-      });
-      Object.entries(dados.fin).forEach(([prod, v]) => {
-        S.estoqueEstruturado.sorvFin[prod] = v;
+      const j = jsonDados.sorv;
+      Object.entries(j.produtos || {}).forEach(([prod, v]) => {
+        S.estoqueEstruturado.sorvIni[prod] = { qtd: (v.inicio && v.inicio.qtd) || 0 };
+        S.estoqueEstruturado.sorvFin[prod] = {
+          abastecido: (v.final && v.final.abastecido) || 0,
+          final:      (v.final && v.final.final)      || 0
+        };
       });
     }
 
@@ -855,7 +857,7 @@ async function processarJSONs() {
     calcD1Hint();
 
   } catch(err) {
-    alert('Erro ao processar PDFs: ' + err.message + '\nA tabela foi aberta em branco para preenchimento manual.');
+    alert('Erro ao processar JSONs: ' + err.message + '\nA tabela foi aberta em branco para preenchimento manual.');
     popularTabelaRevisaoVazia();
   }
 
@@ -999,7 +1001,7 @@ function processarD1JSON() {
   if(d1JSONDados.sorv) {
     const j = d1JSONDados.sorv;
     Object.entries(j.produtos || {}).forEach(([prod, v]) => {
-      S.d1Estruturado.sorvFin[prod] = { abastecido: v.final?.abastecido||0, final: v.final?.final||0 };
+      S.d1Estruturado.sorvFin[prod] = { abastecido: (v.final && v.final.abastecido)||0, final: (v.final && v.final.final)||0 };
     });
   }
   popularTabelaD1ComEstruturado();
