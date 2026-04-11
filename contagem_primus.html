@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Contagem — Peixaria Primus</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;600;800;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --amarelo: #FAB900;
+    --vinho: #7C0047;
+    --preto: #1a1714;
+    --cinza-bg: #f5f3f0;
+    --cinza-borda: #e8e3dc;
+    --verde: #1e6641;
+    --verde-bg: #e8f5ed;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--cinza-bg);
+    color: var(--preto);
+    min-height: 100vh;
+    padding-bottom: 100px;
+  }
+
+  /* HEADER */
+  .header {
+    background: var(--vinho);
+    padding: 0;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 4px 20px rgba(124,0,71,0.3);
+  }
+  .header-tarja { background: var(--amarelo); height: 4px; }
+  .header-inner {
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .header-logo { display: flex; align-items: center; gap: 12px; }
+  .logo-box {
+    width: 40px; height: 40px;
+    background: var(--amarelo);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Raleway', sans-serif;
+    font-weight: 900; font-size: 15px; color: var(--vinho);
+  }
+  .logo-text h1 {
+    font-family: 'Raleway', sans-serif;
+    font-weight: 900; font-size: 17px;
+    color: white; letter-spacing: 1.5px;
+  }
+  .logo-text p { font-size: 10px; color: rgba(255,255,255,0.5); font-family: 'DM Mono', monospace; }
+
+  /* SELEÇÃO DE TIPO */
+  .tipo-selector {
+    padding: 20px;
+    background: var(--vinho);
+    margin-bottom: 0;
+  }
+  .tipo-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .tipo-btn {
+    padding: 14px 8px;
+    border-radius: 12px;
+    border: 2px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.7);
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+    font-family: 'Raleway', sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    line-height: 1.3;
+  }
+  .tipo-btn .tipo-icon { font-size: 22px; display: block; margin-bottom: 5px; }
+  .tipo-btn.active {
+    background: var(--amarelo);
+    border-color: var(--amarelo);
+    color: var(--vinho);
+  }
+  .tipo-btn:hover:not(.active) {
+    background: rgba(255,255,255,0.15);
+    border-color: rgba(255,255,255,0.4);
+  }
+
+  /* DATA BAR */
+  .data-bar {
+    background: rgba(0,0,0,0.2);
+    padding: 8px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .data-bar label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.5);
+    font-family: 'DM Mono', monospace;
+  }
+  .data-bar input[type="date"] {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px;
+    padding: 5px 12px;
+    color: white;
+    font-size: 13px;
+    font-family: 'DM Mono', monospace;
+    outline: none;
+  }
+  .data-bar input[type="date"]:focus { border-color: var(--amarelo); }
+  .nome-conferente {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 8px;
+    padding: 5px 12px;
+    color: white;
+    font-size: 13px;
+    font-family: 'DM Sans', monospace;
+    outline: none;
+    min-width: 160px;
+  }
+  .nome-conferente::placeholder { color: rgba(255,255,255,0.3); }
+  .nome-conferente:focus { border-color: var(--amarelo); }
+
+  /* PROGRESSO */
+  .progresso-bar {
+    background: white;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+    position: sticky;
+    top: 130px;
+    z-index: 90;
+  }
+  .prog-texto {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px;
+    color: #888;
+    white-space: nowrap;
+  }
+  .prog-track {
+    flex: 1;
+    height: 6px;
+    background: var(--cinza-borda);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .prog-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--vinho), var(--amarelo));
+    border-radius: 3px;
+    transition: width 0.4s ease;
+  }
+  .prog-pct {
+    font-family: 'Raleway', sans-serif;
+    font-weight: 800;
+    font-size: 13px;
+    color: var(--vinho);
+    white-space: nowrap;
+  }
+
+  /* MAIN */
+  .main { padding: 16px 20px; max-width: 700px; margin: 0 auto; }
+
+  /* GRUPO */
+  .grupo {
+    margin-bottom: 20px;
+    background: white;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06);
+  }
+  .grupo-header {
+    background: var(--preto);
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .grupo-icon { font-size: 16px; }
+  .grupo-nome {
+    font-family: 'Raleway', sans-serif;
+    font-weight: 800;
+    font-size: 13px;
+    color: white;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    flex: 1;
+  }
+  .grupo-count {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: rgba(255,255,255,0.4);
+  }
+
+  /* PRODUTO ROW */
+  .produto-row {
+    display: grid;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--cinza-borda);
+    transition: background 0.15s;
+  }
+  .produto-row:last-child { border-bottom: none; }
+  .produto-row.preenchido { background: rgba(30,102,65,0.04); }
+
+  /* Layout: bebidas (freezer + estoque) */
+  .produto-row.layout-beb {
+    grid-template-columns: 1fr 80px 80px 70px 120px;
+    align-items: center;
+    gap: 8px;
+    min-height: 52px;
+  }
+  /* Layout: sorvetes/final (1 ou 2 campos) */
+  .produto-row.layout-sorv {
+    grid-template-columns: 1fr 100px 120px;
+    align-items: center;
+    gap: 8px;
+    min-height: 52px;
+  }
+  .produto-row.layout-sorv-fin {
+    grid-template-columns: 1fr 90px 90px 70px 120px;
+    align-items: center;
+    gap: 8px;
+    min-height: 52px;
+  }
+  .col-headers.layout-sorv-fin { grid-template-columns: 1fr 90px 90px 70px 120px; gap: 8px; }
+  .secao-sep-sorv {
+    background: var(--vinho);
+    color: white;
+    padding: 10px 16px;
+    font-family: 'Raleway', sans-serif;
+    font-weight: 800;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .produto-row.layout-fin {
+    grid-template-columns: 1fr 80px 80px 70px 70px 120px;
+    align-items: center;
+    gap: 8px;
+    min-height: 52px;
+  }
+
+  .prod-nome {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--preto);
+    line-height: 1.3;
+    padding: 10px 0;
+  }
+  .prod-nome .tag-ks {
+    display: inline-block;
+    background: #fdeef7;
+    color: var(--vinho);
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-family: 'DM Mono', monospace;
+    font-weight: 500;
+    margin-left: 4px;
+  }
+  .prod-nome .tag-saindo {
+    display: inline-block;
+    background: #f0f0f0;
+    color: #888;
+    font-size: 9px;
+    padding: 1px 6px;
+    border-radius: 10px;
+    font-family: 'DM Mono', monospace;
+    margin-left: 4px;
+    text-decoration: none;
+  }
+
+  .col-header {
+    font-size: 9px;
+    font-family: 'DM Mono', monospace;
+    color: #bbb;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* INPUT NUMÉRICO */
+  .num-input {
+    width: 100%;
+    padding: 8px 6px;
+    border: 1.5px solid var(--cinza-borda);
+    border-radius: 9px;
+    font-family: 'DM Mono', monospace;
+    font-size: 15px;
+    font-weight: 600;
+    text-align: center;
+    color: var(--preto);
+    background: var(--cinza-bg);
+    outline: none;
+    transition: all 0.15s;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .num-input:focus {
+    border-color: var(--amarelo);
+    background: white;
+    box-shadow: 0 0 0 3px rgba(250,185,0,0.15);
+  }
+  .num-input.filled {
+    border-color: var(--verde);
+    background: var(--verde-bg);
+    color: var(--verde);
+  }
+  .num-input[type=number]::-webkit-inner-spin-button,
+  .num-input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+  /* TOTAL CALCULADO */
+  .total-val {
+    font-family: 'Raleway', sans-serif;
+    font-weight: 800;
+    font-size: 14px;
+    color: var(--vinho);
+    text-align: center;
+  }
+
+  /* CABEÇALHO DE COLUNAS */
+  .col-headers {
+    display: grid;
+    padding: 8px 16px 4px;
+    background: rgba(0,0,0,0.02);
+    border-bottom: 1px solid var(--cinza-borda);
+  }
+  .col-headers.layout-beb { grid-template-columns: 1fr 80px 80px 70px 120px; gap: 8px; }
+  .col-headers.layout-sorv { grid-template-columns: 1fr 100px 120px; gap: 8px; }
+  .col-headers.layout-fin { grid-template-columns: 1fr 80px 80px 70px 70px 120px; gap: 8px; }
+
+  /* BOTÃO GERAR PDF */
+  .fab {
+    position: fixed;
+    bottom: 24px;
+    right: 20px;
+    left: 20px;
+    max-width: 660px;
+    margin: 0 auto;
+    background: var(--amarelo);
+    color: var(--vinho);
+    border: none;
+    border-radius: 14px;
+    padding: 16px 24px;
+    font-family: 'Raleway', sans-serif;
+    font-weight: 900;
+    font-size: 15px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    box-shadow: 0 8px 24px rgba(250,185,0,0.4);
+    transition: all 0.2s;
+    letter-spacing: 0.5px;
+  }
+  .fab:hover { background: #e5a800; transform: translateY(-2px); }
+  .fab:active { transform: translateY(0); }
+
+  /* TELA INICIAL */
+  .tela-inicio {
+    text-align: center;
+    padding: 60px 20px;
+    color: #aaa;
+  }
+  .tela-inicio .icon { font-size: 56px; margin-bottom: 16px; }
+  .tela-inicio h2 {
+    font-family: 'Raleway', sans-serif;
+    font-weight: 800;
+    font-size: 18px;
+    color: var(--preto);
+    margin-bottom: 8px;
+  }
+  .tela-inicio p { font-size: 14px; color: #aaa; }
+
+  /* PDF PREVIEW (oculto) */
+  #pdf-content { display: none; }
+
+  /* Animação entrada */
+  .grupo { animation: fadeUp 0.3s ease both; }
+  @keyframes fadeUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+
+  /* CAMPO OBS */
+  .obs-input {
+    width: 100%;
+    padding: 5px 8px;
+    border: 1.5px solid transparent;
+    border-radius: 7px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 11px;
+    color: #888;
+    background: transparent;
+    outline: none;
+    transition: all 0.2s;
+    resize: none;
+    height: 28px;
+    overflow: hidden;
+  }
+  .obs-input:focus {
+    border-color: var(--amarelo);
+    background: #fffef5;
+    color: var(--preto);
+    height: auto;
+    min-height: 28px;
+  }
+  .obs-input.tem-obs {
+    border-color: #e0a800;
+    background: #fffbea;
+    color: #8a6000;
+  }
+  .obs-input::placeholder { color: #ddd; font-size: 11px; }
+
+  /* IMPRESSÃO / PDF via Print */
+  @media print {
+    body { padding-bottom: 0; background: white; }
+    .header { position: relative; box-shadow: none; }
+    .tipo-selector, .data-bar, .progresso-bar, .fab, #main-content { display: none !important; }
+    #print-area { display: block !important; }
+    @page { margin: 10mm; size: A4 portrait; }
+  }
+
+  /* Evitar corte de linhas no PDF */
+  #pdf-content tr { page-break-inside: avoid; }
+  #pdf-content .grupo { page-break-inside: avoid; }
+  #pdf-content table { border-collapse: collapse; width: 100%; }
+
+  #print-area {
+    display: none;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  @media (max-width: 500px) {
+    .produto-row.layout-beb { grid-template-columns: 1fr 65px 65px 55px 90px; }
+    .produto-row.layout-fin { grid-template-columns: 1fr 65px 65px 55px 55px 90px; }
+    .produto-row.layout-sorv { grid-template-columns: 1fr 85px 90px; }
+    .produto-row.layout-sorv-fin { grid-template-columns: 1fr 75px 75px 60px 90px; }
+    .col-headers.layout-sorv-fin { grid-template-columns: 1fr 75px 75px 60px 90px; }
+    .col-headers.layout-beb { grid-template-columns: 1fr 65px 65px 55px 90px; }
+    .col-headers.layout-fin { grid-template-columns: 1fr 65px 65px 55px 55px 90px; }
+    .col-headers.layout-sorv { grid-template-columns: 1fr 85px 90px; }
+    .num-input { font-size: 14px; padding: 7px 4px; }
+    .obs-input { font-size: 10px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-tarja"></div>
+  <div class="header-inner">
+    <div class="header-logo">
+      <div class="logo-box">PP</div>
+      <div class="logo-text">
+        <h1>PEIXARIA PRIMUS</h1>
+        <p>SISTEMA DE CONTAGEM DE ESTOQUE</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="tipo-selector">
+    <div class="tipo-grid">
+      <button class="tipo-btn" id="btn-ini" onclick="selecionarTipo('ini')">
+        <span class="tipo-icon">🌅</span>
+        Bebidas<br>INÍCIO
+      </button>
+      <button class="tipo-btn" id="btn-fin" onclick="selecionarTipo('fin')">
+        <span class="tipo-icon">🌙</span>
+        Bebidas<br>FINAL
+      </button>
+      <button class="tipo-btn" id="btn-sorv" onclick="selecionarTipo('sorv')">
+        <span class="tipo-icon">🍨</span>
+        Sorvetes &<br>Embalagens
+      </button>
+    </div>
+  </div>
+
+  <div class="data-bar">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <label>📅 DATA</label>
+      <input type="date" id="data-input">
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <label>👤 CONFERENTE</label>
+      <input type="text" class="nome-conferente" id="nome-input" placeholder="Seu nome...">
+    </div>
+  </div>
+</div>
+
+<!-- PROGRESSO -->
+<div class="progresso-bar" id="progresso-bar" style="display:none">
+  <span class="prog-texto" id="prog-texto">0 / 0 preenchidos</span>
+  <div class="prog-track"><div class="prog-fill" id="prog-fill" style="width:0%"></div></div>
+  <span class="prog-pct" id="prog-pct">0%</span>
+</div>
+
+<div class="main" id="main-content">
+  <div class="tela-inicio">
+    <div class="icon">📋</div>
+    <h2>Selecione o tipo de contagem</h2>
+    <p>Escolha acima qual folha você vai preencher</p>
+  </div>
+</div>
+
+<button class="fab" id="fab-gerar" style="display:none" onclick="gerarPDF()">
+  📄 Gerar PDF da Contagem
+</button>
+
+<!-- ÁREA DE IMPRESSÃO -->
+<div id="print-area"></div>
+<div id="pdf-content" style="display:none"></div>
+
+<script>
+// ===== DADOS =====
+const BEBIDAS = [
+  { nome:'Louvada Primus', grupo:'🍺 Cervejas' },
+  { nome:'Heineken 600ml', grupo:'🍺 Cervejas' },
+  { nome:'Original', grupo:'🍺 Cervejas' },
+  { nome:'Heineken Zero Long Neck', grupo:'🍺 Cervejas' },
+  { nome:'Louvada German Longneck', grupo:'🍺 Cervejas' },
+  { nome:'Louvada German 500', grupo:'🍺 Cervejas' },
+  { nome:'Stella SG Longneck', grupo:'🍺 Cervejas' },
+  { nome:'Louvada Hop Zero', grupo:'🍺 Cervejas' },
+  { nome:'Coca Cola KS', grupo:'🔷 Refrigerantes KS', ks:true },
+  { nome:'Coca Cola KS Zero', grupo:'🔷 Refrigerantes KS', ks:true },
+  { nome:'Fanta Laranja KS', grupo:'🔷 Refrigerantes KS', ks:true },
+  { nome:'Sprite KS', grupo:'🔷 Refrigerantes KS', ks:true },
+  { nome:'Kuat KS', grupo:'🔷 Refrigerantes KS', ks:true },
+  { nome:'Coca Cola 1L', grupo:'🥤 Refrigerantes', saindo:true },
+  { nome:'Guaraná 1L', grupo:'🥤 Refrigerantes', saindo:true },
+  { nome:'Coca Zero 1L', grupo:'🥤 Refrigerantes', saindo:true },
+  { nome:'Coca Cola Lata', grupo:'🥤 Refrigerantes', saindo:true },
+  { nome:'Coca Cola Zero Lata', grupo:'🥤 Refrigerantes', saindo:true },
+  { nome:'Sprite Lata', grupo:'🥤 Refrigerantes', saindo:true },
+  { nome:'Guaraná Lata', grupo:'🥤 Refrigerantes', saindo:true },
+  { nome:'Fanta Laranja Lata', grupo:'🥤 Refrigerantes', saindo:true },
+  { nome:'Água Tônica', grupo:'💧 Especiais' },
+  { nome:'Água Tônica Zero', grupo:'💧 Especiais' },
+  { nome:'Schweppes Citrus', grupo:'💧 Especiais' },
+  { nome:'Sprite Lemon Fresch', grupo:'💧 Especiais' },
+  { nome:'Água Prata Com Gás', grupo:'💧 Águas' },
+  { nome:'Água Prata Sem Gás', grupo:'💧 Águas' },
+  { nome:'Água Premium Com Gás', grupo:'💧 Águas' },
+  { nome:'Água Premium Sem Gás', grupo:'💧 Águas' },
+  { nome:'Kombucha Guaraná', grupo:'🌿 Kombuchas' },
+  { nome:'Kombucha Morango', grupo:'🌿 Kombuchas' },
+  { nome:'Kombucha de Limão', grupo:'🌿 Kombuchas' },
+  { nome:'Cappuccino', grupo:'☕ Cafés' },
+  { nome:'Café Ameno', grupo:'☕ Cafés' },
+  { nome:'Café Forza', grupo:'☕ Cafés' },
+  { nome:'Café Gourmet', grupo:'☕ Cafés' },
+  { nome:'Suco Acerola 500ml', grupo:'🧃 Sucos 500ml' },
+  { nome:'Suco Abacaxi Hort. 500ml', grupo:'🧃 Sucos 500ml' },
+  { nome:'Suco Maracujá 500ml', grupo:'🧃 Sucos 500ml' },
+  { nome:'Suco Morango 500ml', grupo:'🧃 Sucos 500ml' },
+];
+
+const SORVETES = [
+  { nome:'Sorbet Moranja', grupo:'🍨 Sorbets' },
+  { nome:'Sorbet Manga+Maracujá', grupo:'🍨 Sorbets' },
+  { nome:'Sorbet Frutas Vermelhas', grupo:'🍨 Sorbets' },
+  { nome:'Gelato Doce de Leite', grupo:'🍦 Gelatos' },
+  { nome:'Gelato Chocolatudo', grupo:'🍦 Gelatos' },
+  { nome:'Gelato Iogurte+Frutas Amarelas', grupo:'🍦 Gelatos' },
+  { nome:'Gelato Cacau com Laranja 0%', grupo:'🍦 Gelatos' },
+  { nome:'Gelato Ninho Trufado', grupo:'🍦 Gelatos' },
+  { nome:'Gelato Paçoca Proteica', grupo:'🍦 Gelatos' },
+  { nome:'Chocolate Proteico', grupo:'🍦 Gelatos' },
+  { nome:'Gelato Cookie e Crean Proteico', grupo:'🍦 Gelatos' },
+  { nome:'Embalagem P', grupo:'📦 Embalagens' },
+  { nome:'Embalagem M', grupo:'📦 Embalagens' },
+  { nome:'Embalagem G', grupo:'📦 Embalagens' },
+  { nome:'Kit Festa', grupo:'📦 Embalagens' },
+  { nome:'Espátula Descartável', grupo:'📦 Embalagens' },
+];
+
+// ===== ESTADO =====
+let tipoAtual = null;
+const dados = {}; // { produto: { freezer, estoque, total, recebido } } ou { produto: { qtd } } ou { produto: { abast, final } }
+
+// ===== TIPO =====
+function selecionarTipo(tipo) {
+  tipoAtual = tipo;
+  ['ini','fin','sorv'].forEach(t => {
+    document.getElementById('btn-'+t).classList.toggle('active', t===tipo);
+  });
+  renderizarFormulario();
+  document.getElementById('progresso-bar').style.display = 'flex';
+  document.getElementById('fab-gerar').style.display = 'flex';
+  atualizarProgresso();
+}
+
+// ===== RENDER =====
+function renderizarFormulario() {
+  const main = document.getElementById('main-content');
+  main.innerHTML = '';
+
+  const lista = tipoAtual === 'sorv' ? SORVETES : BEBIDAS;
+
+  // Para sorvetes: renderiza INÍCIO e FINAL em sequência
+  if (tipoAtual === 'sorv') {
+    renderizarSorvetes(main);
+    return;
+  }
+
+  // Agrupa
+  const grupos = {};
+  lista.forEach(item => {
+    if (!grupos[item.grupo]) grupos[item.grupo] = [];
+    grupos[item.grupo].push(item);
+  });
+
+  Object.entries(grupos).forEach(([grupo, itens]) => {
+    const div = document.createElement('div');
+    div.className = 'grupo';
+
+    // Header do grupo
+    const [icon, ...nomePartes] = grupo.split(' ');
+    div.innerHTML = `
+      <div class="grupo-header">
+        <span class="grupo-icon">${icon}</span>
+        <span class="grupo-nome">${nomePartes.join(' ')}</span>
+        <span class="grupo-count">${itens.length} itens</span>
+      </div>`;
+
+    // Cabeçalho de colunas
+    const colHeader = document.createElement('div');
+    if (tipoAtual === 'ini') {
+      colHeader.className = 'col-headers layout-beb';
+      colHeader.innerHTML = `<div class="col-header">Produto</div><div class="col-header">Freezer</div><div class="col-header">Estoque</div><div class="col-header">Total</div>`;
+    } else if (tipoAtual === 'fin') {
+      colHeader.className = 'col-headers layout-fin';
+      colHeader.innerHTML = `<div class="col-header">Produto</div><div class="col-header">Freezer</div><div class="col-header">Estoque</div><div class="col-header">Total</div><div class="col-header">Recebido</div>`;
+    } else {
+      colHeader.className = 'col-headers layout-sorv';
+      colHeader.innerHTML = `<div class="col-header">Produto</div><div class="col-header">Quantidade</div>`;
+    }
+    div.appendChild(colHeader);
+
+    // Linhas de produto
+    itens.forEach(item => {
+      const row = document.createElement('div');
+      const id = slugify(item.nome);
+
+      const tagKS = item.ks ? '<span class="tag-ks">KS</span>' : '';
+      const tagSaindo = item.saindo ? '<span class="tag-saindo">saindo</span>' : '';
+      const nomeProd = `<div class="prod-nome">${item.nome}${tagKS}${tagSaindo}</div>`;
+
+      const obsInput = `<textarea class="obs-input" id="${id}_obs" placeholder="obs..." rows="1" oninput="atualizarObs('${id}',this)"></textarea>`;
+
+      if (tipoAtual === 'ini') {
+        row.className = 'produto-row layout-beb';
+        row.innerHTML = `
+          ${nomeProd}
+          <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_fr" oninput="atualizar('${id}','fr',this)" onfocus="this.select()">
+          <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_est" oninput="atualizar('${id}','est',this)" onfocus="this.select()">
+          <div class="total-val" id="${id}_tot">—</div>
+          ${obsInput}`;
+      } else if (tipoAtual === 'fin') {
+        row.className = 'produto-row layout-fin';
+        row.innerHTML = `
+          ${nomeProd}
+          <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_fr" oninput="atualizar('${id}','fr',this)" onfocus="this.select()">
+          <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_est" oninput="atualizar('${id}','est',this)" onfocus="this.select()">
+          <div class="total-val" id="${id}_tot">—</div>
+          <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_rec" oninput="atualizar('${id}','rec',this)" onfocus="this.select()">
+          ${obsInput}`;
+      } else {
+        // Para sorvetes, tipo é 'sorv-ini' ou 'sorv-fin'
+        // mas mantemos tipoAtual='sorv' e distinguimos pela seção
+        row.className = 'produto-row layout-sorv';
+        row.innerHTML = `
+          ${nomeProd}
+          <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_qtd" oninput="atualizar('${id}','qtd',this)" onfocus="this.select()">
+          ${obsInput}`;
+      }
+
+      div.appendChild(row);
+    });
+
+    main.appendChild(div);
+  });
+}
+
+// ===== ATUALIZAR DADOS =====
+function atualizar(id, campo, input) {
+  const val = parseInt(input.value) || 0;
+  if (!dados[id]) dados[id] = {};
+  dados[id][campo] = val;
+  input.classList.toggle('filled', input.value !== '' && input.value !== '0');
+
+  // Atualiza total se for bebida
+  if (campo === 'fr' || campo === 'est') {
+    const fr  = parseInt(document.getElementById(id+'_fr')?.value)  || 0;
+    const est = parseInt(document.getElementById(id+'_est')?.value) || 0;
+    const tot = fr + est;
+    dados[id].total = tot;
+    const totEl = document.getElementById(id+'_tot');
+    if (totEl) {
+      totEl.textContent = tot > 0 ? tot : '—';
+      totEl.style.color = tot > 0 ? 'var(--vinho)' : '#ccc';
+    }
+  }
+
+  // Marca linha como preenchida
+  const row = input.closest('.produto-row');
+  const allInputs = row.querySelectorAll('input');
+  const algumPreenchido = [...allInputs].some(i => i.value !== '');
+  row.classList.toggle('preenchido', algumPreenchido);
+
+  atualizarProgresso();
+}
+
+// ===== RENDERIZAÇÃO SORVETES (INÍCIO + FINAL) =====
+function renderizarSorvetes(main) {
+  const grupos = {};
+  SORVETES.forEach(item => {
+    if (!grupos[item.grupo]) grupos[item.grupo] = [];
+    grupos[item.grupo].push(item);
+  });
+
+  // SEÇÃO INÍCIO
+  const divIni = document.createElement('div');
+  divIni.innerHTML = `<div class="secao-sep-sorv">🌅 INÍCIO DO DIA — Quantidade em estoque</div>`;
+  main.appendChild(divIni);
+
+  Object.entries(grupos).forEach(([grupo, itens]) => {
+    const div = document.createElement('div');
+    div.className = 'grupo';
+    const [icon, ...nomePartes] = grupo.split(' ');
+    div.innerHTML = `<div class="grupo-header"><span class="grupo-icon">${icon}</span><span class="grupo-nome">${nomePartes.join(' ')}</span><span class="grupo-count">${itens.length} itens</span></div>`;
+    const colHeader = document.createElement('div');
+    colHeader.className = 'col-headers layout-sorv';
+    colHeader.innerHTML = `<div class="col-header">Produto</div><div class="col-header">Quantidade</div><div class="col-header">Obs</div>`;
+    div.appendChild(colHeader);
+    itens.forEach(item => {
+      const id = slugify(item.nome) + '_ini';
+      const row = document.createElement('div');
+      row.className = 'produto-row layout-sorv';
+      row.innerHTML = `
+        <div class="prod-nome">${item.nome}</div>
+        <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_qtd" oninput="atualizar('${id}','qtd',this)" onfocus="this.select()">
+        <textarea class="obs-input" id="${id}_obs" placeholder="obs..." rows="1" oninput="atualizarObs('${id}',this)"></textarea>`;
+      div.appendChild(row);
+    });
+    main.appendChild(div);
+  });
+
+  // SEÇÃO FINAL
+  const divFin = document.createElement('div');
+  divFin.innerHTML = `<div class="secao-sep-sorv" style="margin-top:20px">🌙 FINAL DO DIA — Contagem + Abastecimento</div>`;
+  main.appendChild(divFin);
+
+  Object.entries(grupos).forEach(([grupo, itens]) => {
+    const div = document.createElement('div');
+    div.className = 'grupo';
+    const [icon, ...nomePartes] = grupo.split(' ');
+    div.innerHTML = `<div class="grupo-header"><span class="grupo-icon">${icon}</span><span class="grupo-nome">${nomePartes.join(' ')}</span><span class="grupo-count">${itens.length} itens</span></div>`;
+    const colHeader = document.createElement('div');
+    colHeader.className = 'col-headers layout-sorv-fin';
+    colHeader.innerHTML = `<div class="col-header">Produto</div><div class="col-header">Abastecido</div><div class="col-header">Final</div><div class="col-header">Total</div><div class="col-header">Obs</div>`;
+    div.appendChild(colHeader);
+    itens.forEach(item => {
+      const id = slugify(item.nome) + '_fin';
+      const row = document.createElement('div');
+      row.className = 'produto-row layout-sorv-fin';
+      row.innerHTML = `
+        <div class="prod-nome">${item.nome}</div>
+        <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_abast" oninput="atualizarSorvFin('${id}',this)" onfocus="this.select()">
+        <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_final" oninput="atualizarSorvFin('${id}',this)" onfocus="this.select()">
+        <div class="total-val" id="${id}_tot">—</div>
+        <textarea class="obs-input" id="${id}_obs" placeholder="obs..." rows="1" oninput="atualizarObs('${id}',this)"></textarea>`;
+      div.appendChild(row);
+    });
+    main.appendChild(div);
+  });
+}
+
+// ===== OBS =====
+function atualizarObs(id, textarea) {
+  if (!dados[id]) dados[id] = {};
+  dados[id].obs = textarea.value.trim();
+  textarea.classList.toggle('tem-obs', textarea.value.trim() !== '');
+  // Auto-resize
+  textarea.style.height = 'auto';
+  textarea.style.height = textarea.scrollHeight + 'px';
+}
+
+function atualizarSorvFin(id, input) {
+  if (!dados[id]) dados[id] = {};
+  const abast = parseInt(document.getElementById(id+'_abast')?.value) || 0;
+  const final  = parseInt(document.getElementById(id+'_final')?.value) || 0;
+  dados[id].abast = abast;
+  dados[id].final = final;
+  dados[id].total = abast + final;
+  input.classList.toggle('filled', input.value !== '' && input.value !== '0');
+  const totEl = document.getElementById(id+'_tot');
+  if(totEl) { totEl.textContent = dados[id].total > 0 ? dados[id].total : '—'; }
+  const row = input.closest('.produto-row');
+  row.classList.toggle('preenchido', abast > 0 || final > 0);
+  atualizarProgresso();
+}
+
+// ===== PROGRESSO =====
+function atualizarProgresso() {
+  const lista = tipoAtual === 'sorv' ? SORVETES : BEBIDAS;
+  const total = lista.length;
+  const preenchidos = lista.filter(item => {
+    const id = slugify(item.nome);
+    const d = dados[id];
+    if (!d) return false;
+    if (tipoAtual === 'sorv') return d.qtd !== undefined;
+    return d.fr !== undefined || d.est !== undefined;
+  }).length;
+
+  const pct = total > 0 ? Math.round(preenchidos / total * 100) : 0;
+  document.getElementById('prog-texto').textContent = `${preenchidos} / ${total} preenchidos`;
+  document.getElementById('prog-fill').style.width = pct + '%';
+  document.getElementById('prog-pct').textContent = pct + '%';
+}
+
+// ===== GERAR PDF =====
+function exportarJSON(nomeArquivo, data, conferente) {
+  const lista = tipoAtual === 'sorv' ? SORVETES : BEBIDAS;
+  const jsonData = { tipo: tipoAtual, data, conferente, geradoEm: new Date().toISOString(), produtos: {} };
+
+  lista.forEach(item => {
+    const id = slugify(item.nome);
+    if (tipoAtual === 'sorv') {
+      const idIni = id + '_ini';
+      const idFin = id + '_fin';
+      const dIni = dados[idIni] || {};
+      const dFin = dados[idFin] || {};
+      jsonData.produtos[item.nome] = {
+        inicio: { qtd: dIni.qtd || 0, obs: dIni.obs || '' },
+        final:  { abastecido: dFin.abast || 0, final: dFin.final || 0, obs: dFin.obs || '' }
+      };
+    } else if (tipoAtual === 'fin') {
+      const d = dados[id] || {};
+      jsonData.produtos[item.nome] = {
+        freezer: d.fr || 0, estoque: d.est || 0,
+        total: d.total || 0, recebido: d.rec || 0, obs: d.obs || ''
+      };
+    } else {
+      const d = dados[id] || {};
+      jsonData.produtos[item.nome] = {
+        freezer: d.fr || 0, estoque: d.est || 0,
+        total: d.total || 0, obs: d.obs || ''
+      };
+    }
+  });
+
+  const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nomeArquivo; a.click();
+  URL.revokeObjectURL(url);
+}
+
+async function gerarPDF() {
+  const data = document.getElementById('data-input').value;
+  const nome = document.getElementById('nome-input').value.trim();
+
+  if (!data) { alert('Informe a data antes de gerar o PDF.'); return; }
+  if (!tipoAtual) { alert('Selecione o tipo de contagem.'); return; }
+  if (!nome) { 
+    document.getElementById('nome-input').focus();
+    document.getElementById('nome-input').style.borderColor = '#FAB900';
+    alert('Informe o nome do responsável pela contagem antes de gerar o PDF.'); 
+    return; 
+  }
+
+  const [ano, mes, dia] = data.split('-');
+  const tipoNomes = { ini:'INICIO', fin:'FINAL', sorv:'SORVETES' };
+  const nomeArquivo = `${tipoNomes[tipoAtual]}_${dia}_${mes}_${ano}.pdf`;
+  const nomeJSON   = `${tipoNomes[tipoAtual]}_${dia}_${mes}_${ano}.json`;
+  const dataFmt = new Date(data + 'T12:00:00').toLocaleDateString('pt-BR', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+
+  // Exporta JSON com os dados estruturados (lido pelo PRIMUS PRO)
+  exportarJSON(nomeJSON, data, nome);
+
+  // ===== MONTA HTML DO PDF =====
+  const lista = tipoAtual === 'sorv' ? SORVETES : BEBIDAS;
+  const grupos = {};
+  lista.forEach(item => {
+    if (!grupos[item.grupo]) grupos[item.grupo] = [];
+    grupos[item.grupo].push(item);
+  });
+
+  const tipoLabel = { ini:'Bebidas — INÍCIO DO DIA', fin:'Bebidas — FINAL DO DIA', sorv:'Sorvetes & Embalagens' };
+
+  // Função auxiliar para linha de grupo
+  function grupoRow(grupo, colspan) {
+    const [icon, ...nomePartes] = grupo.split(' ');
+    return `<tr style="background:#1a1714"><td colspan="${colspan}" style="padding:8px 12px;color:white;font-family:'Raleway',sans-serif;font-weight:800;font-size:12px;letter-spacing:1px">${icon} ${nomePartes.join(' ')}</td></tr>`;
+  }
+
+  let tabelaHTML = '';
+  let colHeaders = '';
+
+  if (tipoAtual === 'sorv') {
+    // SORVETES: duas tabelas separadas no mesmo PDF — INÍCIO e FINAL
+    const COL_SORV = `<th style="width:55%">PRODUTO</th><th style="text-align:center;width:15%">QUANTIDADE</th><th style="width:30%">OBSERVAÇÃO</th>`;
+    const COL_FIN  = `<th style="width:45%">PRODUTO</th><th style="text-align:center;width:13%">ABAST.</th><th style="text-align:center;width:13%">FINAL</th><th style="width:29%">OBSERVAÇÃO</th>`;
+
+    // Tabela INÍCIO
+    let tIni = '';
+    Object.entries(grupos).forEach(([grupo, itens]) => {
+      tIni += grupoRow(grupo, 3);
+      itens.forEach(item => {
+        const idIni = slugify(item.nome) + '_ini';
+        const dIni = dados[idIni] || {};
+        const qtd = dIni.qtd !== undefined ? dIni.qtd : '—';
+        const obs = dIni.obs || '';
+        tIni += `<tr style="border-bottom:1px solid #e8e3dc${obs?' background:#fffbea':''}">
+          <td style="padding:9px 12px;font-size:12px;font-weight:500">${item.nome}</td>
+          <td style="padding:9px 8px;text-align:center;font-family:'DM Mono',monospace;font-size:14px;font-weight:700;color:${qtd!=='—'&&qtd>0?'#7C0047':'#aaa'}">${qtd}</td>
+          ${obs ? `<td style="padding:9px 8px;font-size:10px;color:#8a6000;font-style:italic">${obs}</td>` : '<td></td>'}
+        </tr>`;
+      });
+    });
+
+    // Tabela FINAL
+    let tFin = '';
+    Object.entries(grupos).forEach(([grupo, itens]) => {
+      tFin += grupoRow(grupo, 4);
+      itens.forEach(item => {
+        const idFin = slugify(item.nome) + '_fin';
+        const dFin = dados[idFin] || {};
+        const abast = dFin.abast !== undefined ? dFin.abast : '—';
+        const finalV = dFin.final !== undefined ? dFin.final : '—';
+        const obs = dFin.obs || '';
+        tFin += `<tr style="border-bottom:1px solid #e8e3dc${obs?' background:#fffbea':''}">
+          <td style="padding:9px 12px;font-size:12px;font-weight:500">${item.nome}</td>
+          <td style="padding:9px 8px;text-align:center;font-family:'DM Mono',monospace;font-size:13px;color:#1a1714">${abast}</td>
+          <td style="padding:9px 8px;text-align:center;font-family:'DM Mono',monospace;font-size:13px;color:#1a1714">${finalV}</td>
+          ${obs ? `<td style="padding:9px 8px;font-size:10px;color:#8a6000;font-style:italic">${obs}</td>` : '<td></td>'}
+        </tr>`;
+      });
+    });
+
+    tabelaHTML = `
+      <!-- INÍCIO -->
+      <tr style="background:#FAB900">
+        <td colspan="3" style="padding:10px 12px;font-family:'Raleway',sans-serif;font-weight:900;font-size:13px;color:#7C0047;letter-spacing:1px">🌅 INÍCIO DO DIA</td>
+      </tr>
+      <tr style="background:#f5f3f0"><th style="width:55%;padding:8px 12px;text-align:left;font-size:10px;font-family:'DM Mono',monospace">PRODUTO</th><th style="text-align:center;width:15%;padding:8px;font-size:10px;font-family:'DM Mono',monospace">QUANTIDADE</th><th style="width:30%;padding:8px;font-size:10px;font-family:'DM Mono',monospace">OBSERVAÇÃO</th></tr>
+      ${tIni}
+      <!-- FINAL -->
+      <tr style="background:#7C0047">
+        <td colspan="4" style="padding:10px 12px;font-family:'Raleway',sans-serif;font-weight:900;font-size:13px;color:white;letter-spacing:1px">🌙 FINAL DO DIA</td>
+      </tr>
+      <tr style="background:#f5f3f0"><th style="width:45%;padding:8px 12px;text-align:left;font-size:10px;font-family:'DM Mono',monospace">PRODUTO</th><th style="text-align:center;width:13%;padding:8px;font-size:10px;font-family:'DM Mono',monospace">ABAST.</th><th style="text-align:center;width:13%;padding:8px;font-size:10px;font-family:'DM Mono',monospace">FINAL</th><th style="width:29%;padding:8px;font-size:10px;font-family:'DM Mono',monospace">OBSERVAÇÃO</th></tr>
+      ${tFin}`;
+    colHeaders = ''; // sem thead separado para sorvetes
+
+  } else {
+    // BEBIDAS (ini ou fin)
+    colHeaders = tipoAtual === 'fin'
+      ? `<th style="width:35%">PRODUTO</th><th style="text-align:center;width:10%">FREEZER</th><th style="text-align:center;width:10%">ESTOQUE</th><th style="text-align:center;width:10%">TOTAL</th><th style="text-align:center;width:10%">RECEBIDO</th><th style="width:25%">OBSERVAÇÃO</th>`
+      : `<th style="width:40%">PRODUTO</th><th style="text-align:center;width:12%">FREEZER</th><th style="text-align:center;width:12%">ESTOQUE</th><th style="text-align:center;width:12%">TOTAL</th><th style="width:24%">OBSERVAÇÃO</th>`;
+
+    Object.entries(grupos).forEach(([grupo, itens]) => {
+      tabelaHTML += grupoRow(grupo, tipoAtual === 'fin' ? 6 : 5);
+      itens.forEach(item => {
+        const id = slugify(item.nome);
+        const d = dados[id] || {};
+        const fr  = d.fr  !== undefined ? d.fr  : '—';
+        const est = d.est !== undefined ? d.est : '—';
+        const tot = d.total !== undefined ? d.total : (fr!=='—'||est!=='—' ? (parseInt(fr)||0)+(parseInt(est)||0) : '—');
+        const rec = d.rec !== undefined ? d.rec : '—';
+        const obs = d.obs || '';
+        const tagKS = item.ks ? ' <span style="background:#fdeef7;color:#7C0047;font-size:9px;padding:1px 5px;border-radius:8px">KS</span>' : '';
+        const tagS  = item.saindo ? ' <span style="background:#f0f0f0;color:#888;font-size:9px;padding:1px 5px;border-radius:8px">saindo</span>' : '';
+        const obsCell = obs ? `<td style="padding:9px 8px;font-size:10px;color:#8a6000;font-style:italic;background:#fffbea">${obs}</td>` : `<td></td>`;
+
+        if (tipoAtual === 'fin') {
+          tabelaHTML += `<tr style="border-bottom:1px solid #e8e3dc${obs?' background:#fffbea':''}">
+            <td style="padding:9px 12px;font-size:12px;font-weight:500">${item.nome}${tagKS}${tagS}</td>
+            <td style="padding:9px 8px;text-align:center;font-family:'DM Mono',monospace;font-size:13px">${fr}</td>
+            <td style="padding:9px 8px;text-align:center;font-family:'DM Mono',monospace;font-size:13px">${est}</td>
+            <td style="padding:9px 8px;text-align:center;font-family:'Raleway',sans-serif;font-size:14px;font-weight:800;color:${tot!=='—'&&tot>0?'#7C0047':'#aaa'}">${tot}</td>
+            <td style="padding:9px 8px;text-align:center;font-family:'DM Mono',monospace;font-size:13px;color:${rec!=='—'&&rec>0?'#1e6641':'#ccc'}">${rec}</td>
+            ${obsCell}</tr>`;
+        } else {
+          tabelaHTML += `<tr style="border-bottom:1px solid #e8e3dc${obs?' background:#fffbea':''}">
+            <td style="padding:9px 12px;font-size:12px;font-weight:500">${item.nome}${tagKS}${tagS}</td>
+            <td style="padding:9px 8px;text-align:center;font-family:'DM Mono',monospace;font-size:13px">${fr}</td>
+            <td style="padding:9px 8px;text-align:center;font-family:'DM Mono',monospace;font-size:13px">${est}</td>
+            <td style="padding:9px 8px;text-align:center;font-family:'Raleway',sans-serif;font-size:14px;font-weight:800;color:${tot!=='—'&&tot>0?'#7C0047':'#aaa'}">${tot}</td>
+            ${obsCell}</tr>`;
+        }
+      });
+    });
+  }
+
+  const html = `
+    <div style="font-family:'DM Sans',sans-serif;max-width:700px;margin:0 auto;padding:0">
+      <div style="background:#7C0047;padding:20px 28px;position:relative">
+        <div style="position:absolute;top:0;left:0;right:0;height:5px;background:#FAB900"></div>
+        <div style="display:flex;align-items:center;gap:14px">
+          <div style="width:44px;height:44px;background:#FAB900;border-radius:10px;display:flex;align-items:center;justify-content:center;font-family:'Raleway',sans-serif;font-weight:900;font-size:18px;color:#7C0047;flex-shrink:0">PP</div>
+          <div>
+            <div style="font-family:'Raleway',sans-serif;font-weight:900;font-size:10px;color:rgba(255,255,255,0.5);letter-spacing:2px;margin-bottom:2px">PEIXARIA PRIMUS — CONTAGEM DE ESTOQUE</div>
+            <div style="font-family:'Raleway',sans-serif;font-weight:900;font-size:18px;color:white">${tipoLabel[tipoAtual]}</div>
+            <div style="font-family:'DM Mono',monospace;font-size:11px;color:rgba(255,255,255,0.6);margin-top:3px">${dataFmt}${nome ? ' · Conferente: '+nome : ''}</div>
+          </div>
+        </div>
+      </div>
+      <table style="width:100%;border-collapse:collapse">
+        ${colHeaders ? `<thead><tr style="background:#f5f3f0">${colHeaders}</tr></thead>` : ''}
+        <tbody>${tabelaHTML}</tbody>
+      </table>
+      <div style="margin-top:20px;padding:14px 20px;background:#f5f3f0;display:flex;justify-content:space-between;align-items:center">
+        <div style="font-family:'DM Mono',monospace;font-size:10px;color:#aaa">Gerado em ${new Date().toLocaleString('pt-BR')} · Peixaria Primus</div>
+        <div style="font-family:'Raleway',sans-serif;font-weight:800;font-size:11px;color:#7C0047">${nomeArquivo}</div>
+      </div>
+    </div>`;
+
+  // Popula área oculta e gera PDF direto
+  const el = document.getElementById('pdf-content');
+  el.style.display = 'block';
+  el.style.width = '700px';
+  el.style.position = 'absolute';
+  el.style.left = '-9999px';
+  el.style.top = '0';
+  el.innerHTML = html;
+  // Aguarda renderização antes de capturar
+  await new Promise(r => setTimeout(r, 300));
+
+  // Atualiza botão
+  const fab = document.getElementById('fab-gerar');
+  fab.textContent = '⏳ Gerando PDF...';
+  fab.disabled = true;
+
+  try {
+    await html2pdf().set({
+      margin: [8, 8, 8, 8],
+      filename: nomeArquivo,
+      image: { type: 'jpeg', quality: 0.90 },
+      html2canvas: {
+        scale: 1.5,
+        useCORS: true,
+        logging: false,
+        allowTaint: true,
+        scrollY: 0
+      },
+      jsPDF: {
+        unit: 'mm',
+        format: 'a4',
+        orientation: 'portrait',
+        compress: true
+      },
+      pagebreak: {
+        mode: ['css', 'legacy'],
+        avoid: ['tr', '.grupo-header']
+      }
+    }).from(el).save();
+  } catch(err) {
+    alert('Erro ao gerar PDF: ' + err.message);
+  }
+
+  el.style.display = 'none';
+  el.style.position = '';
+  el.style.left = '';
+  el.style.top = '';
+  el.style.width = '';
+  fab.innerHTML = '📄 Gerar PDF da Contagem';
+  fab.disabled = false;
+}
+
+// ===== UTILS =====
+function slugify(str) {
+  return str.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]/g,'_');
+}
+
+// ===== INIT =====
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('data-input').value = new Date().toISOString().split('T')[0];
+});
+</script>
+</body>
+</html>
