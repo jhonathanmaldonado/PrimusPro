@@ -369,7 +369,7 @@
       <div class="banner banner-info" id="d1-banner"><span>📅</span><span id="d1-txt">O estoque inicial de hoje deve bater com o final do dia anterior.</span></div>
       <div class="upload-duplo" style="margin-top:12px">
         <div class="upload-slot" id="slot-d1b">
-          <input type="file" id="up-d1b" accept="image/*,application/pdf" onchange="handleD1(this,'beb')">
+          <input type="file" id="up-d1b" accept=".pdf,application/pdf" onchange="handleD1PDF(this,'beb')">
           <span class="slot-badge badge-beb">🍺 D-1 BEBIDAS</span>
           <div class="slot-icon">📄</div>
           <div class="slot-title">Foto/PDF D-1 -- Bebidas Final</div>
@@ -377,7 +377,7 @@
           <div id="ok-d1b" class="slot-ok">✅ Carregado!</div>
         </div>
         <div class="upload-slot" id="slot-d1s">
-          <input type="file" id="up-d1s" accept="image/*,application/pdf" onchange="handleD1(this,'sorv')">
+          <input type="file" id="up-d1s" accept=".pdf,application/pdf" onchange="handleD1PDF(this,'sorv')">
           <span class="slot-badge badge-sorv">🍨 D-1 SORVETES</span>
           <div class="slot-icon">📄</div>
           <div class="slot-title">Foto/PDF D-1 -- Sorvetes Final</div>
@@ -709,6 +709,9 @@ function avancarEtapa(e) {
 }
 
 // UPLOAD FOTOS
+// Controller global para cancelamento
+let _currentController = null;
+
 // ===== HANDLE PDF DO SISTEMA DE CONTAGEM =====
 const pdfTextos = { bebIni:'', bebFin:'', sorv:'' };
 const d1PDFTextos = { beb:'', sorv:'' };
@@ -1085,96 +1088,12 @@ function marcarD1(tipo) {
   if(S.d1.beb||S.d1.sorv) validarD1();
 }
 
-// ANALISAR FOTOS
 async function analisarFotos() {
-  S.dataAuditoria = document.getElementById('data-auditoria').value;
-  const load=document.getElementById('load-est');
-  if(load) load.classList.add('show');
-
-  const LISTA_BEB = `Louvada Primus, Heineken 600ml, Original, Heineken Zero Long Neck, Louvada German Longneck, Louvada German 500, Stella SG Longneck, Louvada Hop Zero, Coca Cola 1L, Guaraná 1L, Coca Zero 1L, Coca Cola Lata, Sprite Lata, Guaraná Lata, Fanta Laranja Lata, Coca Cola Zero Lata, Água Tônica, Schweppes Citrus, Coca Cola KS, Coca Cola KS Zero, Fanta Laranja KS, Sprite KS, Kuat KS, Kombucha Guaraná, Kombucha Morango, Kombucha de Limão, Água Prata Com Gás, Água Prata Sem Gás, Água Premium Com Gás, Água Premium Sem Gás, Sprite Lemon Fresch, Água Tônica Zero, Cappuccino, Café Ameno, Café Forza, Café Gourmet, Suco Acerola 500ml, Suco Abacaxi Hort. 500ml, Suco Maracujá 500ml, Suco Morango 500ml`;
-
-  const PBEB_INI=`Você é o PRIMUS PRO, auditor da Peixaria Primus.
-Esta foto mostra a tabela de ESTOQUE INICIAL DE BEBIDAS (cabeçalho "INICIO").
-Colunas: PRODUTO | FREEZER | ESTOQUE
-Traço ou branco = ZERO. Nunca invente.
-PRODUTOS: ${LISTA_BEB}
-Resposta:
-=== BEBIDAS -- INÍCIO ===
-Produto | Freezer: X | Estoque: X | Total: X
-=== ALERTAS ===
-[ilegíveis]`;
-
-  const PBEB_FIN=`Você é o PRIMUS PRO, auditor da Peixaria Primus.
-Esta foto mostra a tabela de ESTOQUE FINAL DE BEBIDAS (cabeçalho "FINAL").
-Colunas: PRODUTO | FREEZER | ESTOQUE | RECEBIDO
-Traço ou branco = ZERO. Nunca invente.
-PRODUTOS: ${LISTA_BEB}
-Resposta:
-=== BEBIDAS -- FINAL ===
-Produto | Freezer: X | Estoque: X | Recebido: X | Total: X
-=== ALERTAS ===
-[ilegíveis]`;
-
-  const PSORV=`Você é o PRIMUS PRO, auditor da Peixaria Primus.
-
-Esta imagem é a FOLHA DE SORVETES E EMBALAGENS com DUAS tabelas:
-- Tabela INÍCIO: Item | Quantidade inicial
-- Tabela FINAL: Item | Abast. | Final contado
-
-Traço (--) = zero. Branco = zero. Nunca invente.
-
-ITENS: Sorbet Moranja, Gelato Doce de Leite, Gelato Chocolatudo, Sorbet Manga+Maracujá, Sorbet Frutas Vermelhas, Gelato Iogurte+Frutas Amarelas, Gelato Cacau com Laranja 0%, Gelato Ninho Trufado, Gelato Paçoca Proteica, Chocolate Proteico, Gelato Cookie e Crean Proteico
-EMBALAGENS: P, M, G, Kit Festa, Espátula Descartável
-
-Resposta:
-=== SORVETES -- INÍCIO ===
-Item | Qtd: X
-...
-=== SORVETES -- FINAL ===
-Item | Abast.: X | Final: X
-...
-=== ALERTAS ===
-[dúvidas]`;
-
-  try {
-    let resultado='';
-    const loadTxt = document.getElementById('load-est-txt');
-
-    // Envia UMA foto por vez -- mais estável e rápido
-    let txtIni='', txtFin='', txtSorv='';
-
-    if(S.foto.bebIniF){
-      if(loadTxt) loadTxt.textContent = '📋 Lendo bebidas -- INÍCIO...';
-      const b64=S.foto.bebIniF.split(',')[1], mime=S.foto.bebIniF.split(';')[0].split(':')[1];
-      txtIni = await chamarIA([{role:'user',content:[{type:'image',source:{type:'base64',media_type:mime,data:b64}},{type:'text',text:PBEB_INI}]}]);
-      resultado += txtIni + '\n\n';
-    }
-
-    if(S.foto.bebFinF){
-      if(loadTxt) loadTxt.textContent = '📋 Lendo bebidas -- FINAL...';
-      const b64=S.foto.bebFinF.split(',')[1], mime=S.foto.bebFinF.split(';')[0].split(':')[1];
-      txtFin = await chamarIA([{role:'user',content:[{type:'image',source:{type:'base64',media_type:mime,data:b64}},{type:'text',text:PBEB_FIN}]}]);
-      resultado += txtFin + '\n\n';
-    }
-
-    if(S.foto.sorv){
-      if(loadTxt) loadTxt.textContent = '🍨 Lendo sorvetes e embalagens...';
-      const b64=S.foto.sorv.split(',')[1], mime=S.foto.sorv.split(';')[0].split(':')[1];
-      txtSorv = await chamarIA([{role:'user',content:[{type:'image',source:{type:'base64',media_type:mime,data:b64}},{type:'text',text:PSORV}]}]);
-      resultado += txtSorv;
-    }
-
-    if(loadTxt) loadTxt.textContent = '✅ Leitura concluída!';
-    S.estoqueTexto=resultado;
-    // Passa cada texto separado para popular corretamente
-    popularTabelaRevisao(txtIni, txtFin, txtSorv);
-    calcD1Hint();
-  } catch(err) {
-    alert('Erro na leitura: ' + err.message + '\n\nA tabela foi aberta em branco para preenchimento manual.');
-    popularTabelaRevisaoVazia();
-  }
-  if(load) load.classList.remove('show');
+  // Função legada — redireciona para processarPDFs
+  processarPDFs();
 }
+
+
 
 // ===== TABELA DE REVISÃO =====
 
@@ -1496,9 +1415,9 @@ function confirmarRevisao() {
 }
 
 function relereComIA() {
-  if (confirm('Deseja reler as fotos com IA? Os valores atuais serão substituídos.')) {
+  if (confirm('Deseja recarregar os PDFs? Os valores atuais serão substituídos.')) {
     document.getElementById('revisao-wrap').classList.remove('show');
-    analisarFotos();
+    processarPDFs();
   }
 }
 
