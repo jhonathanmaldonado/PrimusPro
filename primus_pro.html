@@ -296,7 +296,7 @@
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
           <div>
             <div style="font-family:'Raleway',sans-serif;font-weight:800;font-size:15px;color:var(--preto)">✏️ Revise e corrija os valores lidos</div>
-            <div style="font-size:11px;color:#999;font-family:'DM Mono',monospace;margin-top:2px">Confira cada número com a foto. Clique no campo para corrigir. Campos alterados ficam em roxo.</div>
+            <div style="font-size:11px;color:#999;font-family:'DM Mono',monospace;margin-top:2px">Confira cada número lido do PDF. Corrija se necessário e confirme.</div>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <span id="revisao-alertas" style="font-size:11px;color:var(--amarelo-status);font-family:'DM Mono',monospace"></span>
@@ -356,7 +356,7 @@
     <div class="card" id="etapa2-card" style="display:none">
       <div class="card-header">
         <div class="card-icon">🔄</div>
-        <div><div class="card-title">ETAPA 2 -- Validação D-1</div><div class="card-subtitle">Suba as fotos da auditoria do dia anterior</div></div>
+        <div><div class="card-title">ETAPA 2 -- Validação D-1</div><div class="card-subtitle">Suba os PDFs do dia anterior</div></div>
       </div>
       <div class="banner banner-info" id="d1-banner"><span>📅</span><span id="d1-txt">O estoque inicial de hoje deve bater com o final do dia anterior.</span></div>
       <div class="upload-duplo" style="margin-top:12px">
@@ -859,46 +859,82 @@ function montarEstoqueTexto(est) {
   return txt;
 }
 
+const PRODUTOS_BEB = [
+  'Louvada Primus','Heineken 600ml','Original','Heineken Zero Long Neck',
+  'Louvada German Longneck','Louvada German 500','Stella SG Longneck','Louvada Hop Zero',
+  'Coca Cola 1L','Guaraná 1L','Coca Zero 1L','Coca Cola Lata','Sprite Lata',
+  'Guaraná Lata','Fanta Laranja Lata','Coca Cola Zero Lata','Água Tônica',
+  'Schweppes Citrus','Coca Cola KS','Coca Cola KS Zero','Fanta Laranja KS',
+  'Sprite KS','Kuat KS','Kombucha Guaraná','Kombucha Morango','Kombucha de Limão',
+  'Água Prata Com Gás','Água Prata Sem Gás','Água Premium Com Gás','Água Premium Sem Gás',
+  'Sprite Lemon Fresch','Água Tônica Zero','Cappuccino','Café Ameno','Café Forza',
+  'Café Gourmet','Suco Acerola 500ml','Suco Abacaxi Hort. 500ml','Suco Maracujá 500ml','Suco Morango 500ml'
+];
+
+const PRODUTOS_SORV = [
+  'Sorbet Moranja','Gelato Doce de Leite','Gelato Chocolatudo','Sorbet Manga+Maracujá',
+  'Sorbet Frutas Vermelhas','Gelato Iogurte+Frutas Amarelas','Gelato Cacau com Laranja 0%',
+  'Gelato Ninho Trufado','Gelato Paçoca Proteica','Chocolate Proteico','Gelato Cookie e Crean Proteico',
+  'Embalagem P','Embalagem M','Embalagem G','Kit Festa','Espátula Descartável'
+];
+
+
 function popularTabelaRevisaoDeEstruturado() {
-  // Popula tabela de revisão com dados lidos do PDF
-  const tbIni = document.getElementById('rev-beb-ini');
-  const tbFin = document.getElementById('rev-beb-fin');
+  const tbIni  = document.getElementById('rev-beb-ini');
+  const tbFin  = document.getElementById('rev-beb-fin');
   const tbSIni = document.getElementById('rev-sorv-ini');
   const tbSFin = document.getElementById('rev-sorv-fin');
+
+  function inp(val, sec, prod, campo) {
+    const chave = normalizar(prod);
+    return `<input class="input-num" type="number" min="0" value="${val||0}"
+      data-sec="${sec}" data-prod="${chave}" data-campo="${campo}"
+      oninput="marcarAlterado(this)" style="width:60px;text-align:center">`;
+  }
 
   if(tbIni) {
     tbIni.innerHTML = '';
     PRODUTOS_BEB.forEach(prod => {
-      const v = S.estoqueEstruturado.bebIni[prod] || {};
+      const v = (S.estoqueEstruturado.bebIni||{})[prod] || {};
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${prod}</td><td>${v.freezer||0}</td><td>${v.estoque||0}</td><td><strong>${v.total||0}</strong></td>`;
+      tr.innerHTML = `<td class="prod-nome">${prod}</td>
+        <td>${inp(v.freezer,'bebIni',prod,'freezer')}</td>
+        <td>${inp(v.estoque,'bebIni',prod,'estoque')}</td>
+        <td><strong>${v.total||0}</strong></td>`;
       tbIni.appendChild(tr);
     });
   }
   if(tbFin) {
     tbFin.innerHTML = '';
     PRODUTOS_BEB.forEach(prod => {
-      const v = S.estoqueEstruturado.bebFin[prod] || {};
+      const v = (S.estoqueEstruturado.bebFin||{})[prod] || {};
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${prod}</td><td>${v.freezer||0}</td><td>${v.estoque||0}</td><td><strong>${v.total||0}</strong></td><td>${v.recebido||0}</td>`;
+      tr.innerHTML = `<td class="prod-nome">${prod}</td>
+        <td>${inp(v.freezer,'bebFin',prod,'freezer')}</td>
+        <td>${inp(v.estoque,'bebFin',prod,'estoque')}</td>
+        <td><strong>${v.total||0}</strong></td>
+        <td>${inp(v.recebido,'bebFin',prod,'recebido')}</td>`;
       tbFin.appendChild(tr);
     });
   }
   if(tbSIni) {
     tbSIni.innerHTML = '';
     PRODUTOS_SORV.forEach(prod => {
-      const v = S.estoqueEstruturado.sorvIni[prod] || {};
+      const v = (S.estoqueEstruturado.sorvIni||{})[prod] || {};
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${prod}</td><td><strong>${v.qtd||0}</strong></td>`;
+      tr.innerHTML = `<td class="prod-nome">${prod}</td>
+        <td>${inp(v.qtd,'sorvIni',prod,'qtd')}</td>`;
       tbSIni.appendChild(tr);
     });
   }
   if(tbSFin) {
     tbSFin.innerHTML = '';
     PRODUTOS_SORV.forEach(prod => {
-      const v = S.estoqueEstruturado.sorvFin[prod] || {};
+      const v = (S.estoqueEstruturado.sorvFin||{})[prod] || {};
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td>${prod}</td><td>${v.abastecido||0}</td><td><strong>${v.final||0}</strong></td>`;
+      tr.innerHTML = `<td class="prod-nome">${prod}</td>
+        <td>${inp(v.abastecido,'sorvFin',prod,'abastecido')}</td>
+        <td>${inp(v.final,'sorvFin',prod,'final')}</td>`;
       tbSFin.appendChild(tr);
     });
   }
@@ -939,31 +975,9 @@ function popularTabelaD1ComEstruturado() {
 
 
 
-// ANALISAR FOTOS
-async 
-
-
 // ===== TABELA DE REVISÃO =====
 
 // Produtos fixos das folhas
-const PRODUTOS_BEB = [
-  'Louvada Primus','Heineken 600ml','Original','Heineken Zero Long Neck',
-  'Louvada German Longneck','Louvada German 500','Stella SG Longneck','Louvada Hop Zero',
-  'Coca Cola 1L','Guaraná 1L','Coca Zero 1L','Coca Cola Lata','Sprite Lata',
-  'Guaraná Lata','Fanta Laranja Lata','Coca Cola Zero Lata','Água Tônica',
-  'Schweppes Citrus','Coca Cola KS','Coca Cola KS Zero','Fanta Laranja KS',
-  'Sprite KS','Kuat KS','Kombucha Guaraná','Kombucha Morango','Kombucha de Limão',
-  'Água Prata Com Gás','Água Prata Sem Gás','Água Premium Com Gás','Água Premium Sem Gás',
-  'Sprite Lemon Fresch','Água Tônica Zero','Cappuccino','Café Ameno','Café Forza',
-  'Café Gourmet','Suco Acerola 500ml','Suco Abacaxi Hort. 500ml','Suco Maracujá 500ml','Suco Morango 500ml'
-];
-
-const PRODUTOS_SORV = [
-  'Sorbet Moranja','Gelato Doce de Leite','Gelato Chocolatudo','Sorbet Manga+Maracujá',
-  'Sorbet Frutas Vermelhas','Gelato Iogurte+Frutas Amarelas','Gelato Cacau com Laranja 0%',
-  'Gelato Ninho Trufado','Gelato Paçoca Proteica','Chocolate Proteico','Gelato Cookie e Crean Proteico',
-  'Embalagem P','Embalagem M','Embalagem G','Kit Festa','Espátula Descartável'
-];
 
 // Estado da revisão
 S.revisao = {
@@ -971,9 +985,17 @@ S.revisao = {
 };
 
 function popularTabelaRevisaoVazia() {
-  if(!S.estoqueEstruturado) S.estoqueEstruturado = {bebIni:{},bebFin:{},sorvIni:{},sorvFin:{}};
-  S.estoqueTexto = montarEstoqueTexto(S.estoqueEstruturado);
-  avancarEtapa(2);
+  // Abre tabela em branco para preenchimento manual (usado quando PDF falha)
+  S.estoqueEstruturado = {bebIni:{},bebFin:{},sorvIni:{},sorvFin:{}};
+  PRODUTOS_BEB.forEach(p => {
+    S.estoqueEstruturado.bebIni[p] = {freezer:0,estoque:0,total:0};
+    S.estoqueEstruturado.bebFin[p] = {freezer:0,estoque:0,total:0,recebido:0};
+  });
+  PRODUTOS_SORV.forEach(p => {
+    S.estoqueEstruturado.sorvIni[p] = {qtd:0};
+    S.estoqueEstruturado.sorvFin[p] = {abastecido:0,final:0};
+  });
+  popularTabelaRevisaoDeEstruturado();
 }
 
 
@@ -1223,8 +1245,34 @@ function coletarRevisao() {
 }
 
 function confirmarRevisao() {
-  // Dados já estão em S.estoqueEstruturado — monta texto e avança
+  // Coleta valores dos inputs editáveis
   if(!S.estoqueEstruturado) S.estoqueEstruturado = {bebIni:{},bebFin:{},sorvIni:{},sorvFin:{}};
+
+  PRODUTOS_BEB.forEach(prod => {
+    const chave = normalizar(prod);
+    const fr  = parseInt(document.querySelector(`[data-sec="bebIni"][data-prod="${chave}"][data-campo="freezer"]`)?.value)||0;
+    const est = parseInt(document.querySelector(`[data-sec="bebIni"][data-prod="${chave}"][data-campo="estoque"]`)?.value)||0;
+    S.estoqueEstruturado.bebIni[prod] = { freezer:fr, estoque:est, total:fr+est };
+  });
+  PRODUTOS_BEB.forEach(prod => {
+    const chave = normalizar(prod);
+    const fr  = parseInt(document.querySelector(`[data-sec="bebFin"][data-prod="${chave}"][data-campo="freezer"]`)?.value)||0;
+    const est = parseInt(document.querySelector(`[data-sec="bebFin"][data-prod="${chave}"][data-campo="estoque"]`)?.value)||0;
+    const rec = parseInt(document.querySelector(`[data-sec="bebFin"][data-prod="${chave}"][data-campo="recebido"]`)?.value)||0;
+    S.estoqueEstruturado.bebFin[prod] = { freezer:fr, estoque:est, total:fr+est, recebido:rec };
+  });
+  PRODUTOS_SORV.forEach(prod => {
+    const chave = normalizar(prod);
+    const qtd = parseInt(document.querySelector(`[data-sec="sorvIni"][data-prod="${chave}"][data-campo="qtd"]`)?.value)||0;
+    S.estoqueEstruturado.sorvIni[prod] = { qtd };
+  });
+  PRODUTOS_SORV.forEach(prod => {
+    const chave = normalizar(prod);
+    const ab  = parseInt(document.querySelector(`[data-sec="sorvFin"][data-prod="${chave}"][data-campo="abastecido"]`)?.value)||0;
+    const fin = parseInt(document.querySelector(`[data-sec="sorvFin"][data-prod="${chave}"][data-campo="final"]`)?.value)||0;
+    S.estoqueEstruturado.sorvFin[prod] = { abastecido:ab, final:fin };
+  });
+
   S.estoqueTexto = montarEstoqueTexto(S.estoqueEstruturado);
   const wrap = document.getElementById('revisao-wrap');
   if(wrap) wrap.style.display = 'none';
