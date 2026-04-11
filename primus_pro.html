@@ -734,53 +734,66 @@ async function processarPDFs() {
   if(load) load.classList.remove('show');
 }
 
+function normPDF(s) {
+  // Remove acentos e normaliza texto para busca
+  return s.toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9 .+]/g,' ') // remove caracteres especiais/lixo
+    .replace(/\s+/g,' ').trim();
+}
+
 function parsearTextoBebidas(txt) {
-  const PRODS = ['Louvada Primus','Heineken 600ml','Original','Heineken Zero Long Neck','Louvada German Longneck','Louvada German 500','Stella SG Longneck','Louvada Hop Zero','Coca Cola KS','Coca Cola KS Zero','Fanta Laranja KS','Sprite KS','Kuat KS','Coca Cola 1L','Guarana 1L','Coca Zero 1L','Coca Cola Lata','Coca Cola Zero Lata','Sprite Lata','Guarana Lata','Fanta Laranja Lata','Agua Tonica','Agua Tonica Zero','Schweppes Citrus','Sprite Lemon Fresch','Agua Prata Com Gas','Agua Prata Sem Gas','Agua Premium Com Gas','Agua Premium Sem Gas','Kombucha Guarana','Kombucha Morango','Kombucha de Limao','Cappuccino','Cafe Ameno','Cafe Forza','Cafe Gourmet','Suco Acerola 500ml','Suco Abacaxi Hort. 500ml','Suco Maracuja 500ml','Suco Morango 500ml'];
   const PRODS_ORIG = ['Louvada Primus','Heineken 600ml','Original','Heineken Zero Long Neck','Louvada German Longneck','Louvada German 500','Stella SG Longneck','Louvada Hop Zero','Coca Cola KS','Coca Cola KS Zero','Fanta Laranja KS','Sprite KS','Kuat KS','Coca Cola 1L','Guaraná 1L','Coca Zero 1L','Coca Cola Lata','Coca Cola Zero Lata','Sprite Lata','Guaraná Lata','Fanta Laranja Lata','Água Tônica','Água Tônica Zero','Schweppes Citrus','Sprite Lemon Fresch','Água Prata Com Gás','Água Prata Sem Gás','Água Premium Com Gás','Água Premium Sem Gás','Kombucha Guaraná','Kombucha Morango','Kombucha de Limão','Cappuccino','Café Ameno','Café Forza','Café Gourmet','Suco Acerola 500ml','Suco Abacaxi Hort. 500ml','Suco Maracujá 500ml','Suco Morango 500ml'];
   const resultado = {};
-  const txtLow = txt.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const txtNorm = normPDF(txt);
 
-  PRODS.forEach((prod, i) => {
-    const idx = txtLow.indexOf(prod.toLowerCase());
+  PRODS_ORIG.forEach(prod => {
+    const prodNorm = normPDF(prod);
+    const idx = txtNorm.indexOf(prodNorm);
     if(idx >= 0) {
-      const trecho = txt.substring(idx + prod.length, idx + prod.length + 60);
+      // Pega trecho após o produto no texto normalizado
+      // Mas busca os números no texto original para não perder nada
+      const ratio = txt.length / txtNorm.length;
+      const idxOrig = Math.round(idx * ratio);
+      const trecho = txt.substring(idxOrig + prod.length, idxOrig + prod.length + 80);
       const nums = (trecho.match(/\d+/g)||[]).map(Number).filter(n=>n<9999);
       const n1=nums[0]||0, n2=nums[1]||0, n3=nums[2]||0, n4=nums[3]||0;
       const tot = n1+n2;
       const ehTotal = n3>0 && Math.abs(n3-tot)<=1;
-      resultado[PRODS_ORIG[i]] = { freezer:n1, estoque:n2, total:ehTotal?n3:tot, recebido:ehTotal?n4:(n3>0?n3:0) };
+      resultado[prod] = { freezer:n1, estoque:n2, total:ehTotal?n3:tot, recebido:ehTotal?n4:(n3>0?n3:0) };
     } else {
-      resultado[PRODS_ORIG[i]] = { freezer:0, estoque:0, total:0, recebido:0 };
+      resultado[prod] = { freezer:0, estoque:0, total:0, recebido:0 };
     }
   });
   return resultado;
 }
 
 function parsearTextoSorvetes(txt) {
-  const PRODS = ['Sorbet Moranja','Sorbet Manga+Maracuja','Sorbet Frutas Vermelhas','Gelato Doce de Leite','Gelato Chocolatudo','Gelato Iogurte+Frutas Amarelas','Gelato Cacau com Laranja 0%','Gelato Ninho Trufado','Gelato Pacoca Proteica','Chocolate Proteico','Gelato Cookie e Crean Proteico','Embalagem P','Embalagem M','Embalagem G','Kit Festa','Espatula Descartavel'];
   const PRODS_ORIG = ['Sorbet Moranja','Sorbet Manga+Maracujá','Sorbet Frutas Vermelhas','Gelato Doce de Leite','Gelato Chocolatudo','Gelato Iogurte+Frutas Amarelas','Gelato Cacau com Laranja 0%','Gelato Ninho Trufado','Gelato Paçoca Proteica','Chocolate Proteico','Gelato Cookie e Crean Proteico','Embalagem P','Embalagem M','Embalagem G','Kit Festa','Espátula Descartável'];
   const ini={}, fin={};
-  const txtNorm = txt.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const txtNorm = normPDF(txt);
   const idxFinal = txtNorm.indexOf('final do dia');
-  const txtIni = idxFinal>0 ? txtNorm.substring(0,idxFinal) : txtNorm;
-  const txtFin = idxFinal>0 ? txt.substring(idxFinal) : '';
-  const txtFinNorm = txtFin.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const txtIniNorm = idxFinal>0 ? txtNorm.substring(0,idxFinal) : txtNorm;
+  const txtFinNorm = idxFinal>0 ? txtNorm.substring(idxFinal) : '';
 
-  PRODS.forEach((prod, i) => {
-    const prodL = prod.toLowerCase();
-    const idx1 = txtIni.indexOf(prodL);
+  PRODS_ORIG.forEach(prod => {
+    const prodNorm = normPDF(prod);
+
+    const idx1 = txtIniNorm.indexOf(prodNorm);
     if(idx1>=0) {
-      const nums = (txtIni.substring(idx1+prod.length, idx1+prod.length+40).match(/\d+/g)||[]).map(Number);
-      ini[PRODS_ORIG[i]] = { qtd: nums[0]||0 };
-    } else ini[PRODS_ORIG[i]] = { qtd:0 };
+      const trecho = txtIniNorm.substring(idx1+prodNorm.length, idx1+prodNorm.length+50);
+      const nums = (trecho.match(/\d+/g)||[]).map(Number).filter(n=>n<9999);
+      ini[prod] = { qtd: nums[0]||0 };
+    } else ini[prod] = { qtd:0 };
 
     if(txtFinNorm) {
-      const idx2 = txtFinNorm.indexOf(prodL);
+      const idx2 = txtFinNorm.indexOf(prodNorm);
       if(idx2>=0) {
-        const nums = (txtFinNorm.substring(idx2+prod.length, idx2+prod.length+40).match(/\d+/g)||[]).map(Number);
-        fin[PRODS_ORIG[i]] = { abastecido:nums[0]||0, final:nums[1]||0 };
-      } else fin[PRODS_ORIG[i]] = { abastecido:0, final:0 };
-    } else fin[PRODS_ORIG[i]] = { abastecido:0, final:0 };
+        const trecho = txtFinNorm.substring(idx2+prodNorm.length, idx2+prodNorm.length+50);
+        const nums = (trecho.match(/\d+/g)||[]).map(Number).filter(n=>n<9999);
+        fin[prod] = { abastecido:nums[0]||0, final:nums[1]||0 };
+      } else fin[prod] = { abastecido:0, final:0 };
+    } else fin[prod] = { abastecido:0, final:0 };
   });
   return { ini, fin };
 }
