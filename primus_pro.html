@@ -228,12 +228,7 @@
       <button class="nav-btn" id="nav-historico" onclick="showView('historico',this)">📁 Histórico</button>
     </div>
   </div>
-  <div class="config-bar">
-    <label>🔑 CHAVE DE API ANTHROPIC:</label>
-    <input type="password" id="api-key-input" placeholder="sk-ant-api03-xxxx..." oninput="salvarChave(this.value)">
-    <span class="cfg-status cfg-miss" id="api-status">⚠ não configurada</span>
-    <span style="font-size:10px;color:rgba(255,255,255,0.35);font-family:'DM Mono',monospace">console.anthropic.com → API Keys</span>
-  </div>
+
 </div>
 
 <div class="main">
@@ -297,66 +292,8 @@
         <span id="load-est-txt">Lendo PDFs...</span>
       </div>
 
-      <!-- TABELA DE REVISÃO -->
-      <div class="revisao-wrap" id="revisao-wrap">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-          <div>
-            <div style="font-family:'Raleway',sans-serif;font-weight:800;font-size:15px;color:var(--preto)">✏️ Revise e corrija os valores lidos</div>
-            <div style="font-size:11px;color:#999;font-family:'DM Mono',monospace;margin-top:2px">Confira cada número com a foto. Clique no campo para corrigir. Campos alterados ficam em roxo.</div>
-          </div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <span id="revisao-alertas" style="font-size:11px;color:var(--amarelo-status);font-family:'DM Mono',monospace"></span>
-            <button class="btn btn-ghost" onclick="relereComIA()" style="font-size:12px;padding:7px 14px">🔄 Reler com IA</button>
-          </div>
-        </div>
-
-        <!-- TABELA BEBIDAS INÍCIO -->
-        <div class="secao-titulo" style="margin-top:0">🍺 BEBIDAS -- INÍCIO DO DIA</div>
-        <div class="table-container" style="margin-bottom:20px">
-          <table class="tabela-revisao">
-            <thead><tr><th>PRODUTO</th><th>FREEZER</th><th>ESTOQUE</th><th>TOTAL</th></tr></thead>
-            <tbody id="rev-beb-ini"></tbody>
-          </table>
-        </div>
-
-        <!-- TABELA BEBIDAS FINAL -->
-        <div class="secao-titulo">🍺 BEBIDAS -- FINAL DO DIA</div>
-        <div class="table-container" style="margin-bottom:20px">
-          <table class="tabela-revisao">
-            <thead><tr><th>PRODUTO</th><th>FREEZER</th><th>ESTOQUE</th><th>TOTAL</th><th>RECEBIDO</th></tr></thead>
-            <tbody id="rev-beb-fin"></tbody>
-          </table>
-        </div>
-
-        <!-- TABELA SORVETES INÍCIO -->
-        <div class="secao-titulo">🍨 SORVETES & EMBALAGENS -- INÍCIO</div>
-        <div class="table-container" style="margin-bottom:20px">
-          <table class="tabela-revisao">
-            <thead><tr><th>PRODUTO</th><th>QUANTIDADE</th></tr></thead>
-            <tbody id="rev-sorv-ini"></tbody>
-          </table>
-        </div>
-
-        <!-- TABELA SORVETES FINAL -->
-        <div class="secao-titulo">🍨 SORVETES & EMBALAGENS -- FINAL</div>
-        <div class="table-container" style="margin-bottom:20px">
-          <table class="tabela-revisao">
-            <thead><tr><th>PRODUTO</th><th>ABASTECIDO</th><th>FINAL CONTADO</th></tr></thead>
-            <tbody id="rev-sorv-fin"></tbody>
-          </table>
-        </div>
-
-        <div class="banner banner-ok" id="revisao-ok-banner" style="display:none">
-          ✅ Valores confirmados! Agora avance para a próxima etapa.
-        </div>
-
-        <div class="btn-row">
-          <button class="btn btn-primary" onclick="confirmarRevisao()">✅ Confirmar Valores e Avançar → D-1</button>
-        </div>
-      </div>
-
       <div class="btn-row">
-        <button class="btn btn-primary" id="btn-analisar" onclick="processarPDFs()" disabled>📄 Processar PDFs</button>
+        <button class="btn btn-primary" id="btn-analisar" onclick="processarPDFs()" disabled>📄 Processar e Avançar</button>
       </div>
     </div>
 
@@ -618,18 +555,7 @@ const S = {
 const CH = {};
 
 // API KEY
-function salvarChave(v) {
-  S.apiKey = v.trim();
-  const el = document.getElementById('api-status');
-  if (S.apiKey.startsWith('sk-ant')) {
-    el.textContent='✓ configurada';
-    el.className='cfg-status cfg-ok';
-    try { localStorage.setItem('primus_api_key', S.apiKey); } catch(e){}
-  } else {
-    el.textContent='⚠ não configurada';
-    el.className='cfg-status cfg-miss';
-  }
-}
+
 
 function carregarChaveSalva() {
   try {
@@ -644,51 +570,7 @@ function carregarChaveSalva() {
   } catch(e){}
 }
 
-async function chamarIA(messages, maxTok=1000, tentativa=1) {
-  if (!S.apiKey) throw new Error('Configure a Chave de API no topo da página (campo amarelo).');
-  const loadTxt = document.getElementById('load-est-txt');
-  if (tentativa > 1 && loadTxt) loadTxt.textContent = `Tentativa ${tentativa}/3 -- aguardando API...`;
 
-  // Timeout de 40 segundos por tentativa
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 40000);
-
-  try {
-    const r = await fetch('https://api.anthropic.com/v1/messages', {
-      method:'POST',
-      signal: controller.signal,
-      headers:{'Content-Type':'application/json','x-api-key':S.apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body: JSON.stringify({ model:'claude-sonnet-4-20250514', max_tokens:maxTok, messages })
-    });
-    clearTimeout(timeoutId);
-
-    if (r.status === 529 || r.status === 503) {
-      if (tentativa <= 3) {
-        const espera = tentativa * 5000; // 5s, 10s, 15s
-        if (loadTxt) loadTxt.textContent = `API sobrecarregada -- tentando em ${espera/1000}s... (${tentativa}/3)`;
-        await new Promise(res => setTimeout(res, espera));
-        return chamarIA(messages, maxTok, tentativa + 1);
-      }
-      throw new Error('API sobrecarregada. Tente novamente em alguns minutos.');
-    }
-    if (!r.ok) { const e=await r.json(); throw new Error(e.error?.message||r.statusText); }
-    const d = await r.json();
-    if (loadTxt) loadTxt.textContent = 'Analisando fotos com IA...';
-    return d.content?.map(c=>c.text||'').join('')||'';
-
-  } catch(err) {
-    clearTimeout(timeoutId);
-    if (err.name === 'AbortError') {
-      if (tentativa <= 3) {
-        if (loadTxt) loadTxt.textContent = `Timeout -- tentando novamente... (${tentativa}/3)`;
-        await new Promise(res => setTimeout(res, 3000));
-        return chamarIA(messages, maxTok, tentativa + 1);
-      }
-      throw new Error('Tempo esgotado após 3 tentativas. Verifique sua conexão e tente novamente.');
-    }
-    throw err;
-  }
-}
 
 // NAVEGAÇÃO
 function showView(v, btn) {
@@ -841,9 +723,11 @@ async function processarPDFs() {
     // Monta estoqueTexto para compatibilidade
     S.estoqueTexto = montarEstoqueTexto(S.estoqueEstruturado);
 
-    // Popula tabela de revisão para conferência
+    // Popula dados e avança direto — sem revisão manual
     popularTabelaRevisaoDeEstruturado();
     calcD1Hint();
+    // Avança automaticamente sem exibir tabela de revisão
+    setTimeout(() => confirmarRevisao(), 300);
 
   } catch(err) {
     alert('Erro ao processar PDFs: ' + err.message + '\nA tabela foi aberta em branco para preenchimento manual.');
