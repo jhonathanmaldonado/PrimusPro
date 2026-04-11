@@ -858,7 +858,11 @@ async function gerarPDF() {
   const [ano, mes, dia] = data.split('-');
   const tipoNomes = { ini:'INICIO', fin:'FINAL', sorv:'SORVETES' };
   const nomeArquivo = `${tipoNomes[tipoAtual]}_${dia}_${mes}_${ano}.pdf`;
+  const nomeJSON    = `${tipoNomes[tipoAtual]}_${dia}_${mes}_${ano}.json`;
   const dataFmt = new Date(data + 'T12:00:00').toLocaleDateString('pt-BR', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
+
+  // Exporta JSON com dados estruturados para o PRIMUS PRO
+  exportarJSON(nomeJSON, data, nome);
 
 
 
@@ -1015,6 +1019,51 @@ async function gerarPDF() {
 
   fab.innerHTML = '📄 Gerar PDF da Contagem';
   fab.disabled = false;
+}
+
+// ===== EXPORTAR JSON PARA PRIMUS PRO =====
+function exportarJSON(nomeArquivo, data, conferente) {
+  const lista = tipoAtual === 'sorv' ? SORVETES : BEBIDAS;
+  const jsonData = {
+    tipo: tipoAtual,
+    data,
+    conferente,
+    geradoEm: new Date().toISOString(),
+    produtos: {}
+  };
+
+  lista.forEach(item => {
+    const id = slugify(item.nome);
+    if (tipoAtual === 'sorv') {
+      const idIni = id + '_ini';
+      const idFin = id + '_fin';
+      const dIni = dados[idIni] || {};
+      const dFin = dados[idFin] || {};
+      jsonData.produtos[item.nome] = {
+        inicio: { qtd: dIni.qtd || 0, obs: dIni.obs || '' },
+        final:  { abastecido: dFin.abast || 0, final: dFin.final || 0, obs: dFin.obs || '' }
+      };
+    } else if (tipoAtual === 'fin') {
+      const d = dados[id] || {};
+      jsonData.produtos[item.nome] = {
+        freezer: d.fr || 0, estoque: d.est || 0,
+        total: d.total || 0, recebido: d.rec || 0,
+        obs: d.obs || ''
+      };
+    } else {
+      const d = dados[id] || {};
+      jsonData.produtos[item.nome] = {
+        freezer: d.fr || 0, estoque: d.est || 0,
+        total: d.total || 0, obs: d.obs || ''
+      };
+    }
+  });
+
+  const blob = new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = nomeArquivo; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 // ===== GERAR PDF COM JSPDF (texto real, selecionável) =====

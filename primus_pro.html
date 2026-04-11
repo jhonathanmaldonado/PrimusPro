@@ -258,30 +258,30 @@
       </div>
       <div class="banner banner-info" style="margin-bottom:16px">
         <span>💡</span>
-        <span>Suba os PDFs gerados pelo <strong>Sistema de Contagem Primus</strong>: <code>INICIO_DD_MM_AAAA.pdf</code>, <code>FINAL_DD_MM_AAAA.pdf</code> e <code>SORVETES_DD_MM_AAAA.pdf</code></span>
+        <span>Suba os JSONs gerados pelo <strong>Sistema de Contagem Primus</strong>: <code>INICIO_DD_MM_AAAA.json</code>, <code>FINAL_DD_MM_AAAA.json</code> e <code>SORVETES_DD_MM_AAAA.json</code></span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px">
         <div class="upload-slot" id="slot-beb-ini">
-          <input type="file" id="up-beb-ini" accept=".pdf,application/pdf" onchange="handlePDF(this,'bebIni')">
-          <span class="slot-badge badge-beb">🍺 PDF 1</span>
+          <input type="file" id="up-beb-ini" accept=".json,application/json" onchange="handleJSON(this,'bebIni')">
+          <span class="slot-badge badge-beb">🍺 JSON 1</span>
           <div class="slot-icon">📄</div>
-          <div class="slot-title">INICIO_DD_MM_AAAA.pdf</div>
+          <div class="slot-title">INICIO_DD_MM_AAAA.json</div>
           <div class="slot-sub">Bebidas — Início do Dia</div>
           <div id="ok-beb-ini" class="slot-ok">✅ Carregado!</div>
         </div>
         <div class="upload-slot" id="slot-beb-fin">
-          <input type="file" id="up-beb-fin" accept=".pdf,application/pdf" onchange="handlePDF(this,'bebFin')">
-          <span class="slot-badge badge-beb">🍺 PDF 2</span>
+          <input type="file" id="up-beb-fin" accept=".json,application/json" onchange="handleJSON(this,'bebFin')">
+          <span class="slot-badge badge-beb">🍺 JSON 2</span>
           <div class="slot-icon">📄</div>
-          <div class="slot-title">FINAL_DD_MM_AAAA.pdf</div>
+          <div class="slot-title">FINAL_DD_MM_AAAA.json</div>
           <div class="slot-sub">Bebidas — Final do Dia</div>
           <div id="ok-beb-fin" class="slot-ok">✅ Carregado!</div>
         </div>
         <div class="upload-slot" id="slot-sorv">
-          <input type="file" id="up-sorv" accept=".pdf,application/pdf" onchange="handlePDF(this,'sorv')">
-          <span class="slot-badge badge-sorv">🍨 PDF 3</span>
+          <input type="file" id="up-sorv" accept=".json,application/json" onchange="handleJSON(this,'sorv')">
+          <span class="slot-badge badge-sorv">🍨 JSON 3</span>
           <div class="slot-icon">📄</div>
-          <div class="slot-title">SORVETES_DD_MM_AAAA.pdf</div>
+          <div class="slot-title">SORVETES_DD_MM_AAAA.json</div>
           <div class="slot-sub">Sorvetes & Embalagens</div>
           <div id="ok-sorv" class="slot-ok">✅ Carregado!</div>
         </div>
@@ -348,7 +348,7 @@
       </div>
 
       <div class="btn-row">
-        <button class="btn btn-primary" id="btn-analisar" onclick="processarPDFs()" disabled>📄 Processar PDFs</button>
+        <button class="btn btn-primary" id="btn-analisar" onclick="processarPDFs()" disabled>📄 Processar JSONs</button>
       </div>
     </div>
 
@@ -356,12 +356,12 @@
     <div class="card" id="etapa2-card" style="display:none">
       <div class="card-header">
         <div class="card-icon">🔄</div>
-        <div><div class="card-title">ETAPA 2 -- Validação D-1</div><div class="card-subtitle">Suba os PDFs do dia anterior</div></div>
+        <div><div class="card-title">ETAPA 2 -- Validação D-1</div><div class="card-subtitle">Suba os JSONs do dia anterior</div></div>
       </div>
       <div class="banner banner-info" id="d1-banner"><span>📅</span><span id="d1-txt">O estoque inicial de hoje deve bater com o final do dia anterior.</span></div>
       <div class="upload-duplo" style="margin-top:12px">
         <div class="upload-slot" id="slot-d1b">
-          <input type="file" id="up-d1b" accept=".pdf,application/pdf" onchange="handleD1PDF(this,'beb')">
+          <input type="file" id="up-d1b" accept=".json,application/json" onchange="handleD1JSON(this,'beb')">
           <span class="slot-badge badge-beb">🍺 D-1 BEBIDAS</span>
           <div class="slot-icon">📄</div>
           <div class="slot-title">Foto/PDF D-1 -- Bebidas Final</div>
@@ -369,7 +369,7 @@
           <div id="ok-d1b" class="slot-ok">✅ Carregado!</div>
         </div>
         <div class="upload-slot" id="slot-d1s">
-          <input type="file" id="up-d1s" accept=".pdf,application/pdf" onchange="handleD1PDF(this,'sorv')">
+          <input type="file" id="up-d1s" accept=".json,application/json" onchange="handleD1JSON(this,'sorv')">
           <span class="slot-badge badge-sorv">🍨 D-1 SORVETES</span>
           <div class="slot-icon">📄</div>
           <div class="slot-title">Foto/PDF D-1 -- Sorvetes Final</div>
@@ -639,10 +639,56 @@ function avancarEtapa(e) {
 
 // UPLOAD FOTOS
 // ===== HANDLE PDF DO SISTEMA DE CONTAGEM =====
+const jsonDados   = { bebIni: null, bebFin: null, sorv: null };
+const d1JSONDados  = { beb: null, sorv: null };
+
+function handleJSON(inp, tipo) {
+  const f = inp.files[0]; if(!f) return;
+  const idMap = { bebIni:'beb-ini', bebFin:'beb-fin', sorv:'sorv' };
+  const slotId = idMap[tipo];
+  const slotEl = document.getElementById('slot-'+slotId);
+  const okEl   = document.getElementById('ok-'+slotId);
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      jsonDados[tipo] = JSON.parse(e.target.result);
+      okEl.style.display = 'block';
+      okEl.textContent = '✅ ' + f.name;
+      slotEl.classList.add('done');
+      if(jsonDados.bebIni || jsonDados.bebFin || jsonDados.sorv)
+        document.getElementById('btn-analisar').disabled = false;
+    } catch(err) {
+      alert('Erro ao ler JSON: ' + err.message);
+    }
+  };
+  reader.readAsText(f);
+}
+
+function handleD1JSON(inp, tipo) {
+  const f = inp.files[0]; if(!f) return;
+  const idMap = { beb:'d1b', sorv:'d1s' };
+  const slotId = idMap[tipo];
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      d1JSONDados[tipo] = JSON.parse(e.target.result);
+      document.getElementById('ok-'+slotId).style.display = 'block';
+      document.getElementById('slot-'+slotId).classList.add('done');
+      if(d1JSONDados.beb || d1JSONDados.sorv) processarD1JSON();
+    } catch(err) { alert('Erro ao ler JSON D-1: ' + err.message); }
+  };
+  reader.readAsText(f);
+}
+
+// Mantém handlePDF como alias para compatibilidade
+function handlePDF(inp, tipo) { handleJSON(inp, tipo); }
+function handleD1PDF(inp, tipo) { handleD1JSON(inp, tipo); }
+
 const pdfTextos = { bebIni:'', bebFin:'', sorv:'' };
 const d1PDFTextos = { beb:'', sorv:'' };
 
-function handlePDF(inp, tipo) {
+function handlePDF_legacy(inp, tipo) {
   const f = inp.files[0]; if(!f) return;
 
   const idMap = { bebIni:'beb-ini', bebFin:'beb-fin', sorv:'sorv' };
@@ -976,6 +1022,25 @@ function processarD1PDF() {
   }
 
   // Popula tabela D-1 editável
+  popularTabelaD1ComEstruturado();
+}
+
+function processarD1PDF() { processarD1JSON(); }
+
+function processarD1JSON() {
+  S.d1Estruturado = { bebFin:{}, sorvFin:{} };
+  if(d1JSONDados.beb) {
+    const j = d1JSONDados.beb;
+    Object.entries(j.produtos || {}).forEach(([prod, v]) => {
+      S.d1Estruturado.bebFin[prod] = { freezer: v.freezer||0, estoque: v.estoque||0, total: v.total||0, recebido: v.recebido||0 };
+    });
+  }
+  if(d1JSONDados.sorv) {
+    const j = d1JSONDados.sorv;
+    Object.entries(j.produtos || {}).forEach(([prod, v]) => {
+      S.d1Estruturado.sorvFin[prod] = { abastecido: v.final?.abastecido||0, final: v.final?.final||0 };
+    });
+  }
   popularTabelaD1ComEstruturado();
 }
 
