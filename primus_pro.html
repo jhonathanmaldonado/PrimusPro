@@ -718,50 +718,25 @@ const d1PDFTextos = { beb:'', sorv:'' };
 
 function handlePDF(inp, tipo) {
   const f = inp.files[0]; if(!f) return;
-
   const idMap = { bebIni:'beb-ini', bebFin:'beb-fin', sorv:'sorv' };
   const slotId = idMap[tipo];
-
-  // Mostra nome do arquivo no slot
   const slotEl = document.getElementById('slot-'+slotId);
   const okEl   = document.getElementById('ok-'+slotId);
 
-  // Tenta ler como ArrayBuffer (melhor para PDFs)
+  // Lê como ArrayBuffer e extrai texto do PDF
   const reader = new FileReader();
   reader.onload = e => {
-    try {
-      const arr = new Uint8Array(e.target.result);
-      const texto = extrairTextoPDF(arr);
-      if(texto && texto.length > 50) {
-        pdfTextos[tipo] = texto;
-        okEl.style.display = 'block';
-        okEl.textContent = '✅ ' + f.name;
-        slotEl.classList.add('done');
-        if(pdfTextos.bebIni || pdfTextos.bebFin || pdfTextos.sorv)
-          document.getElementById('btn-analisar').disabled = false;
-      } else {
-        // Fallback: tenta ler como texto binário
-        lerPDFcomoTexto(f, tipo, slotId, okEl, slotEl);
-      }
-    } catch(err) {
-      lerPDFcomoTexto(f, tipo, slotId, okEl, slotEl);
-    }
-  };
-  reader.onerror = () => lerPDFcomoTexto(f, tipo, slotId, okEl, slotEl);
-  reader.readAsArrayBuffer(f);
-}
-
-function lerPDFcomoTexto(f, tipo, slotId, okEl, slotEl) {
-  const r2 = new FileReader();
-  r2.onload = e => {
-    pdfTextos[tipo] = e.target.result || '';
+    const arr = new Uint8Array(e.target.result);
+    const texto = extrairTextoPDF(arr);
+    pdfTextos[tipo] = texto;
+    console.log('PDF lido ['+tipo+']:', texto.substring(0, 200));
     okEl.style.display = 'block';
     okEl.textContent = '✅ ' + f.name;
     slotEl.classList.add('done');
     if(pdfTextos.bebIni || pdfTextos.bebFin || pdfTextos.sorv)
       document.getElementById('btn-analisar').disabled = false;
   };
-  r2.readAsBinaryString(f);
+  reader.readAsArrayBuffer(f);
 }
 
 function handleD1PDF(inp, tipo) {
@@ -779,24 +754,50 @@ function handleD1PDF(inp, tipo) {
 
 function extrairTextoPDF(uint8arr) {
   try {
-    // Converte em chunks para não travar
-    let str = '';
+    // Converte para string binária
+    let raw = '';
     const chunk = 4096;
-    for(let i=0; i<uint8arr.length; i+=chunk) {
-      str += String.fromCharCode.apply(null, uint8arr.subarray(i, Math.min(i+chunk, uint8arr.length)));
+    for(let i = 0; i < uint8arr.length; i += chunk) {
+      raw += String.fromCharCode.apply(null, uint8arr.subarray(i, Math.min(i+chunk, uint8arr.length)));
     }
-    // Extrai strings entre parênteses (formato padrão PDF)
+
     const partes = [];
-    const regex = /\(([^)(\\]{1,150})\)/g;
-    let m;
-    while((m = regex.exec(str)) !== null) {
-      const t = m[1].trim();
-      if(t.length >= 2 && /[a-zA-Z0-9À-ÿ]/.test(t)) {
-        partes.push(t);
-      }
+
+    // Método 1: extrai strings de texto de objetos PDF (BT...ET blocks)
+    const btBlocks = raw.match(/BT[\s\S]{1,2000}?ET/g) || [];
+    btBlocks.forEach(bt => {
+      // Extrai conteúdo de Tj e TJ
+      const tjMatches = bt.match(/\(([^)]{1,150})\)\s*Tj/g) || [];
+      tjMatches.forEach(m => {
+        const t = m.replace(/\(|\)\s*Tj/g,'').trim();
+        if(t.length > 0) partes.push(t);
+      });
+      // TJ arrays
+      const tjArr = bt.match(/\[([^\]]+)\]\s*TJ/g) || [];
+      tjArr.forEach(m => {
+        const strings = m.match(/\(([^)]{1,100})\)/g) || [];
+        strings.forEach(s => partes.push(s.slice(1,-1)));
+      });
+    });
+
+    // Método 2: todas as strings entre parênteses com conteúdo legível
+    if(partes.length < 10) {
+      const allStrings = raw.match(/\(([^)(\]{1,100})\)/g) || [];
+      allStrings.forEach(m => {
+        const t = m.slice(1,-1).trim();
+        if(t.length >= 2 && /[a-zA-Z0-9À-ž]/.test(t)) {
+          partes.push(t);
+        }
+      });
     }
-    return partes.join(' ');
-  } catch(e) { return ''; }
+
+    const resultado = partes.join(' ');
+    console.log('Texto extraído:', resultado.substring(0, 300));
+    return resultado;
+  } catch(e) {
+    console.error('Erro extrairTextoPDF:', e);
+    return '';
+  }
 }
 
 
@@ -814,12 +815,24 @@ function parsearPDFBebidas(texto) {
   const PRODS = ['Louvada Primus','Heineken 600ml','Original','Heineken Zero Long Neck','Louvada German Longneck','Louvada German 500','Stella SG Longneck','Louvada Hop Zero','Coca Cola KS','Coca Cola KS Zero','Fanta Laranja KS','Sprite KS','Kuat KS','Coca Cola 1L','Guaraná 1L','Coca Zero 1L','Coca Cola Lata','Coca Cola Zero Lata','Sprite Lata','Guaraná Lata','Fanta Laranja Lata','Água Tônica','Água Tônica Zero','Schweppes Citrus','Sprite Lemon Fresch','Água Prata Com Gás','Água Prata Sem Gás','Água Premium Com Gás','Água Premium Sem Gás','Kombucha Guaraná','Kombucha Morango','Kombucha de Limão','Cappuccino','Café Ameno','Café Forza','Café Gourmet','Suco Acerola 500ml','Suco Abacaxi Hort. 500ml','Suco Maracujá 500ml','Suco Morango 500ml'];
   const txt = normalizarTextoPDF(texto);
 
+  // Também tenta busca por palavras-chave parciais para lidar com encoding PDF
+  function buscarNoPDF(txt, prod) {
+    // Busca exata
+    let idx = txt.toLowerCase().indexOf(prod.toLowerCase());
+    if(idx >= 0) return idx;
+    // Busca pelas primeiras palavras do produto (mais robusto)
+    const palavras = prod.split(' ').slice(0,2).join(' ');
+    idx = txt.toLowerCase().indexOf(palavras.toLowerCase());
+    return idx;
+  }
+
   PRODS.forEach(prod => {
-    // Busca o produto no texto e extrai números após ele
-    const idx = txt.toLowerCase().indexOf(prod.toLowerCase());
+    const idx = buscarNoPDF(txt, prod);
     if(idx >= 0) {
-      const trecho = txt.substring(idx + prod.length, idx + prod.length + 80);
-      const nums = (trecho.match(/\d+/g) || []).map(Number);
+      const trecho = txt.substring(idx + prod.length, idx + prod.length + 120);
+      // Remove traços (—) que indicam valor vazio
+      const trechoLimpo = trecho.replace(/[—–-]{1,3}/g, ' 0 ');
+      const nums = (trechoLimpo.match(/\d+/g) || []).map(Number).filter(n => n < 9999);
       const n1 = nums[0] || 0;
       const n2 = nums[1] || 0;
       const n3 = nums[2] || 0;
@@ -851,25 +864,32 @@ function parsearPDFSorvetes(texto) {
   const txtIni = idxFinal > 0 ? txt.substring(0, idxFinal) : txt;
   const txtFin = idxFinal > 0 ? txt.substring(idxFinal) : '';
 
-  PRODS.forEach(prod => {
-    const prodLower = prod.toLowerCase();
+  function buscarSorv(txt, prod) {
+    let idx = txt.toLowerCase().indexOf(prod.toLowerCase());
+    if(idx >= 0) return idx;
+    const palavras = prod.split(' ').slice(0,2).join(' ');
+    return txt.toLowerCase().indexOf(palavras.toLowerCase());
+  }
 
-    // Parseia INÍCIO
-    const idxIni = txtIni.toLowerCase().indexOf(prodLower);
+  PRODS.forEach(prod => {
+    // INÍCIO
+    const idxIni = buscarSorv(txtIni, prod);
     if(idxIni >= 0) {
-      const trecho = txtIni.substring(idxIni + prod.length, idxIni + prod.length + 60);
-      const nums = (trecho.match(/\d+/g) || []).map(Number);
+      const trecho = txtIni.substring(idxIni + prod.length, idxIni + prod.length + 80);
+      const trechoLimpo = trecho.replace(/[—–-]{1,3}/g, ' 0 ');
+      const nums = (trechoLimpo.match(/\d+/g) || []).map(Number).filter(n => n < 9999);
       resultadoIni[prod] = { qtd: nums[0] || 0 };
     } else {
       resultadoIni[prod] = { qtd: 0 };
     }
 
-    // Parseia FINAL
+    // FINAL
     if(txtFin) {
-      const idxFin = txtFin.toLowerCase().indexOf(prodLower);
+      const idxFin = buscarSorv(txtFin, prod);
       if(idxFin >= 0) {
-        const trecho = txtFin.substring(idxFin + prod.length, idxFin + prod.length + 60);
-        const nums = (trecho.match(/\d+/g) || []).map(Number);
+        const trecho = txtFin.substring(idxFin + prod.length, idxFin + prod.length + 80);
+        const trechoLimpo = trecho.replace(/[—–-]{1,3}/g, ' 0 ');
+        const nums = (trechoLimpo.match(/\d+/g) || []).map(Number).filter(n => n < 9999);
         resultadoFin[prod] = { abastecido: nums[0] || 0, final: nums[1] || 0 };
       } else {
         resultadoFin[prod] = { abastecido: 0, final: 0 };
