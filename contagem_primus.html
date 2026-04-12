@@ -351,33 +351,44 @@
   .col-headers.layout-sorv { grid-template-columns: 1fr 100px 120px; gap: 8px; }
   .col-headers.layout-fin { grid-template-columns: 1fr 80px 80px 70px 70px 120px; gap: 8px; }
 
-  /* BOTÃO GERAR PDF */
-  .fab {
+  /* BOTÕES INFERIORES */
+  .fab-wrap {
     position: fixed;
     bottom: 24px;
     right: 20px;
     left: 20px;
     max-width: 660px;
     margin: 0 auto;
+    display: none;
+    gap: 10px;
+  }
+  .fab {
+    flex: 1;
     background: var(--amarelo);
     color: var(--vinho);
     border: none;
     border-radius: 14px;
-    padding: 16px 24px;
+    padding: 16px 10px;
     font-family: 'Raleway', sans-serif;
     font-weight: 900;
-    font-size: 15px;
+    font-size: 14px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10px;
+    gap: 8px;
     box-shadow: 0 8px 24px rgba(250,185,0,0.4);
     transition: all 0.2s;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
   }
-  .fab:hover { background: #e5a800; transform: translateY(-2px); }
+  .fab-json {
+    background: var(--vinho);
+    color: white;
+    box-shadow: 0 8px 24px rgba(124,0,71,0.3);
+  }
+  .fab:hover { filter: brightness(0.92); transform: translateY(-2px); }
   .fab:active { transform: translateY(0); }
+  .fab:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
   /* TELA INICIAL */
   .tela-inicio {
@@ -523,9 +534,14 @@
   </div>
 </div>
 
-<button class="fab" id="fab-gerar" style="display:none" onclick="gerarPDF()">
-  📄 Gerar PDF + JSON
-</button>
+<div class="fab-wrap" id="fab-wrap">
+  <button class="fab" id="fab-pdf" onclick="soGerarPDF()">
+    📄 Baixar PDF
+  </button>
+  <button class="fab fab-json" id="fab-json" onclick="soGerarJSON()">
+    📋 Baixar JSON
+  </button>
+</div>
 <div id="fab-hint" style="display:none;text-align:center;font-size:11px;color:#888;font-family:'DM Mono',monospace;padding:0 20px 16px;position:fixed;bottom:0;left:0;right:0;background:rgba(245,243,240,0.95)">
   📋 JSON → Primus Pro &nbsp;|&nbsp; 📄 PDF → conferência e arquivo
 </div>
@@ -609,7 +625,7 @@ function selecionarTipo(tipo) {
   });
   renderizarFormulario();
   document.getElementById('progresso-bar').style.display = 'flex';
-  document.getElementById('fab-gerar').style.display = 'flex';
+  document.getElementById('fab-wrap').style.display = 'flex';
     document.getElementById('fab-hint').style.display = 'block';
   atualizarProgresso();
 }
@@ -782,7 +798,7 @@ function renderizarSorvetes(main) {
     div.innerHTML = `<div class="grupo-header"><span class="grupo-icon">${icon}</span><span class="grupo-nome">${nomePartes.join(' ')}</span><span class="grupo-count">${itens.length} itens</span></div>`;
     const colHeader = document.createElement('div');
     colHeader.className = 'col-headers layout-sorv-fin';
-    colHeader.innerHTML = `<div class="col-header">Produto</div><div class="col-header">Abastecido</div><div class="col-header">Final (c/ abast.)</div><div class="col-header">Total</div><div class="col-header">Obs</div>`;
+    colHeader.innerHTML = `<div class="col-header">Produto</div><div class="col-header">Abastecido</div><div class="col-header">Final</div><div class="col-header">Total</div><div class="col-header">Obs</div>`;
     div.appendChild(colHeader);
     itens.forEach(item => {
       const id = slugify(item.nome) + '_fin';
@@ -816,7 +832,7 @@ function atualizarSorvFin(id, input) {
   const final  = parseInt(document.getElementById(id+'_final')?.value) || 0;
   dados[id].abast = abast;
   dados[id].final = final;
-  dados[id].total = final; // final já inclui o abastecido
+  dados[id].total = abast + final;
   input.classList.toggle('filled', input.value !== '' && input.value !== '0');
   const totEl = document.getElementById(id+'_tot');
   if(totEl) { totEl.textContent = dados[id].total > 0 ? dados[id].total : '—'; }
@@ -843,30 +859,47 @@ function atualizarProgresso() {
   document.getElementById('prog-pct').textContent = pct + '%';
 }
 
-// ===== GERAR PDF =====
-
-
-async function gerarPDF() {
+// ===== VALIDAÇÃO COMUM =====
+function validarCampos() {
   const data = document.getElementById('data-input').value;
   const nome = document.getElementById('nome-input').value.trim();
-
-  if (!data) { alert('Informe a data antes de gerar o PDF.'); return; }
-  if (!tipoAtual) { alert('Selecione o tipo de contagem.'); return; }
-  if (!nome) { 
+  if (!data) { alert('Informe a data antes de exportar.'); return null; }
+  if (!tipoAtual) { alert('Selecione o tipo de contagem.'); return null; }
+  if (!nome) {
     document.getElementById('nome-input').focus();
     document.getElementById('nome-input').style.borderColor = '#FAB900';
-    alert('Informe o nome do responsável pela contagem antes de gerar o PDF.'); 
-    return; 
+    alert('Informe o nome do responsável antes de exportar.');
+    return null;
   }
+  return { data, nome };
+}
+
+// ===== BAIXAR JSON =====
+function soGerarJSON() {
+  const campos = validarCampos();
+  if (!campos) return;
+  const { data, nome } = campos;
+  const [ano, mes, dia] = data.split('-');
+  const tipoNomes = { ini:'INICIO', fin:'FINAL', sorv:'SORVETES' };
+  const nomeJSON = `${tipoNomes[tipoAtual]}_${dia}_${mes}_${ano}.json`;
+  const btn = document.getElementById('fab-json');
+  btn.textContent = '⏳ Gerando...';
+  btn.disabled = true;
+  exportarJSON(nomeJSON, data, nome);
+  btn.innerHTML = '📋 Baixar JSON';
+  btn.disabled = false;
+}
+
+// ===== BAIXAR PDF =====
+async function soGerarPDF() {
+  const campos = validarCampos();
+  if (!campos) return;
+  const { data, nome } = campos;
 
   const [ano, mes, dia] = data.split('-');
   const tipoNomes = { ini:'INICIO', fin:'FINAL', sorv:'SORVETES' };
   const nomeArquivo = `${tipoNomes[tipoAtual]}_${dia}_${mes}_${ano}.pdf`;
-  const nomeJSON    = `${tipoNomes[tipoAtual]}_${dia}_${mes}_${ano}.json`;
   const dataFmt = new Date(data + 'T12:00:00').toLocaleDateString('pt-BR', {weekday:'long', year:'numeric', month:'long', day:'numeric'});
-
-  // Exporta JSON com dados estruturados para o PRIMUS PRO
-  exportarJSON(nomeJSON, data, nome);
 
 
 
@@ -1010,10 +1043,9 @@ async function gerarPDF() {
 
   // PDF gerado via jsPDF com texto real
 
-  // Atualiza botão
-  const fab = document.getElementById('fab-gerar');
-  fab.textContent = '⏳ Gerando PDF...';
-  fab.disabled = true;
+  const btn = document.getElementById('fab-pdf');
+  btn.textContent = '⏳ Gerando PDF...';
+  btn.disabled = true;
 
   try {
     gerarPDFcomJsPDF(nomeArquivo, tipoLabel[tipoAtual], dataFmt, nome);
@@ -1021,8 +1053,8 @@ async function gerarPDF() {
     alert('Erro ao gerar PDF: ' + err.message);
   }
 
-  fab.innerHTML = '📄 Gerar PDF + JSON';
-  fab.disabled = false;
+  btn.innerHTML = '📄 Baixar PDF';
+  btn.disabled = false;
 }
 
 // ===== EXPORTAR JSON PARA PRIMUS PRO =====
@@ -1234,7 +1266,7 @@ function gerarPDFcomJsPDF(nomeArquivo, titulo, dataFmt, conferente) {
       itens.forEach(item => {
         const id = slugify(item.nome) + '_fin';
         const d = dados[id] || {};
-        const ab = d.abast||0, fin = d.final||0, tot = fin; // final já inclui o abastecido
+        const ab = d.abast||0, fin = d.final||0, tot = ab+fin;
         drawRow([
           {value: item.nome, x: M+2},
           {value: ab||'—', x: M+CW*0.62, align:'center'},
