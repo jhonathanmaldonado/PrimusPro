@@ -1110,8 +1110,10 @@ function extrairSecao(texto, inicio, fins) {
 
 function normalizar(str) {
   return str.toLowerCase()
+    .replace(/\+/g,' ')          // trata + como espaço antes de tudo
     .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
-    .replace(/[^a-z0-9\s]/g,'').trim();
+    .replace(/[^a-z0-9\s]/g,'')
+    .replace(/\s+/g,' ').trim(); // colapsa espaços duplos
 }
 
 function buscarValor(secao, produto, campo) {
@@ -1684,7 +1686,8 @@ async function consolidar() {
       const finalContado = fin?.final || 0;
       const abastecido   = fin?.abastecido || 0;
       const vend = vendas[normalizar(prod)] || 0;
-      const esperado = inicial + abastecido - vend;
+      // finalContado já inclui o abastecido — fórmula: inicial - vendas = esperado
+      const esperado = inicial - vend;
       const dif = finalContado - esperado;
 
       const cat = prod.toLowerCase().includes('embalagem')||prod.toLowerCase().includes('espat')||prod.toLowerCase().includes('kit')
@@ -1971,7 +1974,7 @@ function gerarCharts(todos) {
 
       // Só inclui se for produto de refeição — exclui bebidas, sorvetes, embalagens, entradas rápidas
       const nNorm = nome.toLowerCase();
-      const ehBebida = ['louvada','heineken','original','coca','guarana','sprite','fanta','agua','kombucha','cafe','suco','kuat','schweppes','shot','cdb','cappuccino','caipir','copo'].some(k=>nNorm.includes(k));
+      const ehBebida = ['louvada','heineken','original','coca','guarana','sprite','fanta','agua','kombucha','cafe','suco','kuat','schweppes','shot','cdb','cappuccino','caipir','copo','stella','skol','brahma','longneck','long neck','dose','cachaca','cachaça','vodka','whisky','whiskey','cerveja','drinks','drink','drinque','tonica','gin','rum','vinho','espumante','soda'].some(k=>nNorm.includes(k));
       const ehSorv   = ['sorbet','gelato','chocolate proteico','embalagem','kit festa','espatula'].some(k=>nNorm.includes(k));
       const ehMisc   = ['passaport','reposicao','brownie','guarnicao','batata frita','bolinho','pastel','caldo','mix de petisco','mojiquinha','costelinha','pintado a palito','unidade de file','unidade de ventrecha','individual especial'].some(k=>nNorm.includes(k));
 
@@ -2201,12 +2204,18 @@ ${notasHTML ? `
 </body>
 </html>`;
 
-  const w = window.open('', '_blank', 'width=1200,height=900');
-  if (!w) { alert('Permita pop-ups para exportar o PDF.'); return; }
-  w.document.write(html);
-  w.document.close();
+  // Download direto — funciona no celular sem precisar de popup
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nome.replace('.pdf', '.html');
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
 
-  S.historico.push({data, arquivo: nome, ts: new Date().toLocaleString('pt-BR')});
+  S.historico.push({data, arquivo: nome.replace('.pdf','.html'), ts: new Date().toLocaleString('pt-BR')});
   renderHist();
 }
 function renderHist(){
