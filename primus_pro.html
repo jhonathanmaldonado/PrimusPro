@@ -651,6 +651,7 @@ function handleJSON(inp, tipo) {
   reader.onload = e => {
     try {
       jsonDados[tipo] = JSON.parse(e.target.result);
+      console.log('JSON carregado ['+tipo+']:', Object.keys(jsonDados[tipo].produtos||{}).length, 'produtos');
       okEl.style.display = 'block';
       okEl.textContent = '✅ ' + f.name;
       slotEl.classList.add('done');
@@ -819,6 +820,13 @@ async function processarJSONs() {
 
   try {
     S.estoqueEstruturado = { bebIni:{}, bebFin:{}, sorvIni:{}, sorvFin:{} };
+
+    // DEBUG — confirmar que jsonDados está populado
+    console.log('jsonDados.bebIni:', jsonDados.bebIni ? 'OK' : 'VAZIO');
+    console.log('jsonDados.bebFin:', jsonDados.bebFin ? 'OK' : 'VAZIO');
+    console.log('jsonDados.sorv:', jsonDados.sorv ? 'OK' : 'VAZIO');
+    if(jsonDados.bebIni) console.log('Louvada Primus INÍCIO:', jsonDados.bebIni.produtos?.['Louvada Primus']);
+    if(jsonDados.sorv) console.log('Gelato Doce de Leite SORVETES:', jsonDados.sorv.produtos?.['Gelato Doce de Leite']);
 
     // Lê diretamente do JSON estruturado
     if(jsonDados.bebIni) {
