@@ -782,7 +782,7 @@ function renderizarSorvetes(main) {
     div.innerHTML = `<div class="grupo-header"><span class="grupo-icon">${icon}</span><span class="grupo-nome">${nomePartes.join(' ')}</span><span class="grupo-count">${itens.length} itens</span></div>`;
     const colHeader = document.createElement('div');
     colHeader.className = 'col-headers layout-sorv-fin';
-    colHeader.innerHTML = `<div class="col-header">Produto</div><div class="col-header">Abastecido</div><div class="col-header">Final</div><div class="col-header">Total</div><div class="col-header">Obs</div>`;
+    colHeader.innerHTML = `<div class="col-header">Produto</div><div class="col-header">Abastecido</div><div class="col-header">Final (c/ abast.)</div><div class="col-header">Total</div><div class="col-header">Obs</div>`;
     div.appendChild(colHeader);
     itens.forEach(item => {
       const id = slugify(item.nome) + '_fin';
@@ -816,7 +816,7 @@ function atualizarSorvFin(id, input) {
   const final  = parseInt(document.getElementById(id+'_final')?.value) || 0;
   dados[id].abast = abast;
   dados[id].final = final;
-  dados[id].total = abast + final;
+  dados[id].total = final; // final já inclui o abastecido
   input.classList.toggle('filled', input.value !== '' && input.value !== '0');
   const totEl = document.getElementById(id+'_tot');
   if(totEl) { totEl.textContent = dados[id].total > 0 ? dados[id].total : '—'; }
@@ -1234,7 +1234,7 @@ function gerarPDFcomJsPDF(nomeArquivo, titulo, dataFmt, conferente) {
       itens.forEach(item => {
         const id = slugify(item.nome) + '_fin';
         const d = dados[id] || {};
-        const ab = d.abast||0, fin = d.final||0, tot = ab+fin;
+        const ab = d.abast||0, fin = d.final||0, tot = fin; // final já inclui o abastecido
         drawRow([
           {value: item.nome, x: M+2},
           {value: ab||'—', x: M+CW*0.62, align:'center'},
