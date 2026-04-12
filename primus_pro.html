@@ -1556,19 +1556,20 @@ function parsearRelatorio(texto) {
     }
   }
 
-  // Extrai totais gerais (linha com total geral)
-  // Usa o TOTAL que inclui acréscimo de serviço (10%)
-  const totalMatch = texto.match(/total:\s*([\d.]+,[\d]+)/i);
-  const qtdMatch = texto.match(/qtd:\s*([\d.,]+)/i);
-  const descMatch = texto.match(/descontos:\s*(-?[\d.,]+)/i);
+  // Extrai totais gerais do rodapé (última ocorrência de cada campo)
+  // total: inclui acréscimo de serviço (10%) -- campo correto para faturamento real
+  const totalMatches = [...texto.matchAll(/\btotal:\s*([\d.]+,[\d]+)/gi)];
+  const qtdMatches   = [...texto.matchAll(/\bqtd:\s*([\d.,]+)/gi)];
+  const descMatches  = [...texto.matchAll(/\bdescontos:\s*(-?[\d.,]+)/gi)];
 
-  if (totalMatch) faturamento = totalMatch[1];
-  if (qtdMatch) itens = qtdMatch[1].replace(',00','');
-  if (descMatch) descontos = descMatch[1].replace('-','');
+  // Usa a última ocorrência (rodapé do relatório)
+  if (totalMatches.length) faturamento = totalMatches[totalMatches.length-1][1];
+  if (qtdMatches.length)   itens = String(Math.round(parseFloat(qtdMatches[qtdMatches.length-1][1].replace(/\./g,'').replace(',','.'))));
+  if (descMatches.length)  descontos = descMatches[descMatches.length-1][1].replace('-','');
 
   const fat = parseFloat(faturamento.replace(/\./g,'').replace(',','.'));
   const it = parseInt(itens) || 1;
-  const numVendas = texto.match(/quantidade.*?([\d.]+)/i); const qt = numVendas ? parseFloat(numVendas[1].replace(/\./g,'')) : it; const ticket = (fat / (qt||1)).toFixed(2).replace('.',',');
+  const ticket = (fat / (it||1)).toFixed(2).replace('.',',');
 
   // Resumo formatado
   const top5prod = [...produtos].sort((a,b)=>b.qtd-a.qtd).slice(0,5);
@@ -1742,7 +1743,7 @@ function parsearVendasParaConsolidacao(texto) {
     const partes = linha.split('\t');
     if(partes.length < 2) continue;
     const nome = partes[0].trim();
-    const qtd  = parseFloat(partes[1].replace(/\./g,'').replace(',','.')) || 0;
+    const qtd  = Math.round(parseFloat(partes[1].replace(/\./g,'').replace(',','.')) || 0);
     if(nome && qtd > 0 && !nome.match(/^\d{2}\/\d{2}/)) {
       mapa[normalizar(nome)] = qtd;
     }
