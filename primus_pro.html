@@ -6,7 +6,7 @@
 <title>PRIMUS PRO -- Sistema de Auditoria</title>
 <link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;600;800;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
 <style>
   :root {
     --amarelo: #FAB900;
@@ -1999,49 +1999,215 @@ function confirmar(){
   setTimeout(()=>{load.classList.remove('show');showView('relatorio',document.getElementById('nav-relatorio'));window.scrollTo({top:0,behavior:'smooth'});},1000);
 }
 
-// PDF
-async function exportarPDF() {
-  const data=S.dataAuditoria||new Date().toISOString().split('T')[0];
-  const [ano,mes,dia]=data.split('-');
-  const nome=`Conferencia_${dia}_${mes}_${ano}.pdf`;
-  const el=document.getElementById('view-relatorio');
+// PDF -- gera janela de impressão limpa
+function exportarPDF() {
+  const data = S.dataAuditoria || new Date().toISOString().split('T')[0];
+  const [ano, mes, dia] = data.split('-');
+  const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const dataExibicao = `${parseInt(dia)} de ${meses[parseInt(mes)-1]} de ${ano}`;
+  const nome = `Conferencia_${dia}_${mes}_${ano}.pdf`;
 
-  // Salva largura original
-  const larguraOriginal = el.style.width;
-  // Força largura fixa para evitar corte
-  el.style.width = '1200px';
-  el.style.maxWidth = '1200px';
+  // ── KPIs ──────────────────────────────────────────────────────────────────
+  const kpis = S.kpis || {};
+  const fat   = document.getElementById('kpi-fat')?.textContent   || '--';
+  const itens = document.getElementById('kpi-itens')?.textContent || '--';
+  const ticket= document.getElementById('kpi-ticket')?.textContent|| '--';
+  const bebKpi= document.getElementById('kpi-beb')?.textContent   || '--';
+  const sorvKpi=document.getElementById('kpi-sorv')?.textContent  || '--';
+  const desc  = document.getElementById('kpi-desc')?.textContent  || '--';
 
-  try {
-    await html2pdf().set({
-      margin: [10, 10, 10, 10],
-      filename: nome,
-      image: { type: 'jpeg', quality: 0.92 },
-      html2canvas: {
-        scale: 1.5,
-        useCORS: true,
-        width: 1200,
-        windowWidth: 1200,
-        scrollY: 0
-      },
-      jsPDF: {
-        unit: 'mm',
-        format: 'a4',
-        orientation: 'landscape'
-      },
-      pagebreak: {
-        mode: ['avoid-all', 'css', 'legacy'],
-        before: '.card',
-        avoid: ['.kpi-grid', '.charts-grid', '.chart-card', 'canvas', '.ranking-item']
-      }
-    }).from(el).save();
-    S.historico.push({data,arquivo:nome,ts:new Date().toLocaleString('pt-BR')});
-    renderHist();
-  } catch(err){alert('Erro: '+err.message);}
+  // ── Banners (faltas / sobras) ─────────────────────────────────────────────
+  const bannersHTML = document.getElementById('rel-banners')?.innerHTML || '';
 
-  // Restaura largura original
-  el.style.width = larguraOriginal;
-  el.style.maxWidth = '';
+  // ── Ranking de Vendedores ─────────────────────────────────────────────────
+  const rankHTML = (() => {
+    const vends = Array.isArray(S.vendedores) ? S.vendedores : Object.values(S.vendedores||{});
+    if (!vends.length) return '<p style="color:#aaa;font-size:12px">Sem dados de vendedores</p>';
+    const max = vends[0]?.total || 1;
+    return vends.map((v,i) => {
+      const pct = Math.round((v.total/max)*100);
+      const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}º`;
+      return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #eee">
+        <div style="width:32px;text-align:center;font-weight:900;font-size:14px">${medal}</div>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:12px;margin-bottom:3px">${v.nome}</div>
+          <div style="height:5px;background:#f0f0f0;border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#7C0047,#FAB900);border-radius:3px"></div>
+          </div>
+        </div>
+        <div style="text-align:right;min-width:90px">
+          <div style="font-family:monospace;font-weight:700;font-size:13px">${v.total.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
+          ${v.vendas?`<div style="font-size:10px;color:#aaa">${v.vendas} vendas</div>`:''}
+        </div>
+      </div>`;
+    }).join('');
+  })();
+
+  // ── Tabela genérica ───────────────────────────────────────────────────────
+  function montarTabela(dados) {
+    if (!dados || !dados.length) return '<p style="color:#aaa;font-size:12px;padding:10px">Sem dados</p>';
+    const statusColor = {batido:'#1e6641',falta:'#b5451b',sobra:'#b5850a',ks:'#7C0047'};
+    const statusBg    = {batido:'#e8f5ed',falta:'#fdf0eb',sobra:'#fdf8ec',ks:'#fdeef7'};
+    const statusLabel = {batido:'✅ BATIDO',falta:'❌ FALTA',sobra:'⚠️ SOBRA',ks:'🔷 KS'};
+    const rows = dados.map(r => {
+      const st = r.status||'sobra';
+      return `<tr style="background:${statusBg[st]||'white'}">
+        <td style="font-weight:600;padding:7px 10px;border-bottom:1px solid #eee;font-size:11px">${r.produto||r.nome||''}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center">${r.inicio??0}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center">${r.recebido??0}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center">${r.abastecido??0}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center">${r.vendas??0}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center">${r.ajuste??0}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center">${r.esperado??0}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center;font-weight:700">${r.final??0}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center;font-weight:700;color:${r.diferenca>0?'#1e6641':r.diferenca<0?'#b5451b':'#999'}">${r.diferenca>0?'+':''}${r.diferenca??0}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #eee;text-align:center"><span style="background:${statusBg[st]};color:${statusColor[st]};font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap">${statusLabel[st]||st}</span></td>
+      </tr>`;
+    }).join('');
+    return `<table style="width:100%;border-collapse:collapse;font-size:11px">
+      <thead><tr style="background:#1a1714;color:white">
+        <th style="padding:8px 10px;text-align:left;font-family:monospace;font-size:10px;letter-spacing:.4px">PRODUTO</th>
+        <th style="padding:8px 10px;text-align:center;font-family:monospace;font-size:10px">INÍCIO</th>
+        <th style="padding:8px 10px;text-align:center;font-family:monospace;font-size:10px">RECEBIDO</th>
+        <th style="padding:8px 10px;text-align:center;font-family:monospace;font-size:10px">ABASTECIDO</th>
+        <th style="padding:8px 10px;text-align:center;font-family:monospace;font-size:10px">VENDAS</th>
+        <th style="padding:8px 10px;text-align:center;font-family:monospace;font-size:10px">AJUSTE</th>
+        <th style="padding:8px 10px;text-align:center;font-family:monospace;font-size:10px">ESPERADO</th>
+        <th style="padding:8px 10px;text-align:center;font-family:monospace;font-size:10px">FINAL</th>
+        <th style="padding:8px 10px;text-align:center;font-family:monospace;font-size:10px">DIFERENÇA</th>
+        <th style="padding:8px 10px;text-align:center;font-family:monospace;font-size:10px">STATUS</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  // ── Análise Inteligente ────────────────────────────────────────────────────
+  const analiseEl = document.getElementById('analise-ia');
+  const analiseHTML = analiseEl?.innerHTML?.includes('empty-state') ? '' : (analiseEl?.innerHTML || '');
+
+  // ── Notas Operacionais ────────────────────────────────────────────────────
+  const notasEl = document.getElementById('notas-op');
+  const notasHTML = notasEl?.innerHTML?.includes('empty-state') ? '' : (notasEl?.innerHTML || '');
+
+  // ── Gráficos: captura imagens dos canvas ──────────────────────────────────
+  function canvasToImg(id, height='180px') {
+    const c = document.getElementById(id);
+    if (!c) return `<div style="height:${height};display:flex;align-items:center;justify-content:center;color:#ccc;font-size:12px">Sem dados</div>`;
+    try { return `<img src="${c.toDataURL('image/png')}" style="width:100%;height:${height};object-fit:contain">`; }
+    catch(e) { return `<div style="height:${height};display:flex;align-items:center;justify-content:center;color:#ccc;font-size:12px">Gráfico indisponível</div>`; }
+  }
+
+  // ── Monta o HTML da janela ────────────────────────────────────────────────
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>${nome}</title>
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;700;900&family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'DM Sans',sans-serif;background:#fff;color:#1a1714;font-size:12px}
+  @page{size:A4 landscape;margin:12mm 10mm}
+  @media print{
+    body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .no-break{page-break-inside:avoid;break-inside:avoid}
+    .page-break{page-break-before:always;break-before:always}
+  }
+  .header{background:#7C0047;color:white;padding:16px 20px;border-radius:10px;margin-bottom:16px;position:relative;overflow:hidden}
+  .header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:4px;background:#FAB900}
+  .header h1{font-family:'Raleway',sans-serif;font-weight:900;font-size:22px;margin-bottom:2px}
+  .header p{font-family:'DM Mono',monospace;font-size:10px;opacity:.5;letter-spacing:1px}
+  .header .meta{font-family:'DM Mono',monospace;font-size:11px;opacity:.6;margin-top:3px}
+  .kpi-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px}
+  .kpi-card{background:#fff;border:1px solid #e8e3dc;border-top:3px solid #FAB900;border-radius:10px;padding:11px 12px}
+  .kpi-label{font-size:9px;color:#aaa;font-family:'DM Mono',monospace;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px}
+  .kpi-value{font-family:'Raleway',sans-serif;font-weight:900;font-size:18px;color:#1a1714;line-height:1}
+  .kpi-sub{font-size:9px;color:#ccc;margin-top:3px}
+  .section{border:1px solid #e8e3dc;border-radius:10px;margin-bottom:14px;overflow:hidden}
+  .section-header{background:#1a1714;color:white;padding:10px 14px;display:flex;align-items:center;gap:8px}
+  .section-header .icon{font-size:14px}
+  .section-header .title{font-family:'Raleway',sans-serif;font-weight:800;font-size:12px;letter-spacing:.5px}
+  .section-header .sub{font-family:'DM Mono',monospace;font-size:9px;opacity:.5;margin-top:1px}
+  .section-body{padding:14px}
+  .charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+  .chart-box{border:1px solid #e8e3dc;border-radius:10px;padding:12px}
+  .chart-box-title{font-family:'Raleway',sans-serif;font-weight:800;font-size:11px;margin-bottom:10px;color:#1a1714}
+  .banners{margin-bottom:12px}
+  .banner{border-radius:7px;padding:8px 12px;margin-bottom:6px;font-size:11px;font-weight:500;line-height:1.4;border-left:4px solid}
+  .banner-err{background:#fdf0eb;color:#b5451b;border-color:#b5451b}
+  .banner-warn{background:#fdf8ec;color:#b5850a;border-color:#FAB900}
+  .banner-ok{background:#e8f5ed;color:#1e6641;border-color:#1e6641}
+  .banner-info{background:#eaf2f8;color:#1a5276;border-color:#1a5276}
+  .analise-box{background:linear-gradient(135deg,#f9f5ff,#fff8e8);border:1.5px solid #FAB900;border-radius:10px;padding:14px}
+  .analise-label{display:inline-flex;align-items:center;gap:5px;background:#7C0047;color:white;padding:2px 10px;border-radius:20px;font-size:9px;font-family:'DM Mono',monospace;margin-bottom:8px}
+  .analise-content{font-size:11px;line-height:1.7;font-family:'DM Mono',monospace;white-space:pre-wrap}
+  .rodape{text-align:center;font-family:'DM Mono',monospace;font-size:9px;color:#ccc;margin-top:16px;padding-top:10px;border-top:1px solid #eee}
+</style>
+</head>
+<body>
+
+<div class="header no-break">
+  <p>RELATÓRIO -- PEIXARIA PRIMUS</p>
+  <h1>${dataExibicao}</h1>
+  <div class="meta">Gerado em ${new Date().toLocaleString('pt-BR')}</div>
+</div>
+
+<div class="kpi-grid no-break">
+  <div class="kpi-card"><div class="kpi-label">FATURAMENTO</div><div class="kpi-value">${fat}</div><div class="kpi-sub">receita bruta</div></div>
+  <div class="kpi-card"><div class="kpi-label">ITENS VENDIDOS</div><div class="kpi-value">${itens}</div><div class="kpi-sub">unidades</div></div>
+  <div class="kpi-card"><div class="kpi-label">TICKET MÉDIO</div><div class="kpi-value">${ticket}</div><div class="kpi-sub">por venda</div></div>
+  <div class="kpi-card"><div class="kpi-label">BEBIDAS</div><div class="kpi-value">${bebKpi}</div><div class="kpi-sub">unidades</div></div>
+  <div class="kpi-card"><div class="kpi-label">SORVETES</div><div class="kpi-value">${sorvKpi}</div><div class="kpi-sub">unidades</div></div>
+  <div class="kpi-card"><div class="kpi-label">DESCONTOS</div><div class="kpi-value">${desc}</div><div class="kpi-sub">total</div></div>
+</div>
+
+${bannersHTML ? `<div class="banners no-break">${bannersHTML}</div>` : ''}
+
+<div class="charts-grid no-break">
+  <div class="chart-box"><div class="chart-box-title">📊 Vendas por Categoria</div>${canvasToImg('ch-cat','200px')}</div>
+  <div class="chart-box"><div class="chart-box-title">🍽️ Entradas x Garçom</div>${canvasToImg('ch-hor','200px')}</div>
+  <div class="chart-box"><div class="chart-box-title">🏆 Top Produtos</div>${canvasToImg('ch-prod','200px')}</div>
+  <div class="chart-box"><div class="chart-box-title">🐟 Top Pratos</div>${canvasToImg('ch-ks','200px')}</div>
+</div>
+
+<div class="section no-break">
+  <div class="section-header"><span class="icon">👥</span><div><div class="title">RANKING DE VENDEDORES</div><div class="sub">Emilly (parquinho) excluída de alertas de performance</div></div></div>
+  <div class="section-body">${rankHTML}</div>
+</div>
+
+<div class="section page-break">
+  <div class="section-header"><span class="icon">🍺</span><div><div class="title">AUDITORIA -- BEBIDAS</div><div class="sub">Status detalhado por produto</div></div></div>
+  <div class="section-body">${montarTabela(S.tabelaBeb)}</div>
+</div>
+
+<div class="section page-break">
+  <div class="section-header"><span class="icon">🍨</span><div><div class="title">AUDITORIA -- SORVETES & EMBALAGENS</div><div class="sub">Com abastecimentos do dia</div></div></div>
+  <div class="section-body">${montarTabela(S.tabelaSorv)}</div>
+</div>
+
+${analiseHTML ? `
+<div class="section no-break">
+  <div class="section-header"><span class="icon">🧠</span><div><div class="title">ANÁLISE INTELIGENTE</div><div class="sub">Insights operacionais</div></div></div>
+  <div class="section-body"><div class="analise-box">${analiseHTML}</div></div>
+</div>` : ''}
+
+${notasHTML ? `
+<div class="section no-break">
+  <div class="section-header"><span class="icon">📝</span><div><div class="title">NOTAS OPERACIONAIS</div><div class="sub">Eventos registrados no dia</div></div></div>
+  <div class="section-body">${notasHTML}</div>
+</div>` : ''}
+
+<div class="rodape">PRIMUS PRO -- PEIXARIA PRIMUS · ${dataExibicao} · Documento gerado automaticamente</div>
+
+<script>window.onload = function(){ setTimeout(function(){ window.print(); }, 800); }<\/script>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank', 'width=1200,height=900');
+  if (!w) { alert('Permita pop-ups para exportar o PDF.'); return; }
+  w.document.write(html);
+  w.document.close();
+
+  S.historico.push({data, arquivo: nome, ts: new Date().toLocaleString('pt-BR')});
+  renderHist();
 }
 function renderHist(){
   const el=document.getElementById('hist-lista');
