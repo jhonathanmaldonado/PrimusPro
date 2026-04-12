@@ -2025,12 +2025,13 @@ function exportarPDF() {
 
   // ── Ranking de Vendedores ─────────────────────────────────────────────────
   const rankHTML = (() => {
-    const vends = Array.isArray(S.vendedores) ? S.vendedores : Object.values(S.vendedores||{});
+    const vends = Array.isArray(S.vendedores) ? [...S.vendedores].sort((a,b)=>b.valor-a.valor) : Object.values(S.vendedores||{});
     if (!vends.length) return '<p style="color:#aaa;font-size:12px">Sem dados de vendedores</p>';
-    const max = vends[0]?.total || 1;
+    const max = vends[0]?.valor || 1;
     return vends.map((v,i) => {
-      const pct = Math.round((v.total/max)*100);
+      const pct = Math.round(((v.valor||0)/max)*100);
       const medal = i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}º`;
+      const valorFmt = (v.valor||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
       return `<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #eee">
         <div style="width:32px;text-align:center;font-weight:900;font-size:14px">${medal}</div>
         <div style="flex:1">
@@ -2040,8 +2041,8 @@ function exportarPDF() {
           </div>
         </div>
         <div style="text-align:right;min-width:90px">
-          <div style="font-family:monospace;font-weight:700;font-size:13px">${v.total.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}</div>
-          ${v.vendas?`<div style="font-size:10px;color:#aaa">${v.vendas} vendas</div>`:''}
+          <div style="font-family:monospace;font-weight:700;font-size:13px">${valorFmt}</div>
+          ${v.qtd?`<div style="font-size:10px;color:#aaa">${v.qtd} itens</div>`:''}
         </div>
       </div>`;
     }).join('');
