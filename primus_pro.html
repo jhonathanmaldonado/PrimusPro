@@ -237,13 +237,12 @@
 
     <div class="etapa-progress">
       <div class="etapa-step active" id="step-1"><div class="etapa-num">1</div><div class="etapa-label">Estoque</div></div>
-      <div class="etapa-step" id="step-2"><div class="etapa-num">2</div><div class="etapa-label">D-1</div></div>
-      <div class="etapa-step" id="step-3"><div class="etapa-num">3</div><div class="etapa-label">Eventos</div></div>
-      <div class="etapa-step" id="step-4"><div class="etapa-num">4</div><div class="etapa-label">Vendas</div></div>
-      <div class="etapa-step" id="step-5"><div class="etapa-num">5</div><div class="etapa-label">Mapeamento</div></div>
-      <div class="etapa-step" id="step-6"><div class="etapa-num">6</div><div class="etapa-label">Consolidação</div></div>
-      <div class="etapa-step" id="step-7"><div class="etapa-num">7</div><div class="etapa-label">Tabela</div></div>
-      <div class="etapa-step" id="step-8"><div class="etapa-num">8</div><div class="etapa-label">Validação</div></div>
+      <div class="etapa-step" id="step-2"><div class="etapa-num">2</div><div class="etapa-label">Eventos</div></div>
+      <div class="etapa-step" id="step-3"><div class="etapa-num">3</div><div class="etapa-label">Vendas</div></div>
+      <div class="etapa-step" id="step-4"><div class="etapa-num">4</div><div class="etapa-label">Mapeamento</div></div>
+      <div class="etapa-step" id="step-5"><div class="etapa-num">5</div><div class="etapa-label">Consolidação</div></div>
+      <div class="etapa-step" id="step-6"><div class="etapa-num">6</div><div class="etapa-label">Tabela</div></div>
+      <div class="etapa-step" id="step-7"><div class="etapa-num">7</div><div class="etapa-label">Validação</div></div>
     </div>
 
     <!-- ETAPA 1 -->
@@ -343,7 +342,7 @@
           
 
         <div class="btn-row">
-          <button class="btn btn-primary" onclick="confirmarRevisao()">✅ Confirmar Valores e Avançar → D-1</button>
+          <button class="btn btn-primary" onclick="confirmarRevisao()">✅ Confirmar Valores e Avançar → Eventos</button>
         </div>
       </div>
 
@@ -355,70 +354,8 @@
     <!-- ETAPA 2 -->
     <div class="card" id="etapa2-card" style="display:none">
       <div class="card-header">
-        <div class="card-icon">🔄</div>
-        <div><div class="card-title">ETAPA 2 -- Validação D-1</div><div class="card-subtitle">Suba os JSONs do dia anterior</div></div>
-      </div>
-      <div class="banner banner-info" id="d1-banner"><span>📅</span><span id="d1-txt">O estoque inicial de hoje deve bater com o final do dia anterior.</span></div>
-      <div class="upload-duplo" style="margin-top:12px">
-        <div class="upload-slot" id="slot-d1b">
-          <input type="file" id="up-d1b" accept=".json,application/json" onchange="handleD1JSON(this,'beb')">
-          <span class="slot-badge badge-beb">🍺 JSON D-1 BEBIDAS</span>
-          <div class="slot-icon">📄</div>
-          <div class="slot-title">FINAL_DD_MM_AAAA.json</div>
-          <div class="slot-sub">FINAL_DD_MM_AAAA.json do dia anterior</div>
-          <div id="ok-d1b" class="slot-ok">✅ Carregado!</div>
-        </div>
-        <div class="upload-slot" id="slot-d1s">
-          <input type="file" id="up-d1s" accept=".json,application/json" onchange="handleD1JSON(this,'sorv')">
-          <span class="slot-badge badge-sorv">🍨 JSON D-1 SORVETES</span>
-          <div class="slot-icon">📄</div>
-          <div class="slot-title">SORVETES_DD_MM_AAAA.json</div>
-          <div class="slot-sub">SORVETES_DD_MM_AAAA.json do dia anterior</div>
-          <div id="ok-d1s" class="slot-ok">✅ Carregado!</div>
-        </div>
-      </div>
-      <div class="loading" id="load-d1"><div class="spinner"></div><span>Lendo estoque final D-1...</span></div>
-
-      <!-- TABELA REVISÃO D-1 -->
-      <div class="revisao-wrap" id="revisao-d1-wrap">
-        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px">
-          <div>
-            <div style="font-family:'Raleway',sans-serif;font-weight:800;font-size:15px">✏️ Estoque Final D-1 — Revise os valores</div>
-            <div style="font-size:11px;color:#999;font-family:'DM Mono',monospace;margin-top:2px">Esses valores devem bater com o INÍCIO de hoje. Corrija se necessário.</div>
-          </div>
-        </div>
-
-        <div class="secao-titulo" style="margin-top:0">🍺 BEBIDAS — FINAL D-1</div>
-        <div class="table-container" style="margin-bottom:20px">
-          <table class="tabela-revisao">
-            <thead><tr><th>PRODUTO</th><th>FREEZER</th><th>ESTOQUE</th><th>TOTAL</th><th>RECEBIDO</th></tr></thead>
-            <tbody id="rev-d1-beb"></tbody>
-          </table>
-        </div>
-
-        <div class="secao-titulo">🍨 SORVETES — FINAL D-1</div>
-        <div class="table-container" style="margin-bottom:16px">
-          <table class="tabela-revisao">
-            <thead><tr><th>PRODUTO</th><th>ABASTECIDO</th><th>FINAL CONTADO</th></tr></thead>
-            <tbody id="rev-d1-sorv"></tbody>
-          </table>
-        </div>
-
-        <div class="btn-row">
-          <button class="btn btn-primary" onclick="confirmarD1()">✅ Confirmar D-1 e Avançar → Eventos</button>
-        </div>
-      </div>
-
-      <div class="btn-row">
-        <button class="btn btn-ghost" onclick="avancarEtapa(3)">Pular (primeiro dia)</button>
-      </div>
-    </div>
-
-    <!-- ETAPA 3 -->
-    <div class="card" id="etapa3-card" style="display:none">
-      <div class="card-header">
         <div class="card-icon">⚡</div>
-        <div><div class="card-title">ETAPA 3 -- Eventos Operacionais</div><div class="card-subtitle">Perdas, recebimentos, consumo interno, ajustes</div></div>
+        <div><div class="card-title">ETAPA 2 -- Eventos Operacionais</div><div class="card-subtitle">Perdas, recebimentos, consumo interno, ajustes</div></div>
       </div>
       <div id="ev-lista"></div>
       <div id="sem-ev" style="color:#ccc;font-size:13px;padding:8px 0">Nenhum evento. Clique para adicionar.</div>
@@ -430,29 +367,29 @@
         <button class="btn btn-ghost" onclick="addEv('ajuste')">+ Ajuste</button>
         <button class="btn btn-ghost" onclick="addEv('abastecimento')">+ Abastecimento</button>
       </div>
-      <div class="btn-row"><button class="btn btn-primary" onclick="avancarEtapa(4)">Avançar → Relatório de Vendas</button></div>
+      <div class="btn-row"><button class="btn btn-primary" onclick="avancarEtapa(3)">Avançar → Relatório de Vendas</button></div>
     </div>
 
     <!-- ETAPA 4 -->
-    <div class="card" id="etapa4-card" style="display:none">
+    <div class="card" id="etapa3-card" style="display:none">
       <div class="card-header">
         <div class="card-icon">💰</div>
-        <div><div class="card-title">ETAPA 4 -- Relatório de Vendas</div><div class="card-subtitle">Cole o texto completo do relatório do sistema</div></div>
+        <div><div class="card-title">ETAPA 3 -- Relatório de Vendas</div><div class="card-subtitle">Cole o texto completo do relatório do sistema</div></div>
       </div>
       <textarea class="textarea-styled" id="rel-vendas" placeholder="Cole aqui o relatório de vendas...&#10;&#10;Deve incluir: produtos, quantidades, horários de fechamento, vendedores e valores."></textarea>
       <div class="loading" id="load-vend"><div class="spinner"></div><span>Processando vendas com IA...</span></div>
       <div class="ai-response" id="resp-vend"><div class="ai-badge">🤖 PRIMUS PRO -- Vendas processadas</div><div class="ai-content" id="resp-vend-txt"></div></div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="processarVendas()">📊 Processar Vendas</button>
-        <button class="btn btn-ghost" id="btn-av4" onclick="avancarEtapa(5)" style="display:none">Avançar → Consolidação</button>
+        <button class="btn btn-ghost" id="btn-av4" onclick="avancarEtapa(4)" style="display:none">Avançar → Consolidação</button>
       </div>
     </div>
 
     <!-- ETAPA 5-7 -->
-    <div class="card" id="etapa567-card" style="display:none">
+    <div class="card" id="etapa456-card" style="display:none">
       <div class="card-header">
         <div class="card-icon">🔗</div>
-        <div><div class="card-title">ETAPAS 5, 6 e 7 -- Consolidação & Auditoria</div><div class="card-subtitle">Fórmula Primus: Inicial + Recebido + Abastecido - Vendas ± Ajustes</div></div>
+        <div><div class="card-title">ETAPAS 4, 5 e 6 -- Consolidação & Auditoria</div><div class="card-subtitle">Fórmula Primus: Inicial + Recebido + Abastecido - Vendas ± Ajustes</div></div>
       </div>
       <div class="loading" id="load-cons"><div class="spinner"></div><span>Consolidando auditoria completa...</span></div>
       <div id="tabelas-wrap" style="display:none">
@@ -484,15 +421,15 @@
       </div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="consolidar()">⚙️ Gerar Auditoria Completa</button>
-        <button class="btn btn-ghost" id="btn-av567" onclick="avancarEtapa(8)" style="display:none">Avançar → Validação</button>
+        <button class="btn btn-ghost" id="btn-av567" onclick="avancarEtapa(7)" style="display:none">Avançar → Validação</button>
       </div>
     </div>
 
     <!-- ETAPA 8 -->
-    <div class="card" id="etapa8-card" style="display:none">
+    <div class="card" id="etapa7-card" style="display:none">
       <div class="card-header">
         <div class="card-icon">✅</div>
-        <div><div class="card-title">ETAPA 8 -- Validação do Gestor</div><div class="card-subtitle">Confirme antes de gerar o relatório final em PDF</div></div>
+        <div><div class="card-title">ETAPA 7 -- Validação do Gestor</div><div class="card-subtitle">Confirme antes de gerar o relatório final em PDF</div></div>
       </div>
       <div style="background:linear-gradient(135deg,#fff8e8,#fff);border:2px solid var(--amarelo);border-radius:13px;padding:26px;text-align:center">
         <div style="font-size:44px;margin-bottom:10px">🎯</div>
@@ -519,7 +456,7 @@
         <div>
           <p style="font-family:'DM Mono',monospace;font-size:10px;opacity:0.45;margin-bottom:3px;letter-spacing:1px">RELATÓRIO -- PEIXARIA PRIMUS</p>
           <h2 id="rel-data">--</h2>
-          <div style="font-family:'DM Mono',monospace;font-size:11px;opacity:0.55" id="rel-d1ref">D-1: --</div>
+          
         </div>
         <div style="display:flex;gap:9px;flex-wrap:wrap">
           <button class="btn" style="background:var(--amarelo);color:var(--vinho)" onclick="exportarPDF()">📄 Exportar PDF</button>
@@ -603,8 +540,8 @@ let _currentController = null;
 
 const S = {
 // REMOVIDO: apiKey:'', dataAuditoria:'',
-  foto:{bebIniF:null,bebFinF:null,sorv:null}, d1:{beb:null,sorv:null},
-  estoqueTexto:'', d1Texto:'', vendasTexto:'', vendasProc:'',
+  foto:{bebIniF:null,bebFinF:null,sorv:null},
+  estoqueTexto:'', vendasTexto:'', vendasProc:'',
   eventos:[], evCount:0,
   tabelaBeb:[], tabelaSorv:[],
   kpis:{}, vendedores:{}, horarios:{}, historico:[]
@@ -631,14 +568,13 @@ function showView(v, btn) {
   if(btn) btn.classList.add('active');
 }
 function avancarEtapa(e) {
-  for(let i=1;i<=8;i++){const s=document.getElementById('step-'+i);if(!s)continue;s.classList.remove('active','done');if(i<e)s.classList.add('done');if(i===e)s.classList.add('active');}
-  const map={2:'etapa2-card',3:'etapa3-card',4:'etapa4-card',5:'etapa567-card',6:'etapa567-card',7:'etapa567-card',8:'etapa8-card'};
+  for(let i=1;i<=7;i++){const s=document.getElementById('step-'+i);if(!s)continue;s.classList.remove('active','done');if(i<e)s.classList.add('done');if(i===e)s.classList.add('active');}
+  const map={2:'etapa2-card',3:'etapa3-card',4:'etapa456-card',5:'etapa456-card',6:'etapa456-card',7:'etapa7-card'};
   if(map[e]){const el=document.getElementById(map[e]);if(el){el.style.display='block';setTimeout(()=>el.scrollIntoView({behavior:'smooth',block:'start'}),100);}}
 }
 
 // ===== HANDLE PDF DO SISTEMA DE CONTAGEM =====
 const jsonDados   = { bebIni: null, bebFin: null, sorv: null };
-const d1JSONDados  = { beb: null, sorv: null };
 
 function handleJSON(inp, tipo) {
   const f = inp.files[0]; if(!f) return;
@@ -664,153 +600,11 @@ function handleJSON(inp, tipo) {
   reader.readAsText(f);
 }
 
-function handleD1JSON(inp, tipo) {
-  const f = inp.files[0]; if(!f) return;
-  const idMap = { beb:'d1b', sorv:'d1s' };
-  const slotId = idMap[tipo];
-  const reader = new FileReader();
-  reader.onload = e => {
-    try {
-      d1JSONDados[tipo] = JSON.parse(e.target.result);
-      document.getElementById('ok-'+slotId).style.display = 'block';
-      document.getElementById('slot-'+slotId).classList.add('done');
-      if(d1JSONDados.beb || d1JSONDados.sorv) processarD1JSON();
-    } catch(err) { alert('Erro ao ler JSON D-1: ' + err.message); }
-  };
-  reader.readAsText(f);
-}
-
 // Mantém handlePDF como alias para compatibilidade
 
-const pdfTextos = { bebIni:'', bebFin:'', sorv:'' };
 
 
 
-function lerPDFcomoTexto(f, tipo, slotId, okEl, slotEl) {
-  const r2 = new FileReader();
-  r2.onload = e => {
-    pdfTextos[tipo] = e.target.result || '';
-    okEl.style.display = 'block';
-    okEl.textContent = '✅ ' + f.name;
-    slotEl.classList.add('done');
-    if(pdfTextos.bebIni || pdfTextos.bebFin || pdfTextos.sorv)
-      document.getElementById('btn-analisar').disabled = false;
-  };
-  r2.readAsBinaryString(f);
-}
-
-function handleD1PDF(inp, tipo) {
-  const f = inp.files[0]; if(!f) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    const arr = new Uint8Array(e.target.result);
-    d1PDFTextos[tipo] = extrairTextoPDF(arr);
-    document.getElementById('ok-d1'+(tipo==='beb'?'b':'s')).style.display = 'block';
-    document.getElementById('slot-d1'+(tipo==='beb'?'b':'s')).classList.add('done');
-    if(d1PDFTextos.beb || d1PDFTextos.sorv) processarD1PDF();
-  };
-  reader.readAsArrayBuffer(f);
-}
-
-function extrairTextoPDF(uint8arr) {
-  try {
-    let raw = '';
-    const chunk = 4096;
-    for(let i=0; i<uint8arr.length; i+=chunk)
-      raw += String.fromCharCode.apply(null, uint8arr.subarray(i, Math.min(i+chunk, uint8arr.length)));
-    const partes = [];
-    // Extrai texto de blocos BT...ET (jsPDF)
-    const btBlocks = raw.match(/BT[\s\S]{1,2000}?ET/g) || [];
-    btBlocks.forEach(bt => {
-      const tj = bt.match(/\(([^)(]{1,150})\)\s*Tj/g) || [];
-      tj.forEach(m => { const t=m.replace(/\(|\)\s*Tj/g,'').trim(); if(t) partes.push(t); });
-      const tjArr = bt.match(/\[([^\]]+)\]\s*TJ/g) || [];
-      tjArr.forEach(m => { (m.match(/\(([^)]{1,100})\)/g)||[]).forEach(s=>{ const t=s.slice(1,-1); if(t.trim()) partes.push(t); }); });
-    });
-    // Fallback
-    if(partes.length < 5) {
-      (raw.match(/\(([^)(]{2,100})\)/g)||[]).forEach(m=>{
-        const t=m.slice(1,-1).trim();
-        if(t.length>1 && /[a-zA-Z0-9À-ÿ]/.test(t)) partes.push(t);
-      });
-    }
-    return partes.join(' ');
-  } catch(e) { return ''; }
-}
-
-
-function normalizarTextoPDF(texto) {
-  return texto
-    .replace(/é/g,'é').replace(/ê/g,'ê').replace(/ã/g,'ã')
-    .replace(/ç/g,'ç').replace(/ú/g,'ú').replace(/ó/g,'ó')
-    .replace(/á/g,'á').replace(/í/g,'í').replace(/õ/g,'õ')
-    .replace(/â/g,'â').replace(/ô/g,'ô').replace(/à/g,'à');
-}
-
-function normPDF(s) {
-  return s.toLowerCase()
-    .normalize('NFD').replace(/[̀-ͯ]/g,'')
-    .replace(/[^a-z0-9 .+]/g,' ')
-    .replace(/\s+/g,' ').trim();
-}
-
-function parsearPDFBebidas(txt) {
-  const PRODS = ['Louvada Primus','Heineken 600ml','Original','Heineken Zero Long Neck','Louvada German Longneck','Louvada German 500','Stella SG Longneck','Louvada Hop Zero','Coca Cola KS','Coca Cola KS Zero','Fanta Laranja KS','Sprite KS','Kuat KS','Coca Cola 1L','Guaraná 1L','Coca Zero 1L','Coca Cola Lata','Coca Cola Zero Lata','Sprite Lata','Guaraná Lata','Fanta Laranja Lata','Água Tônica','Água Tônica Zero','Schweppes Citrus','Sprite Lemon Fresch','Água Prata Com Gás','Água Prata Sem Gás','Água Premium Com Gás','Água Premium Sem Gás','Kombucha Guaraná','Kombucha Morango','Kombucha de Limão','Cappuccino','Café Ameno','Café Forza','Café Gourmet','Suco Acerola 500ml','Suco Abacaxi Hort. 500ml','Suco Maracujá 500ml','Suco Morango 500ml'];
-  const resultado = {};
-  const txtNorm = normPDF(txt);
-  PRODS.forEach(prod => {
-    const prodNorm = normPDF(prod);
-    const idx = txtNorm.indexOf(prodNorm);
-    if(idx >= 0) {
-      const ratio = Math.max(1, txt.length / Math.max(1, txtNorm.length));
-      const idxOrig = Math.min(Math.round(idx * ratio), txt.length - 1);
-      const trecho = txt.substring(idxOrig, idxOrig + prod.length + 80);
-      const nums = (trecho.match(/\d+/g)||[]).map(Number).filter(n=>n<9999);
-      const n1=nums[0]||0, n2=nums[1]||0, n3=nums[2]||0, n4=nums[3]||0;
-      const tot=n1+n2, ehTotal=n3>0&&Math.abs(n3-tot)<=1;
-      resultado[prod] = { freezer:n1, estoque:n2, total:ehTotal?n3:tot, recebido:ehTotal?n4:(n3>0?n3:0) };
-    } else {
-      resultado[prod] = { freezer:0, estoque:0, total:0, recebido:0 };
-    }
-  });
-  return resultado;
-}
-
-function parsearPDFSorvetes(txt) {
-  const PRODS = ['Sorbet Moranja','Sorbet Manga+Maracujá','Sorbet Frutas Vermelhas','Gelato Doce de Leite','Gelato Chocolatudo','Gelato Iogurte+Frutas Amarelas','Gelato Cacau com Laranja 0%','Gelato Ninho Trufado','Gelato Paçoca Proteica','Chocolate Proteico','Gelato Cookie e Crean Proteico','Embalagem P','Embalagem M','Embalagem G','Kit Festa','Espátula Descartável'];
-  const ini={}, fin={};
-
-  // Remove coordenadas de posição (números > 100)
-  const tokens = txt.split(/\s+/);
-  const seqLimpa = tokens.filter(t => {
-    const n = parseInt(t);
-    return isNaN(n) || n <= 100 || t !== String(n);
-  }).join(' ');
-  
-  const seqNorm = normPDF(seqLimpa);
-  const idxFinal = seqNorm.indexOf('final do dia');
-  const txtIniNorm = idxFinal>0 ? seqNorm.substring(0,idxFinal) : seqNorm;
-  const txtFinNorm = idxFinal>0 ? seqNorm.substring(idxFinal) : '';
-
-  PRODS.forEach(prod => {
-    const prodNorm = normPDF(prod);
-    
-    const idx1 = txtIniNorm.indexOf(prodNorm);
-    if(idx1>=0) {
-      const nums=(txtIniNorm.substring(idx1+prodNorm.length,idx1+prodNorm.length+40).match(/\b\d{1,3}\b/g)||[]).map(Number).filter(n=>n<=999);
-      ini[prod]={qtd:nums[0]||0};
-    } else ini[prod]={qtd:0};
-
-    if(txtFinNorm) {
-      const idx2=txtFinNorm.indexOf(prodNorm);
-      if(idx2>=0) {
-        const nums=(txtFinNorm.substring(idx2+prodNorm.length,idx2+prodNorm.length+40).match(/\b\d{1,3}\b/g)||[]).map(Number).filter(n=>n<=999);
-        fin[prod]={abastecido:nums[0]||0,final:nums[1]||0};
-      } else fin[prod]={abastecido:0,final:0};
-    } else fin[prod]={abastecido:0,final:0};
-  });
-  return {ini,fin};
-}
 
 
 async function processarJSONs() {
@@ -976,48 +770,6 @@ function popularTabelaRevisaoDeEstruturado() {
 }
 
 
-function processarD1PDF() {
-  S.d1Estruturado = { bebFin:{}, sorvFin:{} };
-
-  if(d1PDFTextos.beb) {
-    const dados = parsearPDFContagem(d1PDFTextos.beb, 'beb');
-    Object.entries(dados).forEach(([prod,v]) => {
-      S.d1Estruturado.bebFin[prod] = { freezer:v.freezer||0, estoque:v.estoque||0, total:v.total||0, recebido:v.recebido||0 };
-    });
-  }
-  if(d1PDFTextos.sorv) {
-    const dados = parsearPDFContagem(d1PDFTextos.sorv, 'sorv');
-    Object.entries(dados).forEach(([prod,v]) => {
-      S.d1Estruturado.sorvFin[prod] = { abastecido:0, final:v.total||0 };
-    });
-  }
-
-  // Popula tabela D-1 editável
-  popularTabelaD1ComEstruturado();
-}
-
-function processarD1PDF() { processarD1JSON(); }
-
-function processarD1JSON() {
-  S.d1Estruturado = { bebFin:{}, sorvFin:{} };
-  if(d1JSONDados.beb) {
-    const j = d1JSONDados.beb;
-    Object.entries(j.produtos || {}).forEach(([prod, v]) => {
-      S.d1Estruturado.bebFin[prod] = { freezer: v.freezer||0, estoque: v.estoque||0, total: v.total||0, recebido: v.recebido||0 };
-    });
-  }
-  if(d1JSONDados.sorv) {
-    const j = d1JSONDados.sorv;
-    Object.entries(j.produtos || {}).forEach(([prod, v]) => {
-      S.d1Estruturado.sorvFin[prod] = { abastecido: (v.final && v.final.abastecido)||0, final: (v.final && v.final.final)||0 };
-    });
-  }
-  popularTabelaD1ComEstruturado();
-}
-
-function popularTabelaD1ComEstruturado() {
-  setTimeout(() => avancarD1(), 300);
-}
 
 
 
@@ -1347,112 +1099,9 @@ function cancelarAnalise() {
   popularTabelaRevisaoVazia();
 }
 
-async function avancarD1() {
-  S.d1Ok = true;
-  avancarEtapa(3);
-}
-
-function calcD1Hint() {
-  const d=new Date((S.dataAuditoria||new Date().toISOString().split('T')[0])+'T12:00:00');
-  const dia=d.getDay();
-  let d1=new Date(d);
-  if(dia===3){d1.setDate(d1.getDate()-3);document.getElementById('d1-banner').className='banner banner-warn';document.getElementById('d1-txt').textContent='⚠️ Hoje é QUARTA-FEIRA -- D-1 = '+d1.toLocaleDateString('pt-BR')+' (domingo). Restaurante não opera seg/ter.';}
-  else{d1.setDate(d1.getDate()-1);document.getElementById('d1-txt').textContent='D-1: '+d1.toLocaleDateString('pt-BR')+' -- O estoque inicial de hoje deve bater com o final de ontem.';}
-  document.getElementById('rel-d1ref').textContent='D-1: '+d1.toLocaleDateString('pt-BR');
-}
 
 // VALIDAR D-1
 
-
-function popularTabelaD1(txtBeb, txtSorv) {
-  // Popula tabela editável do D-1
-  const bebFin = {};
-  const sorvFin = {};
-
-  // Parseia bebidas D-1
-  extrairLinhas(txtBeb).forEach(linha => {
-    const parsed = parsearLinha(linha);
-    if(parsed) bebFin[normalizar(parsed.nome)] = parsed.vals;
-  });
-
-  // Popula tabela de bebidas D-1
-  const tbodyBeb = document.getElementById('rev-d1-beb');
-  if(tbodyBeb) {
-    tbodyBeb.innerHTML = '';
-    PRODUTOS_BEB.forEach(prod => {
-      const chave = normalizar(prod);
-      const vals = bebFin[chave] || {};
-      const fr  = vals.freezer || 0;
-      const est = vals.estoque || 0;
-      const rec = vals.recebido || 0;
-      const tot = fr + est;
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="prod-nome">${prod}</td>
-        <td><input class="input-num" type="number" min="0" value="${fr}" data-sec="d1beb" data-prod="${chave}" data-campo="freezer" oninput="atualizarTotalD1(this)"></td>
-        <td><input class="input-num" type="number" min="0" value="${est}" data-sec="d1beb" data-prod="${chave}" data-campo="estoque" oninput="atualizarTotalD1(this)"></td>
-        <td class="total-cell" id="tot-d1beb-${chave}">${tot||''}</td>
-        <td><input class="input-num" type="number" min="0" value="${rec}" data-sec="d1beb" data-prod="${chave}" data-campo="recebido"></td>`;
-      tbodyBeb.appendChild(tr);
-    });
-  }
-
-  // Parseia sorvetes D-1
-  extrairLinhas(txtSorv).forEach(linha => {
-    const parsed = parsearLinha(linha);
-    if(parsed) sorvFin[normalizar(parsed.nome)] = parsed.vals;
-  });
-
-  const tbodySorv = document.getElementById('rev-d1-sorv');
-  if(tbodySorv) {
-    tbodySorv.innerHTML = '';
-    PRODUTOS_SORV.forEach(prod => {
-      const chave = normalizar(prod);
-      const vals = sorvFin[chave] || {};
-      const abast = vals.abastecido || 0;
-      const fin   = vals.final || vals.qtd || 0;
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td class="prod-nome">${prod}</td>
-        <td><input class="input-num" type="number" min="0" value="${abast}" data-sec="d1sorv" data-prod="${chave}" data-campo="abastecido"></td>
-        <td><input class="input-num" type="number" min="0" value="${fin}" data-sec="d1sorv" data-prod="${chave}" data-campo="final"></td>`;
-      tbodySorv.appendChild(tr);
-    });
-  }
-
-  document.getElementById('revisao-d1-wrap').classList.add('show');
-  setTimeout(() => document.getElementById('revisao-d1-wrap').scrollIntoView({behavior:'smooth',block:'start'}), 100);
-}
-
-function atualizarTotalD1(input) {
-  const sec = input.dataset.sec;
-  const prod = input.dataset.prod;
-  const row = input.closest('tr');
-  const inputs = row.querySelectorAll('input[data-campo="freezer"], input[data-campo="estoque"]');
-  let tot = 0;
-  inputs.forEach(i => tot += parseInt(i.value)||0);
-  const totEl = document.getElementById('tot-'+sec+'-'+prod);
-  if(totEl) totEl.textContent = tot || '';
-}
-
-function confirmarD1() {
-  // Coleta D-1 estruturado
-  S.d1Estruturado = { bebFin:{}, sorvFin:{} };
-  PRODUTOS_BEB.forEach(prod => {
-    const chave = normalizar(prod);
-    const fr  = parseInt(document.querySelector(`#rev-d1-beb input[data-prod="${chave}"][data-campo="freezer"]`)?.value) || 0;
-    const est = parseInt(document.querySelector(`#rev-d1-beb input[data-prod="${chave}"][data-campo="estoque"]`)?.value) || 0;
-    const rec = parseInt(document.querySelector(`#rev-d1-beb input[data-prod="${chave}"][data-campo="recebido"]`)?.value) || 0;
-    S.d1Estruturado.bebFin[prod] = { freezer:fr, estoque:est, total:fr+est, recebido:rec };
-  });
-  PRODUTOS_SORV.forEach(prod => {
-    const chave = normalizar(prod);
-    const abast = parseInt(document.querySelector(`#rev-d1-sorv input[data-prod="${chave}"][data-campo="abastecido"]`)?.value) || 0;
-    const fin   = parseInt(document.querySelector(`#rev-d1-sorv input[data-prod="${chave}"][data-campo="final"]`)?.value) || 0;
-    S.d1Estruturado.sorvFin[prod] = { abastecido:abast, final:fin };
-  });
-  avancarEtapa(3);
-}
 
 // EVENTOS
 function addEv(tipo) {
@@ -1497,7 +1146,7 @@ async function processarVendas() {
     txt.textContent = resultado.resumo;
     resp.classList.add('show');
     document.getElementById('btn-av4').style.display='inline-flex';
-    avancarEtapa(5);
+    avancarEtapa(4);
   } catch(err){
     txt.textContent='Erro ao processar: '+err.message;
     resp.classList.add('show');
@@ -1529,7 +1178,7 @@ function parsearRelatorio(texto) {
     if (modo === 'vendedor' && partes.length >= 6) {
       const nome = partes[0].trim();
       if (!skipWords.includes(nome) && nome.match(/^[A-ZÁÉÍÓÚÀÂÊÔÃÕÜÇ]/)) {
-        const qtd = parseFloat(partes[1].replace(/\./g,'').replace(',','.')) || 0;
+        const qtd = Math.round(parseFloat(partes[1].replace(/\./g,'').replace(',','.')) || 0);
         const total = parseFloat(partes[5].replace(/\./g,'').replace(',','.')) || 0;
         if (total > 0 && !nome.match(/^\d{2}\/\d{2}/)) {
           vendedores.push({ nome, qtd, valor: total });
@@ -1540,7 +1189,7 @@ function parsearRelatorio(texto) {
     if (modo === 'produto' && partes.length >= 6) {
       const nome = partes[0].trim();
       if (!nome.match(/^\d{2}\/\d{2}/) && !skipWords.includes(nome) && nome.length > 1) {
-        const qtd = parseFloat(partes[1].replace(/\./g,'').replace(',','.')) || 0;
+        const qtd = Math.round(parseFloat(partes[1].replace(/\./g,'').replace(',','.')) || 0);
         const total = parseFloat(partes[5].replace(/\./g,'').replace(',','.')) || 0;
         if (qtd > 0) produtos.push({ nome, qtd, total });
       }
@@ -1550,7 +1199,7 @@ function parsearRelatorio(texto) {
       const horMatch = partes[0].match(/(\d{1,2}):\d{2}/);
       if (horMatch) {
         const h = horMatch[1]+'h';
-        const qtd = parseFloat(partes[1].replace(/\./g,'').replace(',','.')) || 0;
+        const qtd = Math.round(parseFloat(partes[1].replace(/\./g,'').replace(',','.')) || 0);
         horariosMap[h] = qtd;
       }
     }
@@ -1712,7 +1361,7 @@ async function consolidar() {
     document.getElementById('kpi-sorv').textContent=S.tabelaSorv.filter(i=>i.categoria==='sorvete').reduce((a,i)=>a+(i.vendas||0),0);
     wrap.style.display='block';
     document.getElementById('btn-av567').style.display='inline-flex';
-    avancarEtapa(8);
+    avancarEtapa(7);
     renderRelatorio(todos); gerarCharts(todos); renderRanking(); renderNotas();
   } catch(err){alert('Erro ao consolidar: '+err.message);}
   load.style.display='none';
@@ -1734,6 +1383,22 @@ function parsearVendasParaConsolidacao(texto) {
   // Extrai mapa produto->quantidade das vendas
   const mapa = {};
   if(!texto) return mapa;
+
+  // Aliases: nomes do sistema de vendas → nomes do cadastro (normalizados)
+  // Necessário quando a ordem das palavras ou grafia difere entre os dois sistemas
+  const ALIASES = {
+    'coca cola zero ks'  : 'coca cola ks zero',
+    'coca cola ks zero'  : 'coca cola ks zero',  // garante ambas direções
+    'fanta ks'           : 'fanta laranja ks',
+    'fanta laranja ks'   : 'fanta laranja ks',
+    'aggua tonica zero'  : 'agua tonica zero',
+    'agua tonica zero'   : 'agua tonica zero',
+    'cafe forza'         : 'cafe  forza',         // variação de espaço
+    'cafe - forza'       : 'cafe forza',
+    'sorbet manga  maracuja' : 'sorbet manga maracuja',
+    'gelato iogurte  frutas amarelas' : 'gelato iogurte frutas amarelas',
+  };
+
   const linhas = texto.split('\n');
   let emProduto = false;
   for(const linha of linhas) {
@@ -1745,7 +1410,12 @@ function parsearVendasParaConsolidacao(texto) {
     const nome = partes[0].trim();
     const qtd  = Math.round(parseFloat(partes[1].replace(/\./g,'').replace(',','.')) || 0);
     if(nome && qtd > 0 && !nome.match(/^\d{2}\/\d{2}/)) {
-      mapa[normalizar(nome)] = qtd;
+      const nNorm = normalizar(nome);
+      // Grava com o nome normalizado original
+      mapa[nNorm] = (mapa[nNorm] || 0) + qtd;
+      // Grava também com o alias do cadastro, se existir
+      const alias = ALIASES[nNorm];
+      if(alias) mapa[alias] = (mapa[alias] || 0) + qtd;
     }
   }
   return mapa;
@@ -2055,17 +1725,18 @@ function exportarPDF() {
     const statusBg    = {batido:'#e8f5ed',falta:'#fdf0eb',sobra:'#fdf8ec',ks:'#fdeef7'};
     const statusLabel = {batido:'✅ BATIDO',falta:'❌ FALTA',sobra:'⚠️ SOBRA',ks:'🔷 KS'};
     const rows = dados.map(r => {
-      const st = r.status||'sobra';
+      const st = (r.status||'SOBRA').toLowerCase();
+      const dif = r.diferenca ?? 0;
       return `<tr style="background:${statusBg[st]||'white'}">
-        <td style="font-weight:600;padding:7px 10px;border-bottom:1px solid #eee;font-size:11px">${r.produto||r.nome||''}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center">${r.inicio??0}</td>
+        <td style="font-weight:600;padding:7px 10px;border-bottom:1px solid #eee;font-size:11px">${r.produto||''}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center">${r.inicial??0}</td>
         <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center">${r.recebido??0}</td>
         <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center">${r.abastecido??0}</td>
         <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center">${r.vendas??0}</td>
         <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center">${r.ajuste??0}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center">${r.esperado??0}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center;font-weight:700">${r.final??0}</td>
-        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center;font-weight:700;color:${r.diferenca>0?'#1e6641':r.diferenca<0?'#b5451b':'#999'}">${r.diferenca>0?'+':''}${r.diferenca??0}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center;font-weight:700">${r.finalEsperado??0}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center;font-weight:700">${r.finalContado??0}</td>
+        <td style="padding:7px 10px;border-bottom:1px solid #eee;font-family:monospace;font-size:11px;text-align:center;font-weight:700;color:${dif>0?'#1e6641':dif<0?'#b5451b':'#999'}">${dif>0?'+':''}${dif}</td>
         <td style="padding:7px 10px;border-bottom:1px solid #eee;text-align:center"><span style="background:${statusBg[st]};color:${statusColor[st]};font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;white-space:nowrap">${statusLabel[st]||st}</span></td>
       </tr>`;
     }).join('');
@@ -2230,23 +1901,20 @@ function renderHist(){
 document.addEventListener('DOMContentLoaded',()=>{
   
   document.getElementById('data-auditoria').value=new Date().toISOString().split('T')[0];
-  ['slot-beb-ini','slot-beb-fin','slot-sorv','slot-d1b','slot-d1s'].forEach(id=>{
+  ['slot-beb-ini','slot-beb-fin','slot-sorv'].forEach(id=>{
     const el=document.getElementById(id); if(!el)return;
     el.addEventListener('dragover',e=>{e.preventDefault();el.classList.add('drag-over');});
     el.addEventListener('dragleave',()=>el.classList.remove('drag-over'));
     el.addEventListener('drop',e=>{
       e.preventDefault();el.classList.remove('drag-over');
       const f=e.dataTransfer.files[0]; if(!f)return;
-      const isD1=id.startsWith('slot-d1');
       let inpId, tipoFoto;
-      if(isD1){ inpId=id.includes('b')?'up-d1b':'up-d1s'; tipoFoto=id.includes('b')?'beb':'sorv'; }
-      else if(id==='slot-beb-ini'){ inpId='up-beb-ini'; tipoFoto='bebIniF'; }
+      if(id==='slot-beb-ini'){ inpId='up-beb-ini'; tipoFoto='bebIniF'; }
       else if(id==='slot-beb-fin'){ inpId='up-beb-fin'; tipoFoto='bebFinF'; }
       else { inpId='up-sorv'; tipoFoto='sorv'; }
       const inp=document.getElementById(inpId);
       const dt=new DataTransfer();dt.items.add(f);inp.files=dt.files;
-      if(isD1)handleD1(inp,tipoFoto);
-      else handleFoto(inp,tipoFoto);
+      handleFoto(inp,tipoFoto);
     });
   });
 });
