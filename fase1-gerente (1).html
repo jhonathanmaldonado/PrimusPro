@@ -477,8 +477,11 @@ async function setDate() {
 
   try {
     // 1. Buscar funcionários do Firestore
-    const fSnap = await db.collection('funcionarios').where('ativo', '==', true).orderBy('nome').get();
-    const funcsCadastrados = fSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const fSnap = await db.collection('funcionarios').where('ativo', '==', true).get();
+    const funcsCadastrados = fSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(f => f.ativo !== false)
+      .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 
     // 2. Buscar documento do dia
     const daySnap = await db.collection('presencas_diarias').doc(currentDate).get();
