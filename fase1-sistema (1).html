@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Primus Peixaria — Sistema de Gestão</title>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<!-- jsQR (contingência PDF offline) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet">
+
+<style>
+  /* ── VARIÁVEIS ── */
+  :root {
+    --bg:#0d1117; --surface:#161b22; --surface2:#1c2330; --border:#30363d;
+    --accent:#e8a045; --accent2:#4fc3f7; --danger:#f85149;
+    --success:#3fb950; --text:#e6edf3; --muted:#7d8590;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font-family:'DM Sans',sans-serif; min-height:100vh; font-size:15px; }
+
+  /* ── LOGIN ── */
+  #loginScreen { min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg); }
+  .login-box { background:var(--surface); border:1px solid var(--border); border-radius:14px; padding:36px 28px; width:100%; max-width:360px; }
+  .login-logo { font-family:'Syne',sans-serif; font-weight:800; font-size:22px; color:var(--accent); margin-bottom:4px; }
+  .login-sub { font-size:13px; color:var(--muted); margin-bottom:28px; }
+  .login-field { display:flex; flex-direction:column; gap:6px; margin-bottom:14px; }
+  .login-label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; font-weight:600; }
+  .login-input { background:var(--surface2); border:1px solid var(--border); border-radius:8px; color:var(--text); font-size:14px; font-family:inherit; padding:11px 12px; width:100%; }
+  .login-input:focus { outline:none; border-color:var(--accent); }
+  .login-btn { width:100%; padding:12px; border-radius:8px; border:none; cursor:pointer; font-size:14px; font-family:inherit; font-weight:700; background:var(--accent); color:#000; margin-top:6px; transition:background .15s; }
+  .login-btn:hover { background:#f0b560; }
+  .login-btn:disabled { opacity:.5; cursor:not-allowed; }
+  .login-error { color:var(--danger); font-size:13px; margin-top:10px; display:none; }
+  .login-error.show { display:block; }
+
+  /* ── APP ── */
+  #appScreen { display:none; }
+  .header { background:var(--surface); border-bottom:1px solid var(--border); padding:0 20px; display:flex; align-items:center; justify-content:space-between; height:60px; position:sticky; top:0; z-index:100; }
+  .logo { font-family:'Syne',sans-serif; font-weight:800; font-size:18px; color:var(--accent); }
+  .logo span { color:var(--text); font-weight:400; font-size:13px; margin-left:8px; }
+  .header-right { display:flex; align-items:center; gap:12px; }
+  .user-pill { font-size:12px; color:var(--muted); }
+  .btn-logout { background:transparent; border:1px solid var(--border); border-radius:6px; color:var(--muted); font-size:11px; padding:4px 10px; cursor:pointer; font-family:inherit; transition:all .15s; }
+  .btn-logout:hover { border-color:var(--danger); color:var(--danger); }
+
+  /* ── TABS ── */
+  .tabs { display:flex; background:var(--surface); border-bottom:1px solid var(--border); padding:0 16px; gap:2px; overflow-x:auto; }
+  .tab { padding:12px 16px; cursor:pointer; font-size:13px; font-weight:500; color:var(--muted); border-bottom:2px solid transparent; transition:all .2s; white-space:nowrap; flex-shrink:0; }
+  .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+  .tab:hover:not(.active) { color:var(--text); }
+  .tab.hidden { display:none; }
+
+  /* ── MAIN ── */
+  .main { padding:18px; max-width:900px; margin:0 auto; }
+  .section { display:none; }
+  .section.active { display:block; }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:18px; margin-bottom:14px; }
+  .card-title { font-family:'Syne',sans-serif; font-weight:700; font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:1px; margin-bottom:14px; }
+  .btn { padding:10px 18px; border-radius:8px; border:none; cursor:pointer; font-size:13px; font-family:'DM Sans',sans-serif; font-weight:600; transition:all .15s; }
+  .btn-primary { background:var(--accent); color:#000; }
+  .btn-primary:hover { background:#f0b560; }
+  .btn-secondary { background:var(--surface2); color:var(--text); border:1px solid var(--border); }
+  .btn-secondary:hover { border-color:var(--accent); color:var(--accent); }
+  .btn-success { background:var(--success); color:#000; }
+  .btn-danger { background:transparent; color:var(--danger); border:1px solid var(--danger); }
+  .btn-sm { padding:6px 12px; font-size:12px; }
+  .btn-block { width:100%; margin-top:10px; }
+  .btn:disabled { opacity:.4; cursor:not-allowed; }
+  .section-title { font-family:'Syne',sans-serif; font-weight:800; font-size:20px; }
+  .section-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; flex-wrap:wrap; gap:10px; }
+
+  /* ── STATUS PILL ── */
+  .status-pill { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:700; padding:4px 10px; border-radius:20px; text-transform:uppercase; letter-spacing:.5px; }
+  .status-em_aberto { background:rgba(79,195,247,.15); color:#4fc3f7; border:1px solid rgba(79,195,247,.3); }
+  .status-aguardando_fechamento { background:rgba(232,160,69,.15); color:var(--accent); border:1px solid rgba(232,160,69,.3); }
+  .status-fechado { background:rgba(63,185,80,.15); color:var(--success); border:1px solid rgba(63,185,80,.3); }
+  .status-reaberto { background:rgba(248,81,73,.15); color:var(--danger); border:1px solid rgba(248,81,73,.3); }
+
+  /* ── DIAS LIST (substitui importar PDF) ── */
+  .dias-list { display:flex; flex-direction:column; gap:8px; }
+  .dia-card { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:14px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; cursor:pointer; transition:border-color .15s; }
+  .dia-card:hover { border-color:var(--accent); }
+  .dia-card.selected { border-color:var(--accent); background:rgba(232,160,69,.05); }
+  .dia-date { font-family:'Syne',sans-serif; font-weight:700; font-size:14px; }
+  .dia-meta { display:flex; gap:12px; align-items:center; font-size:12px; color:var(--muted); flex-wrap:wrap; }
+
+  /* ── EMP ROWS ── */
+  .emp-list { display:flex; flex-direction:column; gap:6px; }
+  .emp-row { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:10px 12px; display:grid; grid-template-columns:1fr auto auto auto; gap:10px; align-items:center; }
+  .emp-row.presente { border-color:rgba(63,185,80,.4); }
+  .emp-row.ausente { opacity:.4; }
+  .emp-name { font-size:14px; font-weight:500; }
+  .emp-name small { display:block; font-size:11px; color:var(--muted); }
+  .badge { font-size:10px; font-weight:700; padding:3px 7px; border-radius:20px; text-transform:uppercase; white-space:nowrap; }
+  .c-garcom { color:#e8a045; background:rgba(232,160,69,.15); }
+  .c-bar { color:#4fc3f7; background:rgba(79,195,247,.15); }
+  .c-cozinha { color:#f85149; background:rgba(248,81,73,.15); }
+  .c-cumim { color:#a371f7; background:rgba(163,113,247,.15); }
+  .c-gerente { color:#3fb950; background:rgba(63,185,80,.15); }
+  .c-outros { color:#7d8590; background:rgba(125,133,144,.15); }
+  .tag-atrasado { font-size:10px; padding:2px 7px; border-radius:20px; background:rgba(232,160,69,.15); color:var(--accent); font-weight:600; }
+  .tag-ausente { font-size:10px; padding:2px 7px; border-radius:20px; background:rgba(248,81,73,.15); color:var(--danger); font-weight:600; }
+
+  /* ── FINANCEIRO ── */
+  .field-label { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; margin-bottom:6px; font-weight:600; }
+  .money-wrap { position:relative; }
+  .money-wrap span { position:absolute; left:12px; top:50%; transform:translateY(-50%); color:var(--muted); font-size:14px; }
+  .money-input { width:100%; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:11px 12px 11px 28px; color:var(--text); font-size:16px; font-family:'Syne',sans-serif; font-weight:600; }
+  .money-input:focus { outline:none; border-color:var(--accent); }
+  .gorjeta-grid { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:500px) { .gorjeta-grid { grid-template-columns:1fr; } }
+  .gorjeta-chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; }
+  .chip { font-size:11px; padding:4px 9px; border-radius:20px; border:1px solid var(--border); color:var(--muted); }
+  .chip strong { color:var(--text); }
+  .diaria-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--surface2); }
+  .diaria-row:last-child { border-bottom:none; }
+  .diaria-name { flex:1; font-size:14px; }
+  .diaria-name small { display:block; font-size:11px; color:var(--muted); }
+  .diaria-input { width:100px; background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:7px 10px; color:var(--text); font-size:14px; font-family:'DM Sans',sans-serif; text-align:right; }
+  .diaria-input:focus { outline:none; border-color:var(--accent); }
+
+  /* ── RESULT TABLE ── */
+  .result-table { width:100%; border-collapse:collapse; }
+  .result-table th { text-align:left; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; padding:8px 10px; border-bottom:1px solid var(--border); }
+  .result-table td { padding:10px; border-bottom:1px solid var(--surface2); font-size:13px; }
+  .result-table tr:last-child td { border-bottom:none; }
+  .right { text-align:right; }
+  .val-pos { color:var(--success); font-weight:600; }
+  .val-neg { color:var(--danger); }
+  .total-row td { font-weight:800; font-family:'Syne',sans-serif; border-top:2px solid var(--border) !important; color:var(--accent); }
+
+  /* ── HISTORY ── */
+  .hist-item { background:var(--surface2); border:1px solid var(--border); border-radius:8px; margin-bottom:8px; overflow:hidden; }
+  .hist-header { padding:12px 16px; display:flex; align-items:center; justify-content:space-between; cursor:pointer; }
+  .hist-header:hover { background:rgba(255,255,255,.03); }
+  .hist-date { font-family:'Syne',sans-serif; font-weight:700; font-size:14px; }
+  .hist-meta { display:flex; gap:14px; align-items:center; font-size:12px; color:var(--muted); }
+  .hist-meta .val { color:var(--success); font-weight:700; font-size:14px; }
+  .hist-body { display:none; padding:0 16px 14px; }
+  .hist-body.open { display:block; }
+
+  /* ── RESUMO ── */
+  .resumo-card { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:12px 14px; margin-bottom:8px; display:flex; align-items:center; gap:12px; }
+  .resumo-avatar { width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:'Syne',sans-serif; font-weight:800; font-size:14px; flex-shrink:0; }
+  .resumo-info { flex:1; }
+  .resumo-name { font-weight:600; font-size:14px; }
+  .resumo-sub { font-size:11px; color:var(--muted); margin-top:3px; }
+  .resumo-total { font-family:'Syne',sans-serif; font-weight:800; font-size:17px; color:var(--success); }
+
+  /* ── CADASTRO ── */
+  .cad-form { display:flex; flex-direction:column; gap:12px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:500px) { .grid2 { grid-template-columns:1fr; } }
+  .form-input, .form-select { background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:10px 14px; color:var(--text); font-size:14px; font-family:'DM Sans',sans-serif; width:100%; }
+  .form-input:focus, .form-select:focus { outline:none; border-color:var(--accent); }
+  .form-select option { background:var(--surface2); }
+
+  /* ── MISC ── */
+  .alert { padding:10px 14px; border-radius:8px; font-size:13px; margin-bottom:12px; display:none; }
+  .alert.success { background:#0d2818; border:1px solid var(--success); color:var(--success); display:block; }
+  .alert.error { background:#2d0f0f; border:1px solid var(--danger); color:var(--danger); display:block; }
+  .divider { height:1px; background:var(--border); margin:14px 0; }
+  .info-row { display:flex; justify-content:space-between; align-items:center; padding:7px 0; font-size:13px; border-bottom:1px solid var(--surface2); }
+  .info-row:last-child { border-bottom:none; }
+  .info-row .lbl { color:var(--muted); }
+  .empty-state { text-align:center; padding:40px 20px; color:var(--muted); }
+  .empty-state .icon { font-size:38px; margin-bottom:10px; }
+  .empty-state p { font-size:14px; }
+  .obs-box { background:var(--surface2); border-left:3px solid var(--accent); border-radius:0 8px 8px 0; padding:10px 14px; font-size:13px; color:var(--text); margin-bottom:12px; white-space:pre-wrap; }
+  ::-webkit-scrollbar { width:5px; }
+  ::-webkit-scrollbar-track { background:var(--bg); }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:5px; }
+  .loading-spinner { display:inline-block; width:14px; height:14px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .6s linear infinite; vertical-align:middle; margin-right:6px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  /* ── QR FALLBACK ── */
+  .import-zone { border:2px dashed var(--border); border-radius:12px; padding:30px 20px; text-align:center; cursor:pointer; transition:border-color .2s; background:var(--surface2); margin-bottom:14px; }
+  .import-zone:hover { border-color:var(--accent); }
+  .import-zone.drag { border-color:var(--accent2); background:rgba(79,195,247,.05); }
+  .import-icon { font-size:36px; margin-bottom:10px; }
+  .import-title { font-family:'Syne',sans-serif; font-weight:700; font-size:15px; margin-bottom:6px; }
+  .import-sub { font-size:13px; color:var(--muted); }
+  #fileInput { display:none; }
+  .scan-result { background:var(--surface2); border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:14px; display:none; }
+  .scan-result.visible { display:block; }
+  .scan-result.ok { border-color:var(--success); }
+  .scan-date { font-family:'Syne',sans-serif; font-weight:800; font-size:17px; }
+  .scan-badge { font-size:12px; padding:4px 10px; border-radius:20px; background:rgba(63,185,80,.15); color:var(--success); font-weight:600; }
+  .scan-day-info { display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:12px; }
+
+  /* ── REABRIR MODAL ── */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:200; align-items:center; justify-content:center; }
+  .modal-overlay.open { display:flex; }
+  .modal-box { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:24px; width:100%; max-width:440px; }
+  .modal-title { font-family:'Syne',sans-serif; font-weight:700; font-size:16px; margin-bottom:14px; }
+  .modal-box textarea { width:100%; min-height:80px; margin-bottom:12px; }
+
+  /* ── EXPORT ── */
+  .export-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+</style>
+</head>
+<body>
+
+<!-- ══ LOGIN ══ -->
+<div id="loginScreen">
+  <div class="login-box">
+    <div class="login-logo">PRIMUS</div>
+    <div class="login-sub">Sistema de Gestão</div>
+    <div class="login-field">
+      <div class="login-label">E-mail</div>
+      <input type="email" id="loginEmail" class="login-input" placeholder="seu@email.com" autocomplete="username">
+    </div>
+    <div class="login-field">
+      <div class="login-label">Senha</div>
+      <input type="password" id="loginPass" class="login-input" placeholder="••••••••" autocomplete="current-password">
+    </div>
+    <button class="login-btn" id="loginBtn" onclick="doLogin()">Entrar</button>
+    <div class="login-error" id="loginError"></div>
+  </div>
+</div>
+
+<!-- ══ MODAL REABRIR ══ -->
+<div class="modal-overlay" id="reabrirModal">
+  <div class="modal-box">
+    <div class="modal-title">🔴 Reabrir Dia</div>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Informe o motivo da reabertura. Este registro ficará no histórico permanente.</p>
+    <textarea id="reabrirMotivo" placeholder="Ex: Erro no valor da gorjeta do Jonas Dantas..."></textarea>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-danger" style="flex:1" onclick="confirmarReabrir()">Confirmar Reabertura</button>
+      <button class="btn btn-secondary" onclick="fecharModal()">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ APP ══ -->
+<div id="appScreen">
+  <div class="header">
+    <div class="logo">PRIMUS <span>Peixaria — Gestão</span></div>
+    <div class="header-right">
+      <span class="user-pill" id="userLabel"></span>
+      <button class="btn-logout" onclick="doLogout()">Sair</button>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabsBar">
+    <div class="tab active" data-tab="dias"       onclick="showTab('dias',this)">📋 Dias</div>
+    <div class="tab"        data-tab="financeiro"  onclick="showTab('financeiro',this)">💰 Financeiro</div>
+    <div class="tab"        data-tab="historico"   onclick="showTab('historico',this)">📅 Histórico</div>
+    <div class="tab"        data-tab="resumo"      onclick="showTab('resumo',this)">📊 Resumo</div>
+    <div class="tab hidden" data-tab="cadastro"    onclick="showTab('cadastro',this)">👥 Cadastro</div>
+    <div class="tab hidden" data-tab="qrfallback"  onclick="showTab('qrfallback',this)">📥 QR Fallback</div>
+  </div>
+
+  <div class="main">
+
+    <!-- ══ ABA: DIAS ══ -->
+    <div class="section active" id="sec-dias">
+      <div class="section-header">
+        <div class="section-title">Dias Registrados</div>
+        <button class="btn btn-secondary btn-sm" onclick="carregarDias()">🔄 Atualizar</button>
+      </div>
+      <div id="diasAlert" class="alert"></div>
+      <div id="diasList"></div>
+    </div>
+
+    <!-- ══ ABA: FINANCEIRO ══ -->
+    <div class="section" id="sec-financeiro">
+      <div class="section-header">
+        <div class="section-title">Fechamento do Dia</div>
+        <div id="finStatusPill"></div>
+      </div>
+      <div id="finAlert" class="alert"></div>
+      <div id="finContent" style="display:none">
+        <div id="finObsBox"></div>
+
+        <!-- GORJETA -->
+        <div class="card">
+          <div class="card-title">Taxa de Serviço (Gorjeta)</div>
+          <div class="gorjeta-grid">
+            <div>
+              <div class="field-label">Total da Gorjeta</div>
+              <div class="money-wrap">
+                <span>R$</span>
+                <input type="number" class="money-input" id="gorjetaTotal" placeholder="0,00" step="0.01" oninput="calcGorjeta()">
+              </div>
+            </div>
+            <div>
+              <div class="field-label">Divisão por Setor</div>
+              <div class="gorjeta-chips" id="gorjetaChips"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- DIÁRIAS -->
+        <div class="card">
+          <div class="card-title">Diárias</div>
+          <div id="diariasList"></div>
+        </div>
+
+        <!-- RESULTADO -->
+        <div class="card">
+          <div class="card-title">Resumo do Dia</div>
+          <table class="result-table">
+            <thead>
+              <tr>
+                <th>Funcionário</th><th>Cargo</th>
+                <th class="right">Diária</th><th class="right">Gorjeta</th>
+                <th class="right">Consumo</th><th class="right">Total</th>
+              </tr>
+            </thead>
+            <tbody id="resultBody"></tbody>
+          </table>
+        </div>
+
+        <div id="finAlert2" class="alert"></div>
+        <div id="finAcoes"></div>
+      </div>
+      <div id="finEmpty" class="empty-state">
+        <div class="icon">📋</div>
+        <p>Selecione um dia na aba <strong>Dias</strong> para fazer o fechamento</p>
+      </div>
+    </div>
+
+    <!-- ══ ABA: HISTÓRICO ══ -->
+    <div class="section" id="sec-historico">
+      <div class="section-header">
+        <div class="section-title">Histórico</div>
+        <button class="btn btn-secondary btn-sm" onclick="renderHistorico()">🔄</button>
+      </div>
+      <div id="historicoList"></div>
+    </div>
+
+    <!-- ══ ABA: RESUMO ══ -->
+    <div class="section" id="sec-resumo">
+      <div class="section-header">
+        <div class="section-title">Resumo Mensal</div>
+      </div>
+      <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+        <select id="resumoMes" class="form-select" style="max-width:200px" onchange="renderResumo()">
+          <option value="">Todos os meses</option>
+        </select>
+        <div id="exportRow" class="export-row"></div>
+      </div>
+      <div id="resumoContent"></div>
+    </div>
+
+    <!-- ══ ABA: CADASTRO (diretoria/admin) ══ -->
+    <div class="section" id="sec-cadastro">
+      <div class="section-header">
+        <div class="section-title">Cadastro de Funcionários</div>
+      </div>
+      <div class="card">
+        <div class="card-title">Novo Funcionário</div>
+        <div class="cad-form">
+          <div class="grid2">
+            <div><div class="field-label">ID Fixo (ex: EMP016)</div>
+              <input type="text" class="form-input" id="cadId" placeholder="EMP016"></div>
+            <div><div class="field-label">Nome</div>
+              <input type="text" class="form-input" id="cadNome" placeholder="Nome completo"></div>
+          </div>
+          <div class="grid2">
+            <div><div class="field-label">Cargo</div>
+              <select class="form-select" id="cadCargo">
+                <option>Garçom</option><option>Bar</option><option>Cozinheiro</option>
+                <option>Cumim</option><option>Gerente</option><option>Limpeza</option>
+                <option>Recepcionista</option><option>Monitora</option>
+                <option>Aux. Cozinha</option><option>Caixa</option><option>Professor</option>
+              </select></div>
+            <div><div class="field-label">Diária Padrão (R$)</div>
+              <input type="number" class="form-input" id="cadDiaria" placeholder="150" step="0.01"></div>
+          </div>
+          <div><div class="field-label">Chave Pix</div>
+            <input type="text" class="form-input" id="cadPix" placeholder="CPF, celular ou e-mail"></div>
+          <div id="cadAlert" class="alert"></div>
+          <button class="btn btn-primary" onclick="addFunc()">➕ Adicionar Funcionário</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Funcionários Cadastrados</div>
+        <div id="cadList"></div>
+      </div>
+    </div>
+
+    <!-- ══ ABA: QR FALLBACK ══ -->
+    <div class="section" id="sec-qrfallback">
+      <div class="section-header">
+        <div class="section-title">Importar QR Code (Fallback Offline)</div>
+      </div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">
+        Use apenas quando o gerente não tiver internet e enviou um PDF com QR Code.
+        O fluxo normal é o gerente gravar diretamente na nuvem.
+      </p>
+      <div class="import-zone" onclick="document.getElementById('fileInput').click()"
+           ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+        <div class="import-icon">📄</div>
+        <div class="import-title">Clique ou arraste o PDF / imagem</div>
+        <div class="import-sub">O sistema lê o QR Code e importa os dados</div>
+      </div>
+      <input type="file" id="fileInput" accept="image/*,application/pdf" onchange="handleFile(this.files[0])">
+      <div id="importAlert" class="alert"></div>
+      <div class="scan-result" id="scanResult">
+        <div class="scan-day-info">
+          <div class="scan-date" id="scanDate"></div>
+          <div class="scan-badge" id="scanBadge"></div>
+        </div>
+        <div id="obsBox"></div>
+        <div class="emp-list" id="scanEmpList"></div>
+        <div class="divider"></div>
+        <button class="btn btn-success btn-block" onclick="importarQR()">✅ Confirmar Importação</button>
+      </div>
+    </div>
+
+  </div><!-- /main -->
+</div><!-- /appScreen -->
+
+<script>
+/* ════════════════════════════════════════════════════════════
+   ⚙️  CONFIGURAÇÃO FIREBASE — cole aqui o firebaseConfig
+════════════════════════════════════════════════════════════ */
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyDEo7pB-dLtSHFGjqvYf8Bt8n7VSu5HdrY",
+  authDomain:        "projeto-primus-9b643.firebaseapp.com",
+  projectId:         "projeto-primus-9b643",
+  storageBucket:     "projeto-primus-9b643.firebasestorage.app",
+  messagingSenderId: "547842320766",
+  appId:             "1:547842320766:web:a87b857ce7c2d434cdab2f"
+};
+/* ════════════════════════════════════════════════════════════ */
+
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth = firebase.auth();
+const db   = firebase.firestore();
+
+/* ── CONSTANTES ── */
+const CARGO_SETOR = {
+  'Garçom':'garcom','Bar':'bar','Cozinheiro':'cozinha','Cumim':'cumim',
+  'Gerente':'gerente','Limpeza':'outros','Recepcionista':'outros',
+  'Monitora':'outros','Aux. Cozinha':'outros','Caixa':'outros','Professor':'outros',
+};
+const STATUS_LABEL = {
+  em_aberto:'🔵 Em Aberto',
+  aguardando_fechamento:'🟡 Aguardando Fechamento',
+  fechado:'🟢 Fechado', reaberto:'🔴 Reaberto',
+};
+const COLORS = ['#e8a045','#4fc3f7','#3fb950','#f85149','#a371f7','#79c0ff','#d29922','#56d364'];
+
+/* ── ESTADO ── */
+let currentUser   = null;
+let currentPerfil = null;
+let finDate       = null;  // data atual no módulo financeiro
+let finPresentes  = [];
+let finGorjetaMap = {};    // { funcId: valor }
+let gorjetaRegras = {};    // lido do Firestore
+let finDayStatus  = null;
+let pendingQR     = null;
+
+/* ══════════════════════════════════════════ AUTH ══ */
+auth.onAuthStateChanged(async user => {
+  if (!user) { showLogin(); return; }
+  try {
+    const snap = await db.collection('usuarios').doc(user.uid).get();
+    if (!snap.exists || !snap.data().ativo) { await auth.signOut(); showLogin(); return; }
+    const data = snap.data();
+    if (!['financeiro','diretoria','admin'].includes(data.perfil)) {
+      await auth.signOut(); showLogin('Acesso restrito ao módulo financeiro/gestão.'); return;
+    }
+    currentUser   = user;
+    currentPerfil = data.perfil;
+    document.getElementById('userLabel').textContent = `${data.nome || user.email} (${data.perfil})`;
+    await carregarGorjetaConfig();
+    configurarAbas();
+    showApp();
+  } catch(e) { await auth.signOut(); showLogin('Erro: ' + e.message); }
+});
+
+function showLogin(msg='') {
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('appScreen').style.display   = 'none';
+  if (msg) { const el = document.getElementById('loginError'); el.textContent = msg; el.classList.add('show'); }
+}
+
+function showApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display   = 'block';
+  carregarDias();
+}
+
+async function doLogin() {
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass  = document.getElementById('loginPass').value;
+  const btn   = document.getElementById('loginBtn');
+  const err   = document.getElementById('loginError');
+  err.classList.remove('show');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-spinner"></span>Entrando...';
+  try { await auth.signInWithEmailAndPassword(email, pass); }
+  catch(e) {
+    err.textContent = e.code === 'auth/invalid-credential' ? 'E-mail ou senha incorretos.' : e.message;
+    err.classList.add('show'); btn.disabled = false; btn.textContent = 'Entrar';
+  }
+}
+async function doLogout() { await auth.signOut(); }
+document.addEventListener('keydown', e => {
+  if (e.key==='Enter' && document.getElementById('loginScreen').style.display!=='none') doLogin();
+});
+
+/* ── ABAS POR PERFIL ── */
+function configurarAbas() {
+  const podeAdmin = ['diretoria','admin'].includes(currentPerfil);
+  document.querySelector('[data-tab="cadastro"]').classList.toggle('hidden', !podeAdmin);
+  document.querySelector('[data-tab="qrfallback"]').classList.toggle('hidden', false); // todos veem
+}
+
+/* ══════════════════════════════════════════ UTILS ══ */
+function fmt(v) { return 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtDate(d) {
+  const [y,m,day] = d.split('-');
+  const n = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  return `${n[new Date(+y,+m-1,+day).getDay()]}, ${day}/${m}/${y}`;
+}
+function badge(cargo) { const s=CARGO_SETOR[cargo]||'outros'; return `<span class="badge c-${s}">${cargo}</span>`; }
+function showAlert(id, msg, type, dur=5000) {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.className = 'alert '+type;
+  if (dur) setTimeout(()=>el.className='alert', dur);
+}
+function hideAlert(id) { document.getElementById(id).className='alert'; }
+
+/* ── TABS ── */
+function showTab(tab, el) {
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('sec-'+tab).classList.add('active');
+  el.classList.add('active');
+  if (tab==='historico') renderHistorico();
+  if (tab==='resumo')    renderResumoInit();
+  if (tab==='cadastro')  renderCadList();
+  if (tab==='dias')      carregarDias();
+}
+
+/* ══════════════════════════════════════════
+   GORJETA CONFIG (do Firestore)
+══════════════════════════════════════════ */
+async function carregarGorjetaConfig() {
+  try {
+    const snap = await db.collection('configuracoes').doc('gorjeta').get();
+    gorjetaRegras = snap.exists ? (snap.data().regras || {}) : {};
+  } catch(_) { gorjetaRegras = {}; }
+}
+
+function pctGorjeta(cargo) {
+  return gorjetaRegras[cargo]?.percentual ?? 0;
+}
+
+/* ══════════════════════════════════════════
+   ABA DIAS — LISTA DE DIAS DO FIRESTORE
+══════════════════════════════════════════ */
+async function carregarDias() {
+  const el = document.getElementById('diasList');
+  el.innerHTML = '<div class="empty-state"><span class="loading-spinner"></span> Carregando...</div>';
+
+  try {
+    // Financeiro só vê aguardando_fechamento, reaberto e fechado
+    // Diretoria/admin veem tudo
+    let query = db.collection('presencas_diarias').orderBy('data','desc').limit(60);
+    const snap = await query.get();
+
+    const todos = snap.docs.map(d=>({id:d.id,...d.data()}));
+    const visiveis = currentPerfil==='financeiro'
+      ? todos.filter(d=>['aguardando_fechamento','fechado','reaberto'].includes(d.status))
+      : todos;
+
+    if (!visiveis.length) {
+      el.innerHTML = '<div class="empty-state"><div class="icon">📋</div><p>Nenhum dia registrado ainda</p></div>';
+      return;
+    }
+
+    el.innerHTML = visiveis.map(d => {
+      const presentes = Object.values(d.funcionarios||{}).filter(f=>f.presente!==false).length;
+      return `
+        <div class="dia-card" id="diacard-${d.id}" onclick="selecionarDia('${d.id}', this)">
+          <div>
+            <div class="dia-date">${fmtDate(d.id)}</div>
+            <div class="dia-meta" style="margin-top:4px">
+              <span>${presentes} presentes</span>
+              ${d.obs ? '<span>📝 Com observações</span>' : ''}
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="status-pill status-${d.status||'em_aberto'}">${STATUS_LABEL[d.status]||d.status}</span>
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) {
+    el.innerHTML = `<div class="empty-state"><div class="icon">❌</div><p>${e.message}</p></div>`;
+  }
+}
+
+async function selecionarDia(date, cardEl) {
+  // Destacar card selecionado
+  document.querySelectorAll('.dia-card').forEach(c => c.classList.remove('selected'));
+  if (cardEl) cardEl.classList.add('selected');
+
+  // Ir para aba financeiro e carregar
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('sec-financeiro').classList.add('active');
+  document.querySelector('[data-tab="financeiro"]').classList.add('active');
+
+  await loadFin(date);
+}
+
+/* ══════════════════════════════════════════
+   FINANCEIRO
+══════════════════════════════════════════ */
+async function loadFin(date) {
+  finDate = date;
+  document.getElementById('finContent').style.display = 'none';
+  document.getElementById('finEmpty').style.display   = 'block';
+  hideAlert('finAlert');
+
+  try {
+    const daySnap = await db.collection('presencas_diarias').doc(date).get();
+    if (!daySnap.exists) { showAlert('finAlert','Dia não encontrado.','error',0); return; }
+
+    const dayData = daySnap.data();
+    finDayStatus  = dayData.status;
+
+    // Verificar acesso
+    if (currentPerfil==='financeiro' && finDayStatus==='em_aberto') {
+      showAlert('finAlert','Este dia ainda está em aberto. Aguarde o gerente enviar para o financeiro.','error',0);
+      return;
+    }
+
+    // Obs
+    document.getElementById('finObsBox').innerHTML = dayData.obs
+      ? `<div class="obs-box" style="margin-bottom:14px">📝 ${dayData.obs}</div>` : '';
+
+    // Status pill
+    document.getElementById('finStatusPill').innerHTML =
+      `<span class="status-pill status-${finDayStatus}">${STATUS_LABEL[finDayStatus]||finDayStatus}</span>`;
+
+    // Buscar cadastro de funcionários para diária padrão
+    const fSnap = await db.collection('funcionarios').get();
+    const cadastro = {};
+    fSnap.docs.forEach(d => cadastro[d.id] = d.data());
+
+    // Buscar fechamento existente
+    const fechSnap = await db.collection('fechamento_diario').doc(date).get();
+    const fechData = fechSnap.exists ? fechSnap.data() : {};
+
+    // Montar lista de presentes
+    finPresentes = Object.entries(dayData.funcionarios||{})
+      .filter(([,p])=>p.presente!==false)
+      .map(([id,p])=>({
+        id, nome: p.nome, cargo: p.cargo,
+        consumo: p.consumo||0, atrasado: p.atrasado||false,
+        diariaPadrao: cadastro[id]?.diariaPadrao || 0,
+        pix: cadastro[id]?.pix || '',
+      }));
+
+    // Gorjeta
+    document.getElementById('gorjetaTotal').value = fechData.gorjetaTotal || '';
+
+    // Diárias — valor inicial: usa diária padrão do cadastro; sobrescrito por carregarDiariasSalvas
+    const bloqueado = finDayStatus === 'fechado';
+    document.getElementById('diariasList').innerHTML = finPresentes.map(f => {
+      return `
+        <div class="diaria-row">
+          <div class="diaria-name">${f.nome}<small>${f.cargo}</small></div>
+          ${badge(f.cargo)}
+          <input type="number" class="diaria-input" id="diaria-${f.id}"
+            value="${f.diariaPadrao || ''}" step="0.01" oninput="calcResultado()"
+            ${bloqueado ? 'disabled' : ''}>
+        </div>`;
+    }).join('');
+
+    document.getElementById('finContent').style.display = 'block';
+    document.getElementById('finEmpty').style.display   = 'none';
+
+    // Recarregar diárias salvas dos documentos individuais (sobrescreve padrão com valor salvo)
+    await carregarDiariasSalvas(date);
+
+    calcGorjeta();
+    renderFinAcoes(bloqueado);
+
+  } catch(e) {
+    showAlert('finAlert','❌ Erro ao carregar: '+e.message,'error',0);
+  }
+}
+
+async function carregarDiariasSalvas(date) {
+  // Buscar fechamento_funcionario para popular diárias com valores já salvos
+  // Sobrescreve o valor padrão do cadastro quando há fechamento existente
+  try {
+    const promises = finPresentes.map(f =>
+      db.collection('fechamento_funcionario').doc(`${date}_${f.id}`).get()
+    );
+    const snaps = await Promise.all(promises);
+    let algumSalvo = false;
+    snaps.forEach((snap, i) => {
+      if (snap.exists) {
+        algumSalvo = true;
+        const el = document.getElementById(`diaria-${finPresentes[i].id}`);
+        if (el) el.value = snap.data().diaria ?? '';
+      }
+    });
+    // Só recalcula se encontrou dados salvos (evita recalcular com zeros desnecessariamente)
+    if (algumSalvo) calcGorjeta();
+  } catch (_) { /* silencioso — não impede o fluxo */ }
+}
+
+function calcGorjeta() {
+  const total = parseFloat(document.getElementById('gorjetaTotal').value) || 0;
+  const groups = {};
+  finPresentes.forEach(f => { if (!groups[f.cargo]) groups[f.cargo]=[]; groups[f.cargo].push(f); });
+
+  finGorjetaMap = {};
+  Object.entries(groups).forEach(([cargo, members]) => {
+    const pct = pctGorjeta(cargo);
+    const pp  = members.length ? (total*pct)/members.length : 0;
+    members.forEach(f => finGorjetaMap[f.id] = pp);
+  });
+
+  // Chips
+  const seenCargos = {};
+  finPresentes.forEach(f => seenCargos[f.cargo]=(seenCargos[f.cargo]||0)+1);
+  document.getElementById('gorjetaChips').innerHTML = Object.entries(seenCargos).map(([cargo,cnt])=>{
+    const pct = pctGorjeta(cargo);
+    if (!pct) return '';
+    return `<div class="chip"><strong>${cargo}</strong> ${(pct*100).toFixed(0)}% → ${fmt(total*pct)} ÷ ${cnt}</div>`;
+  }).filter(Boolean).join('');
+
+  calcResultado();
+}
+
+function calcResultado() {
+  let totalDia = 0;
+  document.getElementById('resultBody').innerHTML = finPresentes.map(f=>{
+    const diaria  = parseFloat(document.getElementById(`diaria-${f.id}`)?.value||0)||0;
+    const gorjeta = finGorjetaMap[f.id]||0;
+    const consumo = f.consumo||0;
+    const total   = diaria+gorjeta-consumo;
+    totalDia += total;
+    const s = CARGO_SETOR[f.cargo]||'outros';
+    return `<tr>
+      <td>${f.nome} ${f.atrasado?'<span class="tag-atrasado">⏰</span>':''}</td>
+      <td><span class="badge c-${s}">${f.cargo}</span></td>
+      <td class="right">${fmt(diaria)}</td>
+      <td class="right">${fmt(gorjeta)}</td>
+      <td class="right val-neg">${consumo>0?'- '+fmt(consumo):'—'}</td>
+      <td class="right val-pos">${fmt(total)}</td>
+    </tr>`;
+  }).join('') + `<tr class="total-row"><td colspan="5">Total do Dia</td><td class="right">${fmt(totalDia)}</td></tr>`;
+}
+
+function renderFinAcoes(bloqueado) {
+  const el = document.getElementById('finAcoes');
+  const podeFin = ['financeiro','admin'].includes(currentPerfil);
+  const podeDir = ['diretoria','admin'].includes(currentPerfil);
+
+  if (bloqueado) {
+    el.innerHTML = podeDir
+      ? `<button class="btn btn-danger btn-block" onclick="abrirModalReabrir()">🔴 Reabrir Dia</button>`
+      : `<div class="empty-state" style="padding:16px"><p style="color:var(--muted)">Dia fechado. Somente Diretoria pode reabrir.</p></div>`;
+  } else if (['aguardando_fechamento','reaberto'].includes(finDayStatus) && podeFin) {
+    el.innerHTML = `
+      <button class="btn btn-primary btn-block" onclick="salvarFechamento(false)">
+        💾 Salvar Fechamento
+      </button>
+      <button class="btn btn-success btn-block" onclick="salvarFechamento(true)" style="margin-top:8px">
+        ✅ Fechar o Dia
+      </button>`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+async function salvarFechamento(fechar = false) {
+  if (!finDate) return;
+  if (finDayStatus === 'fechado') return;
+
+  try {
+    const gorjetaTotal = parseFloat(document.getElementById('gorjetaTotal').value)||0;
+    const gorjetaDist  = Object.values(finGorjetaMap).reduce((a,b)=>a+b,0);
+    let   totalDiarias = 0, totalConsumos = 0, totalLiq = 0;
+
+    // Ler regras atuais para snapshot
+    const regrasSnap = await db.collection('configuracoes').doc('gorjeta').get();
+    const regrasSnapshot = regrasSnap.exists ? regrasSnap.data().regras : {};
+
+    // Batch write
+    const batch = db.batch();
+
+    // fechamento_funcionario — um por presente
+    finPresentes.forEach(f => {
+      const diaria  = parseFloat(document.getElementById(`diaria-${f.id}`)?.value||0)||0;
+      const gorjeta = finGorjetaMap[f.id]||0;
+      const consumo = f.consumo||0;
+      const liq     = diaria+gorjeta-consumo;
+      totalDiarias += diaria; totalConsumos += consumo; totalLiq += liq;
+
+      const docRef = db.collection('fechamento_funcionario').doc(`${finDate}_${f.id}`);
+      batch.set(docRef, {
+        data: finDate, funcId: f.id,
+        nomeSnapshot: f.nome, cargoSnapshot: f.cargo,
+        presente: true, atrasado: f.atrasado,
+        consumo, diaria, gorjeta,
+        baseGorjeta: gorjetaTotal,
+        percentualCargo: pctGorjeta(f.cargo),
+        regrasGorjetaSnapshot: regrasSnapshot,
+        totalLiquido: liq,
+        criadoPor: currentUser.uid,
+        criadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+        versao: 1,
+      }, {merge:true});
+    });
+
+    // fechamento_diario
+    const fdRef = db.collection('fechamento_diario').doc(finDate);
+    batch.set(fdRef, {
+      data: finDate, gorjetaTotal,
+      gorjetaDistribuida: gorjetaDist,
+      gorjetaCasa: gorjetaTotal - gorjetaDist,
+      gorjetaPerFunc: finGorjetaMap,
+      regrasGorjetaSnapshot: regrasSnapshot,
+      totalFuncionarios: finPresentes.length,
+      totalDiarias, totalConsumos,
+      totalLiquidoDia: totalLiq,
+      fechadoPor: currentUser.uid,
+      fechadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      versao: 1,
+    }, {merge:true});
+
+    // presencas_diarias — mudar status se fechar
+    if (fechar) {
+      const entrada = { de: finDayStatus, para:'fechado', por:currentUser.uid, em:new Date().toISOString(), motivo:'' };
+      const pdRef = db.collection('presencas_diarias').doc(finDate);
+      batch.update(pdRef, {
+        status:'fechado',
+        atualizadoPor: currentUser.uid,
+        atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+        statusHistorico: firebase.firestore.FieldValue.arrayUnion(entrada),
+      });
+    }
+
+    await batch.commit();
+    await registrarAuditoria(fechar?'DIA_FECHADO':'FECHAMENTO_CRIADO',
+      `presencas_diarias/${finDate}`,{},{gorjetaTotal, fechar});
+
+    if (fechar) {
+      finDayStatus = 'fechado';
+      document.getElementById('finStatusPill').innerHTML =
+        `<span class="status-pill status-fechado">${STATUS_LABEL['fechado']}</span>`;
+      renderFinAcoes(true);
+      showAlert('finAlert2','✅ Dia fechado com sucesso!','success');
+      carregarDias();
+    } else {
+      showAlert('finAlert2','✅ Fechamento salvo!','success');
+    }
+  } catch(e) {
+    showAlert('finAlert2','❌ Erro: '+e.message,'error',0);
+  }
+}
+
+/* ── REABRIR ── */
+function abrirModalReabrir() { document.getElementById('reabrirModal').classList.add('open'); }
+function fecharModal()        { document.getElementById('reabrirModal').classList.remove('open'); }
+
+async function confirmarReabrir() {
+  const motivo = document.getElementById('reabrirMotivo').value.trim();
+  if (!motivo) { alert('Informe o motivo da reabertura.'); return; }
+
+  try {
+    const entrada = { de:'fechado', para:'reaberto', por:currentUser.uid, em:new Date().toISOString(), motivo };
+    await db.collection('presencas_diarias').doc(finDate).update({
+      status: 'reaberto',
+      atualizadoPor: currentUser.uid,
+      atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      statusHistorico: firebase.firestore.FieldValue.arrayUnion(entrada),
+    });
+    await registrarAuditoria('DIA_REABERTO',`presencas_diarias/${finDate}`,{status:'fechado'},{status:'reaberto',motivo});
+    finDayStatus = 'reaberto';
+    document.getElementById('finStatusPill').innerHTML =
+      `<span class="status-pill status-reaberto">${STATUS_LABEL['reaberto']}</span>`;
+    fecharModal();
+    renderFinAcoes(false);
+    // Reabilitar inputs de diária
+    finPresentes.forEach(f=>{
+      const el = document.getElementById(`diaria-${f.id}`);
+      if (el) el.disabled = false;
+    });
+    document.getElementById('gorjetaTotal').disabled = false;
+    showAlert('finAlert','✅ Dia reaberto. Corrija e feche novamente.','success');
+    carregarDias();
+  } catch(e) { showAlert('finAlert','❌ Erro: '+e.message,'error',0); }
+}
+
+/* ══════════════════════════════════════════
+   HISTÓRICO (lê do Firestore)
+══════════════════════════════════════════ */
+async function renderHistorico() {
+  const el = document.getElementById('historicoList');
+  el.innerHTML = '<div class="empty-state"><span class="loading-spinner"></span> Carregando...</div>';
+  try {
+    const snap = await db.collection('presencas_diarias').orderBy('data','desc').limit(60).get();
+    if (!snap.size) { el.innerHTML='<div class="empty-state"><div class="icon">📅</div><p>Nenhum dia ainda</p></div>'; return; }
+
+    // Buscar fechamentos para totais
+    const fechSnaps = await Promise.all(snap.docs.map(d=>db.collection('fechamento_diario').doc(d.id).get()));
+    const fechMap = {};
+    fechSnaps.forEach(s=>{ if(s.exists) fechMap[s.id]=s.data(); });
+
+    el.innerHTML = snap.docs.map(d => {
+      const day  = d.data();
+      const fech = fechMap[d.id];
+      const funcsMap = day.funcionarios || {};
+      const presentes = Object.entries(funcsMap).filter(([,f]) => f.presente !== false);
+      return `
+        <div class="hist-item">
+          <div class="hist-header" onclick="this.nextElementSibling.classList.toggle('open')">
+            <div>
+              <div class="hist-date">${fmtDate(d.id)}</div>
+              <div style="margin-top:4px">
+                <span class="status-pill status-${day.status || 'em_aberto'}">${STATUS_LABEL[day.status] || day.status}</span>
+              </div>
+            </div>
+            <div class="hist-meta">
+              <span>${presentes.length} presentes</span>
+              ${fech ? `<span class="val">${fmt(fech.totalLiquidoDia)}</span>` : '<span style="color:var(--accent)">Pendente</span>'}
+              <span>▾</span>
+            </div>
+          </div>
+          <div class="hist-body">
+            ${day.obs ? `<div class="obs-box" style="margin-bottom:10px">📝 ${day.obs}</div>` : ''}
+            ${presentes.map(([id, p]) => {
+              const s = CARGO_SETOR[p.cargo] || 'outros';
+              const gorjetaFunc = fech?.gorjetaPerFunc?.[id] || 0;
+              const diariaFunc  = fech ? (fech[`diaria_${id}`] || 0) : 0;
+              const consumoFunc = p.consumo || 0;
+              const totalFunc   = diariaFunc + gorjetaFunc - consumoFunc;
+              return `<div class="info-row">
+                <span class="lbl">
+                  ${p.nome || id}
+                  <span class="badge c-${s}">${p.cargo}</span>
+                  ${p.atrasado ? '<span class="tag-atrasado">⏰</span>' : ''}
+                </span>
+                <span>${fech ? fmt(totalFunc) : '—'}</span>
+              </div>`;
+            }).join('')}
+          </div>
+        </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`; }
+}
+
+/* ══════════════════════════════════════════
+   RESUMO MENSAL (lê de fechamento_funcionario)
+══════════════════════════════════════════ */
+async function renderResumoInit() {
+  // Popular meses
+  const snap = await db.collection('presencas_diarias').orderBy('data','desc').limit(120).get();
+  const meses = new Set(snap.docs.map(d=>d.id.substring(0,7)));
+  const sel   = document.getElementById('resumoMes');
+  const cur   = sel.value;
+  sel.innerHTML = '<option value="">Todos</option>' + [...meses].sort().reverse().map(m=>{
+    const [y,mo] = m.split('-');
+    return `<option value="${m}" ${m===cur?'selected':''}>${new Date(+y,+mo-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</option>`;
+  }).join('');
+
+  // Export button
+  const exportRow = document.getElementById('exportRow');
+  exportRow.innerHTML = `<button class="btn btn-secondary btn-sm" onclick="exportarCSV()">⬇️ Exportar CSV</button>`;
+
+  renderResumo();
+}
+
+async function renderResumo() {
+  const mes  = document.getElementById('resumoMes').value;
+  const cont = document.getElementById('resumoContent');
+  cont.innerHTML = '<div class="empty-state"><span class="loading-spinner"></span></div>';
+
+  try {
+    let q = db.collection('fechamento_funcionario');
+    if (mes) {
+      q = q.where('data','>=',mes+'-01').where('data','<=',mes+'-31');
+    }
+    const snap = await q.get();
+
+    const totals = {};
+    snap.docs.forEach(d=>{
+      const r = d.data();
+      if (!r.presente) return;
+      if (!totals[r.funcId]) totals[r.funcId] = {nome:r.nomeSnapshot,cargo:r.cargoSnapshot,dias:0,gorjeta:0,diarias:0,consumo:0,total:0};
+      totals[r.funcId].dias++;
+      totals[r.funcId].gorjeta  += r.gorjeta||0;
+      totals[r.funcId].diarias  += r.diaria||0;
+      totals[r.funcId].consumo  += r.consumo||0;
+      totals[r.funcId].total    += r.totalLiquido||0;
+    });
+
+    const sorted = Object.values(totals).sort((a,b)=>b.total-a.total);
+    if (!sorted.length) { cont.innerHTML='<div class="empty-state"><div class="icon">📊</div><p>Nenhum fechamento no período</p></div>'; return; }
+
+    cont.innerHTML = sorted.map((t,i)=>{
+      const color   = COLORS[i%COLORS.length];
+      const initials = t.nome.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+      const s = CARGO_SETOR[t.cargo]||'outros';
+      return `
+        <div class="resumo-card">
+          <div class="resumo-avatar" style="background:${color}22;color:${color}">${initials}</div>
+          <div class="resumo-info">
+            <div class="resumo-name">${t.nome}</div>
+            <div class="resumo-sub">
+              <span class="badge c-${s}">${t.cargo}</span>
+              &nbsp; ${t.dias} dia(s)
+              &nbsp;·&nbsp; Gorjeta ${fmt(t.gorjeta)}
+              &nbsp;·&nbsp; Diárias ${fmt(t.diarias)}
+              ${t.consumo>0?`&nbsp;·&nbsp; <span style="color:var(--danger)">-${fmt(t.consumo)}</span>`:''}
+            </div>
+          </div>
+          <div class="resumo-total">${fmt(t.total)}</div>
+        </div>`;
+    }).join('');
+  } catch(e) { cont.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`; }
+}
+
+/* ── EXPORTAR CSV ── */
+async function exportarCSV() {
+  const mes  = document.getElementById('resumoMes').value;
+  let q = db.collection('fechamento_funcionario');
+  if (mes) q = q.where('data','>=',mes+'-01').where('data','<=',mes+'-31');
+  const snap = await q.get();
+
+  const rows = [['Data','Funcionario','Cargo','Presente','Atrasado','Diaria','Gorjeta','Consumo','Total']];
+  snap.docs.forEach(d=>{
+    const r = d.data();
+    rows.push([r.data,r.nomeSnapshot,r.cargoSnapshot,r.presente?'Sim':'Nao',r.atrasado?'Sim':'Nao',
+      r.diaria||0,r.gorjeta||0,r.consumo||0,r.totalLiquido||0]);
+  });
+
+  const csv  = rows.map(r=>r.join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `primus-${mes||'completo'}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+/* ══════════════════════════════════════════
+   CADASTRO (diretoria/admin)
+══════════════════════════════════════════ */
+async function addFunc() {
+  const id    = document.getElementById('cadId').value.trim().toUpperCase();
+  const nome  = document.getElementById('cadNome').value.trim();
+  const cargo = document.getElementById('cadCargo').value;
+  const pix   = document.getElementById('cadPix').value.trim();
+  const diar  = parseFloat(document.getElementById('cadDiaria').value)||0;
+
+  if (!id||!nome) { showAlert('cadAlert','Informe ID e nome.','error'); return; }
+  if (!id.match(/^EMP\d{3,}$/)) { showAlert('cadAlert','ID deve ser no formato EMP016','error'); return; }
+
+  try {
+    await db.collection('funcionarios').doc(id).set({
+      id, nome, cargo, pix, diariaPadrao: diar, ativo: true,
+      criadoPor: currentUser.uid,
+      criadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    await registrarAuditoria('FUNCIONARIO_CRIADO',`funcionarios/${id}`,{},{nome,cargo,pix});
+    showAlert('cadAlert',`✅ ${nome} adicionado!`,'success');
+    renderCadList();
+  } catch(e) { showAlert('cadAlert','❌ '+e.message,'error'); }
+}
+
+async function desativarFunc(id) {
+  if (!['diretoria','admin'].includes(currentPerfil)) return;
+  if (!confirm(`Desativar funcionário ${id}?`)) return;
+  try {
+    await db.collection('funcionarios').doc(id).update({ ativo: false });
+    await registrarAuditoria('FUNCIONARIO_DESATIVADO',`funcionarios/${id}`,{ativo:true},{ativo:false});
+    renderCadList();
+  } catch(e) { alert(e.message); }
+}
+
+async function renderCadList() {
+  const el = document.getElementById('cadList');
+  el.innerHTML = '<span class="loading-spinner"></span>';
+  try {
+    const snap = await db.collection('funcionarios').orderBy('nome').get();
+    if (!snap.size) { el.innerHTML='<div class="empty-state"><p>Nenhum cadastrado</p></div>'; return; }
+    const podeDesativar = ['diretoria','admin'].includes(currentPerfil);
+    el.innerHTML = snap.docs.map(d=>{
+      const f = d.data();
+      const s = CARGO_SETOR[f.cargo]||'outros';
+      return `
+        <div class="diaria-row" style="${!f.ativo?'opacity:.4':''}">
+          <div class="diaria-name">${f.nome} ${!f.ativo?'<span style="color:var(--danger);font-size:11px">[inativo]</span>':''}
+            <small>${f.pix||'Sem Pix'} · ${fmt(f.diariaPadrao)}/dia</small></div>
+          <span class="badge c-${s}">${f.cargo}</span>
+          ${podeDesativar && f.ativo ? `<button class="btn btn-danger btn-sm" onclick="desativarFunc('${d.id}')">Desativar</button>` : ''}
+        </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML='<div class="empty-state"><p>'+e.message+'</p></div>'; }
+}
+
+/* ══════════════════════════════════════════
+   QR CODE FALLBACK (contingência offline)
+══════════════════════════════════════════ */
+function onDragOver(e) { e.preventDefault(); document.getElementById('fileInput').parentElement.querySelector('.import-zone')?.classList.add('drag'); }
+function onDragLeave()  { document.querySelector('.import-zone')?.classList.remove('drag'); }
+function onDrop(e)      { e.preventDefault(); document.querySelector('.import-zone')?.classList.remove('drag'); if(e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]); }
+
+function handleFile(file) {
+  if (!file) return;
+  document.getElementById('scanResult').classList.remove('visible','ok','err');
+  pendingQR = null;
+  if (file.type.startsWith('image/')) readImageQR(file);
+  else if (file.type==='application/pdf') renderPDFandScan(file);
+  else showAlert('importAlert','Arquivo não suportado.','error');
+}
+
+function readImageQR(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement('canvas');
+      c.width=img.width; c.height=img.height;
+      const ctx = c.getContext('2d'); ctx.drawImage(img,0,0);
+      const code = jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height);
+      code ? parseQR(code.data) : showAlert('importAlert','QR Code não encontrado.','error');
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function renderPDFandScan(file) {
+  showAlert('importAlert','⏳ Lendo PDF...','success');
+  try {
+    if (!window.pdfjsLib) {
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    const pdf  = await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+    let found  = false;
+    for (let p=1; p<=pdf.numPages&&!found; p++) {
+      const page = await pdf.getPage(p);
+      const vp   = page.getViewport({scale:3});
+      const c    = document.createElement('canvas');
+      c.width=vp.width; c.height=vp.height;
+      const ctx  = c.getContext('2d');
+      await page.render({canvasContext:ctx,viewport:vp}).promise;
+      const code = jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height);
+      if (code) { parseQR(code.data); found=true; }
+    }
+    if (!found) showAlert('importAlert','QR Code não encontrado no PDF.','error');
+  } catch(e) { showAlert('importAlert','❌ '+e.message,'error'); }
+}
+
+function loadScript(src) {
+  return new Promise((res,rej)=>{
+    if (document.querySelector(`script[src="${src}"]`)){res();return;}
+    const s=document.createElement('script'); s.src=src; s.onload=res; s.onerror=rej;
+    document.head.appendChild(s);
+  });
+}
+
+function parseQR(raw) {
+  try {
+    const data = JSON.parse(decodeURIComponent(escape(atob(raw))));
+    if (!data.date||!data.presenca) throw new Error('Formato inválido');
+    pendingQR = data;
+    document.getElementById('scanDate').textContent = fmtDate(data.date);
+    document.getElementById('scanBadge').textContent =
+      `${data.presenca.filter(f=>f.presente).length} presentes · ${data.presenca.filter(f=>f.atrasado).length} atrasados`;
+    document.getElementById('obsBox').innerHTML = data.obs?`<div class="obs-box">📝 ${data.obs}</div>`:'';
+    document.getElementById('scanEmpList').innerHTML = data.presenca.map(f=>`
+      <div class="emp-row ${f.presente?'presente':'ausente'}">
+        <div class="emp-name">${f.nome}<small>${f.cargo}</small></div>
+        ${badge(f.cargo)}
+        <div style="display:flex;gap:6px">
+          ${f.atrasado?'<span class="tag-atrasado">⏰ Atrasado</span>':''}
+          ${!f.presente?'<span class="tag-ausente">Ausente</span>':''}
+          ${f.consumo>0?`<span style="font-size:11px;color:var(--muted)">${fmt(f.consumo)}</span>`:''}
+        </div>
+      </div>`).join('');
+    const sr = document.getElementById('scanResult');
+    sr.classList.add('visible','ok');
+    showAlert('importAlert',`✅ QR Code do dia ${fmtDate(data.date)} lido!`,'success');
+  } catch(e) { showAlert('importAlert','❌ QR Code inválido.','error'); }
+}
+
+async function importarQR() {
+  if (!pendingQR) return;
+  try {
+    const date = pendingQR.date;
+    const funcMap = {};
+    pendingQR.presenca.forEach(f=>{
+      funcMap[f.id] = { nome:f.nome, cargo:f.cargo, presente:f.presente, atrasado:f.atrasado, consumo:f.consumo||0 };
+    });
+    const snap = await db.collection('presencas_diarias').doc(date).get();
+    const entrada = { de: snap.exists?snap.data().status:null, para:'aguardando_fechamento', por:currentUser.uid, em:new Date().toISOString(), motivo:'Importado via QR Code offline' };
+    await db.collection('presencas_diarias').doc(date).set({
+      data:date, status:'aguardando_fechamento', obs:pendingQR.obs||'',
+      funcionarios:funcMap, registradoPor:currentUser.uid,
+      registradoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      atualizadoPor:currentUser.uid,
+      atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      statusHistorico:firebase.firestore.FieldValue.arrayUnion(entrada),
+    },{merge:true});
+    showAlert('importAlert',`✅ Dia ${fmtDate(date)} importado!`,'success');
+    pendingQR = null;
+    carregarDias();
+  } catch(e) { showAlert('importAlert','❌ '+e.message,'error'); }
+}
+
+/* ══════════════════════════════════════════
+   AUDITORIA
+══════════════════════════════════════════ */
+async function registrarAuditoria(acao, entidade, antes, depois) {
+  try {
+    await db.collection('auditoria').add({
+      ts: firebase.firestore.FieldValue.serverTimestamp(),
+      usuarioId: currentUser.uid,
+      usuarioNome: document.getElementById('userLabel').textContent,
+      perfil: currentPerfil, acao, entidade,
+      camposAlterados: Object.keys(depois),
+      valorAntes: antes, valorDepois: depois,
+    });
+  } catch(_) {}
+}
+</script>
+</body>
+</html>
