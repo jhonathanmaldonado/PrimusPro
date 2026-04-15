@@ -299,7 +299,7 @@
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <span id="revisao-alertas" style="font-size:11px;color:var(--amarelo-status);font-family:'DM Mono',monospace"></span>
-            <button class="btn btn-ghost" onclick="relereComIA()" style="font-size:12px;padding:7px 14px">🔄 Reimportar JSONs</button>
+            <button class="btn btn-ghost" onclick="reimportarJSONs()" style="font-size:12px;padding:7px 14px">🔄 Reimportar JSONs</button>
           </div>
         </div>
 
@@ -377,7 +377,7 @@
         <div><div class="card-title">ETAPA 3 -- Relatório de Vendas</div><div class="card-subtitle">Cole o texto completo do relatório do sistema</div></div>
       </div>
       <textarea class="textarea-styled" id="rel-vendas" placeholder="Cole aqui o relatório de vendas...&#10;&#10;Deve incluir: produtos, quantidades, horários de fechamento, vendedores e valores."></textarea>
-      <div class="loading" id="load-vend"><div class="spinner"></div><span>Processando vendas com IA...</span></div>
+      <div class="loading" id="load-vend"><div class="spinner"></div><span>Processando relatório de vendas...</span></div>
       <div class="ai-response" id="resp-vend"><div class="ai-badge">🤖 PRIMUS PRO -- Vendas processadas</div><div class="ai-content" id="resp-vend-txt"></div></div>
       <div class="btn-row">
         <button class="btn btn-primary" onclick="processarVendas()">📊 Processar Vendas</button>
@@ -536,11 +536,9 @@
 </div>
 
 <script>
-let _currentController = null;
 
 const S = {
 // REMOVIDO: apiKey:'', dataAuditoria:'',
-  foto:{bebIniF:null,bebFinF:null,sorv:null},
   estoqueTexto:'', vendasTexto:'', vendasProc:'',
   eventos:[], evCount:0,
   tabelaBeb:[], tabelaSorv:[],
@@ -656,7 +654,6 @@ async function processarJSONs() {
 
     // Popula tabela de revisão para conferência
     popularTabelaRevisaoDeEstruturado();
-    calcD1Hint();
 
   } catch(err) {
     alert('Erro ao processar JSONs: ' + err.message + '\nA tabela foi aberta em branco para preenchimento manual.');
@@ -710,9 +707,11 @@ function popularTabelaRevisaoDeEstruturado() {
 
   function inp(val, sec, prod, campo) {
     const chave = normalizar(prod);
+    const recalc = (campo==='freezer'||campo==='estoque')
+      ? `recalcularTotalBeb(this);` : '';
     return `<input class="input-num" type="number" min="0" value="${val||0}"
       data-sec="${sec}" data-prod="${chave}" data-campo="${campo}"
-      oninput="marcarAlterado(this)" style="width:60px;text-align:center">`;
+      oninput="${recalc}marcarAlterado(this)" style="width:60px;text-align:center">`;
   }
 
   if(tbIni) {
@@ -720,10 +719,11 @@ function popularTabelaRevisaoDeEstruturado() {
     PRODUTOS_BEB.forEach(prod => {
       const v = (S.estoqueEstruturado.bebIni||{})[prod] || {};
       const tr = document.createElement('tr');
+      const chaveIni = normalizar(prod);
       tr.innerHTML = `<td class="prod-nome">${prod}</td>
         <td>${inp(v.freezer,'bebIni',prod,'freezer')}</td>
         <td>${inp(v.estoque,'bebIni',prod,'estoque')}</td>
-        <td><strong>${v.total||0}</strong></td>`;
+        <td class="total-cell" id="tot-bebIni-${chaveIni}"><strong>${v.total||0}</strong></td>`;
       tbIni.appendChild(tr);
     });
   }
@@ -732,10 +732,11 @@ function popularTabelaRevisaoDeEstruturado() {
     PRODUTOS_BEB.forEach(prod => {
       const v = (S.estoqueEstruturado.bebFin||{})[prod] || {};
       const tr = document.createElement('tr');
+      const chaveFin = normalizar(prod);
       tr.innerHTML = `<td class="prod-nome">${prod}</td>
         <td>${inp(v.freezer,'bebFin',prod,'freezer')}</td>
         <td>${inp(v.estoque,'bebFin',prod,'estoque')}</td>
-        <td><strong>${v.total||0}</strong></td>
+        <td class="total-cell" id="tot-bebFin-${chaveFin}"><strong>${v.total||0}</strong></td>
         <td>${inp(v.recebido,'bebFin',prod,'recebido')}</td>`;
       tbFin.appendChild(tr);
     });
@@ -986,6 +987,17 @@ function atualizarTotal(input) {
   marcarAlterado(input);
 }
 
+function recalcularTotalBeb(input) {
+  const row = input.closest('tr');
+  const sec = input.dataset.sec;
+  const prod = input.dataset.prod;
+  const fr  = parseInt(row.querySelector('[data-campo="freezer"]')?.value) || 0;
+  const est = parseInt(row.querySelector('[data-campo="estoque"]')?.value) || 0;
+  const tot = fr + est;
+  const totEl = document.getElementById('tot-' + sec + '-' + prod);
+  if(totEl) totEl.innerHTML = `<strong>${tot}</strong>`;
+}
+
 function marcarAlterado(input) {
   input.classList.add('alterado');
   // Salva no estado
@@ -1082,20 +1094,19 @@ function confirmarRevisao() {
 }
 
 
-function relereComIA() {
-  if (confirm('Deseja reler as fotos com IA? Os valores atuais serão substituídos.')) {
+function reimportarJSONs() {
+  if (confirm('Deseja reimportar os JSONs? Os valores atuais serão substituídos.')) {
     document.getElementById('revisao-wrap').classList.remove('show');
-    analisarFotos();
+    document.getElementById('load-est').style.display = 'none';
+    popularTabelaRevisaoVazia();
   }
 }
 
 function cancelarAnalise() {
-  // Cancela o fetch em andamento de verdade
-  if (_currentController) { _currentController.abort(); _currentController = null; }
   const load = document.getElementById('load-est');
   if(load) load.classList.remove('show');
   const txt = document.getElementById('load-est-txt');
-  if(txt) txt.textContent = 'Processando...';
+  if(txt) txt.textContent = 'Lendo JSONs...';
   popularTabelaRevisaoVazia();
 }
 
@@ -1909,12 +1920,12 @@ document.addEventListener('DOMContentLoaded',()=>{
       e.preventDefault();el.classList.remove('drag-over');
       const f=e.dataTransfer.files[0]; if(!f)return;
       let inpId, tipoFoto;
-      if(id==='slot-beb-ini'){ inpId='up-beb-ini'; tipoFoto='bebIniF'; }
-      else if(id==='slot-beb-fin'){ inpId='up-beb-fin'; tipoFoto='bebFinF'; }
-      else { inpId='up-sorv'; tipoFoto='sorv'; }
+      if(id==='slot-beb-ini'){ inpId='up-beb-ini'; }
+      else if(id==='slot-beb-fin'){ inpId='up-beb-fin'; }
+      else { inpId='up-sorv'; }
       const inp=document.getElementById(inpId);
       const dt=new DataTransfer();dt.items.add(f);inp.files=dt.files;
-      handleFoto(inp,tipoFoto);
+      // drag&drop não usa tipoFoto nesta versão JSON
     });
   });
 });
