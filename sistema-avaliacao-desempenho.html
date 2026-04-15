@@ -1,0 +1,1740 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Avaliação de Desempenho · Primus</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,400&display=swap');
+
+  :root {
+    --bg:       #0f1117;
+    --surface:  #181b24;
+    --card:     #1e2130;
+    --border:   #2a2f42;
+    --amber:    #C97A0A;
+    --amber-lt: #E8A83A;
+    --amber-xs: #FFF3DC;
+    --amber-bg: rgba(201,122,10,.13);
+    --danger:   #e05c5c;
+    --success:  #4caf7d;
+    --text:     #e8eaf0;
+    --muted:    #7a8099;
+    --radius:   12px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* ── HEADER ── */
+  header {
+    background: var(--surface); border-bottom: 2px solid var(--amber);
+    padding: 0 32px; display: flex; align-items: center; justify-content: space-between;
+    height: 64px; position: sticky; top: 0; z-index: 100;
+  }
+  .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 20px; letter-spacing: -.5px; display: flex; align-items: center; gap: 10px; }
+  .logo span { color: var(--amber); }
+  .nav { display: flex; gap: 4px; flex-wrap: wrap; }
+  .nav-btn {
+    background: none; border: none; color: var(--muted);
+    font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 500;
+    padding: 8px 14px; border-radius: 8px; cursor: pointer; transition: all .2s;
+  }
+  .nav-btn:hover { background: var(--card); color: var(--text); }
+  .nav-btn.active { background: var(--amber); color: var(--amber-xs); }
+
+  main { max-width: 1140px; margin: 0 auto; padding: 32px 24px; }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* ── TÍTULOS ── */
+  .section-title {
+    font-family: 'Syne', sans-serif; font-weight: 700; font-size: 22px;
+    margin-bottom: 24px; display: flex; align-items: center; gap: 12px;
+  }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  /* ── GRIDS ── */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
+  .grid4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; }
+
+  /* ── CARDS ── */
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
+  .card-label { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .card-value { font-family: 'Syne', sans-serif; font-size: 32px; font-weight: 800; }
+  .card-sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
+
+  /* ── FORMULÁRIOS ── */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: 13px; font-weight: 500; color: var(--muted); }
+  input, select, textarea {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 14px;
+    padding: 10px 14px; transition: border .2s; outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--amber); }
+  textarea { resize: vertical; min-height: 80px; }
+  select option { background: var(--card); }
+
+  /* ── COMPETÊNCIAS ── */
+  .comp-grid { display: grid; gap: 10px; margin-bottom: 24px; }
+  .comp-item {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px;
+    display: grid; grid-template-columns: 1fr auto; gap: 16px; align-items: center;
+  }
+  .comp-item.has-weight { border-left: 3px solid var(--amber); }
+  .comp-name { font-weight: 500; font-size: 14px; margin-bottom: 2px; }
+  .comp-desc { font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .comp-weight { font-size: 11px; color: var(--amber); font-weight: 600; margin-top: 3px; }
+  .comp-score { display: flex; align-items: center; gap: 8px; }
+  .score-input { width: 66px; text-align: center; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 17px; border-radius: 8px; }
+  .score-badge {
+    min-width: 46px; height: 34px; border-radius: 8px; display: flex;
+    align-items: center; justify-content: center; font-family: 'Syne', sans-serif;
+    font-weight: 800; font-size: 13px; transition: all .3s;
+  }
+
+  /* ── BOTÕES ── */
+  .btn {
+    padding: 10px 22px; border-radius: 8px; border: none; cursor: pointer;
+    font-family: 'DM Sans', sans-serif; font-weight: 500; font-size: 14px;
+    transition: all .2s; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn-primary   { background: var(--amber); color: var(--amber-xs); }
+  .btn-primary:hover { background: var(--amber-lt); }
+  .btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { border-color: var(--amber); color: var(--amber); }
+  .btn-danger    { background: var(--danger); color: #fff; }
+  .btn-danger:hover { background: #c94f4f; }
+  .btn-success   { background: var(--success); color: #fff; }
+  .btn-ghost     { background: none; border: 1px solid var(--border); color: var(--muted); padding: 7px 14px; font-size: 13px; border-radius: 7px; cursor: pointer; transition: all .2s; }
+  .btn-ghost:hover { border-color: var(--amber); color: var(--amber); }
+  .btn-row { display: flex; gap: 12px; flex-wrap: wrap; }
+
+  /* ── SCORES ── */
+  .s1,.s2 { background:#5a1c1c;color:#e05c5c; }
+  .s3,.s4 { background:#5a3a1c;color:#e08c3c; }
+  .s5,.s6 { background:#3a3a1c;color:#c9b44a; }
+  .s7,.s8 { background:#1c3a2c;color:#4caf7d; }
+  .s9,.s10 { background:#1c2c4a;color:#5b8dee; }
+
+  /* ── CLASSIFICAÇÃO GERENCIAL ── */
+  .clf-destaque  { background: rgba(91,141,238,.15); color: #5b8dee; border: 1px solid #5b8dee55; }
+  .clf-evolucao  { background: rgba(76,175,125,.15); color: #4caf7d; border: 1px solid #4caf7d55; }
+  .clf-estavel   { background: rgba(201,180,74,.15); color: #c9b44a; border: 1px solid #c9b44a55; }
+  .clf-atencao   { background: rgba(224,140,60,.15); color: #e08c3c; border: 1px solid #e08c3c55; }
+  .clf-critico   { background: rgba(224,92,92,.15);  color: #e05c5c; border: 1px solid #e05c5c55; }
+  .clf-badge {
+    display: inline-flex; align-items: center; gap: 6px; padding: 3px 12px;
+    border-radius: 20px; font-size: 12px; font-weight: 700; letter-spacing: .3px;
+  }
+
+  /* ── LISTA FUNCIONÁRIOS ── */
+  .emp-list { display: flex; flex-direction: column; gap: 10px; }
+  .emp-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 16px 20px; display: flex; align-items: center; justify-content: space-between;
+    transition: border-color .2s;
+  }
+  .emp-card:hover { border-color: var(--amber); }
+  .emp-info { display: flex; align-items: center; gap: 14px; }
+  .emp-avatar {
+    width: 42px; height: 42px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center;
+    font-family: 'Syne', sans-serif; font-weight: 800; font-size: 15px; color: var(--amber-xs);
+    flex-shrink: 0;
+  }
+  .emp-name { font-weight: 600; font-size: 15px; }
+  .emp-role { font-size: 12px; color: var(--muted); }
+  .icon-btn {
+    width: 34px; height: 34px; border-radius: 7px; border: 1px solid var(--border);
+    background: none; color: var(--muted); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; transition: all .2s; font-size: 14px;
+  }
+  .icon-btn:hover { border-color: var(--amber); color: var(--amber); }
+
+  /* ── TIMELINE ── */
+  .timeline { display: flex; flex-direction: column; gap: 10px; }
+  .tl-item {
+    display: flex; align-items: center; gap: 14px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 13px 16px;
+    cursor: pointer; transition: border-color .2s;
+  }
+  .tl-item:hover { border-color: var(--amber); }
+  .tl-date { font-size: 12px; color: var(--muted); min-width: 88px; }
+  .tl-score-wrap { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+
+  /* ── MEDIA BADGE ── */
+  .media-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-weight: 700; font-size: 14px; }
+
+  /* ── CHART ── */
+  .chart-wrap { position: relative; height: 300px; }
+  canvas { border-radius: 8px; }
+
+  /* ── MODAL ── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 200;
+    display: flex; align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal {
+    background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+    width: 100%; max-width: 560px; max-height: 90vh; overflow-y: auto; padding: 30px;
+  }
+  .modal-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 19px; margin-bottom: 22px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+
+  /* ── TOAST ── */
+  .toast {
+    position: fixed; bottom: 24px; right: 24px; z-index: 999;
+    background: var(--success); color: #fff; padding: 13px 20px;
+    border-radius: 10px; font-weight: 500; font-size: 14px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.4);
+    transform: translateY(80px); opacity: 0; transition: all .3s ease;
+  }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.error { background: var(--danger); }
+  .toast.warn  { background: var(--amber); color: var(--amber-xs); }
+
+  /* ── EMPTY STATE ── */
+  .empty { text-align: center; padding: 60px 24px; color: var(--muted); }
+  .empty-icon { font-size: 48px; margin-bottom: 14px; }
+  .empty h3 { font-family: 'Syne', sans-serif; font-size: 17px; color: var(--text); margin-bottom: 6px; }
+
+  /* ── EVOLUÇÃO CARDS ── */
+  .ev-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px; margin-bottom: 16px;
+  }
+  .ev-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .ev-chart-wrap { position: relative; height: 190px; }
+
+  /* ── EVOLUÇÃO POR COMPETÊNCIA ── */
+  .comp-delta-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 12px; }
+  .comp-delta-item {
+    background: var(--surface); border-radius: 8px; padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .comp-delta-name  { font-size: 11px; color: var(--muted); }
+  .comp-delta-val   { font-size: 13px; font-weight: 700; }
+  .comp-delta-arrow { font-size: 11px; }
+  .delta-up   { color: #4caf7d; }
+  .delta-down { color: #e05c5c; }
+  .delta-eq   { color: var(--muted); }
+
+  /* ── PDI ── */
+  .pdi-section {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px;
+    margin-top: 16px;
+  }
+  .pdi-title { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 15px; margin-bottom: 14px; color: var(--amber); }
+  .pdi-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .pdi-group { display: flex; flex-direction: column; gap: 6px; }
+  .pdi-label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; }
+  .pdi-items { display: flex; flex-direction: column; gap: 5px; }
+  .pdi-item {
+    background: var(--card); border-radius: 7px; padding: 8px 12px; font-size: 13px;
+    border-left: 3px solid var(--border);
+  }
+  .pdi-item.forca    { border-left-color: #4caf7d; }
+  .pdi-item.fraqueza { border-left-color: #e05c5c; }
+  .pdi-item.acao     { border-left-color: var(--amber); }
+  .pdi-acao-full { margin-top: 10px; }
+
+  /* ── PERFIL COMPORTAMENTAL ── */
+  .perf-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+    border: 1px solid currentColor; cursor: pointer;
+  }
+  .pdf-drop {
+    border: 2px dashed var(--border); border-radius: 10px; padding: 18px;
+    text-align: center; cursor: pointer; transition: all .2s; position: relative;
+  }
+  .pdf-drop:hover, .pdf-drop.drag { border-color: var(--amber); background: var(--amber-bg); }
+  .pdf-drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .pdf-drop-text { font-size: 13px; color: var(--muted); }
+  .pdf-drop-text b { color: var(--amber); }
+  .perf-result { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-top: 10px; display: none; }
+  .perf-result.show { display: block; }
+  .perf-bar-row { display: flex; align-items: center; gap: 8px; font-size: 12px; margin-bottom: 6px; }
+  .perf-bar-label { min-width: 130px; }
+  .perf-bar-bg { flex: 1; background: var(--border); border-radius: 4px; height: 9px; overflow: hidden; }
+  .perf-bar-fill { height: 100%; border-radius: 4px; transition: width .6s ease; }
+  .perf-bar-pts { min-width: 38px; text-align: right; font-weight: 700; }
+
+  /* ── GESTÃO PERFIL ── */
+  .gestao-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 14px; }
+  .gestao-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px;
+  }
+  .gestao-card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: var(--muted); margin-bottom: 8px; }
+  .gestao-card ul { padding-left: 14px; display: flex; flex-direction: column; gap: 5px; }
+  .gestao-card li { font-size: 13px; line-height: 1.4; }
+
+  /* ── TABELA COMPARATIVA ── */
+  .comp-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .comp-table th {
+    background: var(--surface); color: var(--muted); font-weight: 500; font-size: 11px;
+    text-transform: uppercase; letter-spacing: .8px; padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--border);
+  }
+  .comp-table td { padding: 11px 14px; border-bottom: 1px solid var(--border); }
+  .comp-table tr:hover td { background: var(--surface); }
+  .bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .bar-bg { flex: 1; background: var(--border); border-radius: 4px; height: 7px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width .6s ease; }
+
+  /* ── BACKUP / RESTORE ── */
+  .backup-bar {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 20px;
+  }
+  .backup-bar span { font-size: 13px; color: var(--muted); flex: 1; }
+
+  /* ── ALERTA DUPLICATA ── */
+  .alert-box {
+    background: rgba(224,140,60,.12); border: 1px solid #e08c3c66;
+    border-radius: 8px; padding: 12px 16px; font-size: 13px; color: #e08c3c;
+    margin-bottom: 16px; display: none;
+  }
+  .alert-box.show { display: block; }
+
+  @media (max-width: 720px) {
+    .grid2,.grid3,.grid4 { grid-template-columns: 1fr; }
+    .form-grid { grid-template-columns: 1fr; }
+    .comp-delta-grid { grid-template-columns: 1fr 1fr; }
+    .gestao-grid { grid-template-columns: 1fr; }
+    .pdi-row { grid-template-columns: 1fr; }
+    header { padding: 0 16px; }
+    main { padding: 20px 12px; }
+    .nav-btn { padding: 6px 9px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🐟 Primus <span>·</span> Avaliações</div>
+  <nav class="nav">
+    <button class="nav-btn active" onclick="showView('dashboard')">Dashboard</button>
+    <button class="nav-btn" onclick="showView('funcionarios')">Funcionários</button>
+    <button class="nav-btn" onclick="showView('avaliar')">Nova Avaliação</button>
+    <button class="nav-btn" onclick="showView('historico')">Histórico</button>
+    <button class="nav-btn" onclick="showView('comparar')">Comparar</button>
+  </nav>
+  <div id="firebase-status" style="font-size:12px;color:var(--muted);white-space:nowrap">⏳ Conectando…</div>
+</header>
+
+<main>
+
+<!-- ═══ DASHBOARD ═══ -->
+<div id="view-dashboard" class="view active">
+  <div class="section-title">Visão Geral</div>
+  <div class="grid4" id="kpi-cards" style="margin-bottom:28px"></div>
+  <div class="section-title" style="font-size:17px">Evolução Individual por Bimestre</div>
+  <div id="evolucao-individual" style="margin-bottom:28px"></div>
+  <div class="card">
+    <div class="card-label" style="margin-bottom:14px">Ranking · Última avaliação</div>
+    <div id="ranking-list"></div>
+  </div>
+</div>
+
+<!-- ═══ FUNCIONÁRIOS ═══ -->
+<div id="view-funcionarios" class="view">
+  <div class="section-title">Funcionários</div>
+  <div class="backup-bar">
+    <span>💾 Backup dos dados</span>
+    <button class="btn-ghost" onclick="exportBackup()">⬇ Exportar JSON</button>
+    <label class="btn-ghost" style="cursor:pointer">⬆ Importar JSON<input type="file" accept=".json" style="display:none" onchange="importBackup(event)"></label>
+    <button class="btn-ghost" style="color:var(--muted)" onclick="carregarDemo()">🧪 Carregar demonstração</button>
+  </div>
+  <div style="margin-bottom:18px">
+    <button class="btn btn-primary" onclick="openModal_func(null)">＋ Novo Funcionário</button>
+  </div>
+  <div class="emp-list" id="emp-list"></div>
+</div>
+
+<!-- ═══ AVALIAR ═══ -->
+<div id="view-avaliar" class="view">
+  <div class="section-title">Nova Avaliação</div>
+  <div class="alert-box" id="alert-duplicata">
+    ⚠️ Já existe uma avaliação para este funcionário neste bimestre. Salvar irá <b>substituir</b> a avaliação anterior.
+  </div>
+  <div class="card" style="margin-bottom:22px">
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Funcionário</label>
+        <select id="av-funcionario" onchange="checkDuplicata()">
+          <option value="">— Selecione —</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Bimestre</label>
+        <div style="display:flex;gap:8px">
+          <select id="av-bimestre" style="flex:1" onchange="checkDuplicata()">
+            <option value="jan-fev">Jan–Fev</option>
+            <option value="mar-abr">Mar–Abr</option>
+            <option value="mai-jun">Mai–Jun</option>
+            <option value="jul-ago">Jul–Ago</option>
+            <option value="set-out">Set–Out</option>
+            <option value="nov-dez">Nov–Dez</option>
+          </select>
+          <select id="av-ano" style="width:96px" onchange="checkDuplicata()">
+            <option value="2025">2025</option>
+            <option value="2026" selected>2026</option>
+            <option value="2027">2027</option>
+            <option value="2028">2028</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Avaliador / Gestor</label>
+        <input type="text" id="av-gestor" placeholder="Nome do gestor">
+      </div>
+      <div class="form-group">
+        <label>Data da Avaliação</label>
+        <input type="date" id="av-data">
+      </div>
+      <div class="form-group full">
+        <label>Comentários / Observações</label>
+        <textarea id="av-comentarios" placeholder="Pontos positivos, áreas de melhoria, metas..."></textarea>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title" style="font-size:16px">Competências</div>
+  <div style="font-size:12px;color:var(--muted);margin-bottom:12px;margin-top:-16px">
+    Pesos automáticos por cargo quando disponível. Notas de 1 a 10.
+  </div>
+  <div class="comp-grid" id="competencias-form"></div>
+
+  <div class="card" style="margin-bottom:22px">
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div class="card-label">Média Ponderada</div>
+        <div class="card-value" id="av-media-display" style="color:var(--amber)">—</div>
+      </div>
+      <div id="av-class-display" style="font-size:14px;color:var(--muted)"></div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn btn-primary" onclick="salvarAvaliacao()">💾 Salvar Avaliação</button>
+    <button class="btn btn-secondary" onclick="limparForm()">↺ Limpar</button>
+  </div>
+</div>
+
+<!-- ═══ HISTÓRICO ═══ -->
+<div id="view-historico" class="view">
+  <div class="section-title">Histórico de Avaliações</div>
+  <div class="form-grid" style="margin-bottom:18px">
+    <div class="form-group">
+      <label>Funcionário</label>
+      <select id="hist-funcionario" onchange="renderHistorico()">
+        <option value="">Todos</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Bimestre / Ano</label>
+      <div style="display:flex;gap:8px">
+        <select id="hist-bimestre" onchange="renderHistorico()" style="flex:1">
+          <option value="">Todos</option>
+          <option value="jan-fev">Jan–Fev</option>
+          <option value="mar-abr">Mar–Abr</option>
+          <option value="mai-jun">Mai–Jun</option>
+          <option value="jul-ago">Jul–Ago</option>
+          <option value="set-out">Set–Out</option>
+          <option value="nov-dez">Nov–Dez</option>
+        </select>
+        <select id="hist-ano" onchange="renderHistorico()" style="width:88px">
+          <option value="">Todos</option>
+          <option value="2025">2025</option>
+          <option value="2026">2026</option>
+          <option value="2027">2027</option>
+        </select>
+      </div>
+    </div>
+  </div>
+  <div class="timeline" id="hist-list"></div>
+</div>
+
+<!-- ═══ COMPARAR ═══ -->
+<div id="view-comparar" class="view">
+  <div class="section-title">Comparativo de Funcionários</div>
+  <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:20px">
+    <div class="form-group" style="min-width:150px">
+      <label>Bimestre</label>
+      <select id="cmp-bimestre" onchange="renderComparativo()">
+        <option value="">Mais recente</option>
+        <option value="jan-fev">Jan–Fev</option>
+        <option value="mar-abr">Mar–Abr</option>
+        <option value="mai-jun">Mai–Jun</option>
+        <option value="jul-ago">Jul–Ago</option>
+        <option value="set-out">Set–Out</option>
+        <option value="nov-dez">Nov–Dez</option>
+      </select>
+    </div>
+    <div class="form-group" style="width:92px">
+      <label>Ano</label>
+      <select id="cmp-ano" onchange="renderComparativo()">
+        <option value="">Todos</option>
+        <option value="2025">2025</option>
+        <option value="2026" selected>2026</option>
+        <option value="2027">2027</option>
+      </select>
+    </div>
+    <button class="btn btn-secondary" onclick="gerarPDF()">📄 Exportar PDF</button>
+  </div>
+  <div class="card" style="margin-bottom:18px">
+    <div class="chart-wrap"><canvas id="chart-cmp-radar"></canvas></div>
+  </div>
+  <div class="card">
+    <div style="overflow-x:auto"><table class="comp-table" id="cmp-table"></table></div>
+  </div>
+</div>
+
+</main>
+
+<!-- ═══ MODAL FUNCIONÁRIO ═══ -->
+<div class="modal-overlay hidden" id="modal-func">
+  <div class="modal">
+    <div class="modal-title" id="modal-func-title">Novo Funcionário</div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Nome Completo *</label>
+        <input type="text" id="func-nome" placeholder="Ex: Jonas Dantas">
+      </div>
+      <div class="form-group">
+        <label>Cargo *</label>
+        <input type="text" id="func-cargo" placeholder="Ex: Garçom">
+      </div>
+      <div class="form-group">
+        <label>Data de Admissão</label>
+        <input type="date" id="func-admissao">
+      </div>
+      <div class="form-group">
+        <label>Setor</label>
+        <input type="text" id="func-setor" placeholder="Ex: Salão">
+      </div>
+    </div>
+    <div style="margin-bottom:8px"><label>Perfil Comportamental (PDF do Teste Primus)</label></div>
+    <div class="pdf-drop" id="pdf-drop-area" ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+      <input type="file" id="pdf-perfil-input" accept=".pdf" onchange="onPdfSelect(event)">
+      <div style="font-size:26px;margin-bottom:4px">📄</div>
+      <div class="pdf-drop-text">Arraste o PDF ou <b>clique para selecionar</b></div>
+      <div id="pdf-filename" style="font-size:12px;color:var(--amber);margin-top:4px"></div>
+    </div>
+    <div class="perf-result" id="perf-result">
+      <div style="font-size:13px;font-weight:600;margin-bottom:6px">Perfil extraído:</div>
+      <div id="perf-extracted-nome" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
+      <div id="perf-bars-preview"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modal-func')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarFuncionario()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DETALHE / EDITAR AVALIAÇÃO -->
+<div class="modal-overlay hidden" id="modal-av-detail">
+  <div class="modal" style="max-width:700px">
+    <div class="modal-title" id="detail-title">Avaliação</div>
+    <div id="detail-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="detail-del-btn">🗑 Excluir</button>
+      <button class="btn btn-secondary" id="detail-edit-btn">✏️ Editar</button>
+      <button class="btn btn-secondary" onclick="closeModal('modal-av-detail')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PERFIL COMPORTAMENTAL -->
+<div class="modal-overlay hidden" id="modal-perfil">
+  <div class="modal" style="max-width:640px">
+    <div class="modal-title" id="perfil-modal-title">Perfil Comportamental</div>
+    <div id="perfil-modal-body"></div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modal-perfil')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════
+// CONSTANTES
+// ══════════════════════════════════════════════════════════
+const COMPETENCIAS = [
+  { id:'pontualidade', nome:'Pontualidade / Assiduidade', desc:'Chega e sai nos horários, avisa atrasos com antecedência.', pesos:{garcom:1.2,caixa:1.5,cozinha:1.3,default:1} },
+  { id:'iniciativa',   nome:'Iniciativa / Pró-atividade',  desc:'Antecipa-se, apresenta sugestões, não espera determinações.', pesos:{garcom:1.1,caixa:0.9,cozinha:1.0,default:1} },
+  { id:'relacionamento',nome:'Relacionamento',             desc:'Relaciona-se bem com clientes internos e externos.', pesos:{garcom:1.5,caixa:1.3,cozinha:1.0,default:1} },
+  { id:'organizacao',  nome:'Organização',                 desc:'Define prazos e prioridades, executa de forma lógica.', pesos:{garcom:1.0,caixa:1.5,cozinha:1.5,default:1} },
+  { id:'metas',        nome:'Metas',                       desc:'Cumpre metas, contribui para alcançar os objetivos da empresa.', pesos:{garcom:1.3,caixa:1.2,cozinha:1.2,default:1} },
+  { id:'qualidade',    nome:'Qualidade do Serviço',        desc:'Entrega completo, revisado e correto, evita reincidência de erros.', pesos:{garcom:1.3,caixa:1.5,cozinha:1.5,default:1} },
+  { id:'postura',      nome:'Postura Profissional',        desc:'Apresentação, uniforme, honestidade e discrição.', pesos:{garcom:1.5,caixa:1.3,cozinha:1.2,default:1} },
+  { id:'conhecimento', nome:'Conhecimento / Desenvolvimento', desc:'Domina as atividades, mantém-se atualizado, participa de treinamentos.', pesos:{garcom:1.0,caixa:1.2,cozinha:1.5,default:1} },
+  { id:'lideranca',    nome:'Liderança',                   desc:'Engaja a equipe, persuade e influencia na conquista dos objetivos.', pesos:{garcom:0.8,caixa:0.8,cozinha:1.0,default:1} },
+];
+
+const BIMESTRES = ['jan-fev','mar-abr','mai-jun','jul-ago','set-out','nov-dez'];
+const BIM_LABELS = {'jan-fev':'Jan–Fev','mar-abr':'Mar–Abr','mai-jun':'Mai–Jun','jul-ago':'Jul–Ago','set-out':'Set–Out','nov-dez':'Nov–Dez'};
+const COLORS = ['#C97A0A','#5b8dee','#4caf7d','#e05c5c','#a67be8','#e0884c','#4ccfcf'];
+
+const PERFIS_COMP = {
+  A:  { label:'Chapeleiro Maluco', tag:'Comunicador', cor:'#C97A0A', bg:'rgba(201,122,10,.18)',
+        motivadores:['Reconhecimento público','Ambiente animado','Projetos criativos','Interação com clientes'],
+        feedback:['Elogie antes de apontar melhorias','Use tom leve e direto','Evite e-mails frios, prefira conversa'],
+        cobranca:['Metas com storytelling','Celebre entregas na frente da equipe','Dê autonomia para o "como"'],
+        riscos:['Pode se dispersar em múltiplas tarefas','Evita conflitos necessários','Pode prometer mais do que entrega'],
+        funcoes:['Atendimento / garçom','Anfitrião','Comunicação interna','Treinamentos de equipe'] },
+  V:  { label:'Rainha de Copas',   tag:'Executor',    cor:'#C0392B', bg:'rgba(192,57,43,.18)',
+        motivadores:['Autonomia','Desafios difíceis','Metas ambiciosas','Reconhecimento por resultados'],
+        feedback:['Seja direto e objetivo','Apresente dados e fatos','Dê espaço para responder'],
+        cobranca:['Metas numéricas e claras','Dê autonomia no processo','Cobre resultado, não método'],
+        riscos:['Pode atropelar colegas','Impaciente com processos lentos','Pode ignorar detalhes importantes'],
+        funcoes:['Liderança de turno','Gestão de estoque','Cargos de resultado direto'] },
+  Ve: { label:'Coelho Branco',     tag:'Planejador',  cor:'#27AE60', bg:'rgba(39,174,96,.18)',
+        motivadores:['Estabilidade','Rotina clara','Reconhecimento de lealdade','Harmonia no ambiente'],
+        feedback:['Tom calmo e empático','Dê tempo para processar','Evite surpresas e mudanças abruptas'],
+        cobranca:['Prazos com antecedência','Suporte emocional ao cobrar','Valorize consistência e lealdade'],
+        riscos:['Resistência a mudanças','Dificuldade em dizer não','Pode acumular tarefas sem pedir ajuda'],
+        funcoes:['Cozinha / produção','Controle de qualidade','Tarefas de rotina estruturada'] },
+  Az: { label:'Gato de Cheshire',  tag:'Analista',    cor:'#2980B9', bg:'rgba(41,128,185,.18)',
+        motivadores:['Precisão e qualidade','Dados e evidências','Tempo para análise','Reconhecimento técnico'],
+        feedback:['Baseie-se em dados','Seja preciso e estruturado','Dê tempo para pensar antes de responder'],
+        cobranca:['Apresente embasamento','Respeite o processo','Evite improvisos de última hora'],
+        riscos:['Pode travar em análise excessiva','Dificuldade com ambiguidade','Pode parecer frio para a equipe'],
+        funcoes:['Financeiro / caixa','Controle de estoque','Processos que exigem precisão'] },
+};
+
+// ══════════════════════════════════════════════════════════
+// FIREBASE — configuração e inicialização
+// ══════════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey:            "AIzaSyDEo7pB-dLtSHFGjqvYf8Bt8n7VSu5HdrY",
+  authDomain:        "projeto-primus-9b643.firebaseapp.com",
+  projectId:         "projeto-primus-9b643",
+  storageBucket:     "projeto-primus-9b643.firebasestorage.app",
+  messagingSenderId: "547842320766",
+  appId:             "1:547842320766:web:a87b857ce7c2d434cdab2f",
+  measurementId:     "G-JSZL3TXD7D"
+};
+
+// Inicializa apenas uma vez (compartilha projeto com outros apps)
+if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+const firestore = firebase.firestore();
+
+// ── Coleções dedicadas ao sistema de avaliação ──
+const COL_FUNC = 'av_funcionarios';
+const COL_AVAL = 'av_avaliacoes';
+
+// ── db em memória (cache local — sincronizado com Firestore) ──
+let db = { funcionarios: [], avaliacoes: [] };
+
+// ── Indicador de status online ──
+function setStatus(msg, ok=true) {
+  const el = document.getElementById('firebase-status');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.color = ok ? '#4caf7d' : '#e08c3c';
+}
+
+// ══════════════════════════════════════════════════════════
+// PERSISTÊNCIA — Firestore (substitui load/save do localStorage)
+// ══════════════════════════════════════════════════════════
+
+// Salva / atualiza um funcionário
+async function saveFuncionario(f) {
+  try {
+    await firestore.collection(COL_FUNC).doc(f.id).set(f);
+  } catch(e) { console.error('saveFuncionario:', e); toast('Erro ao salvar no Firebase','error'); }
+}
+
+// Remove um funcionário
+async function deleteFuncionarioFS(id) {
+  try {
+    await firestore.collection(COL_FUNC).doc(id).delete();
+  } catch(e) { console.error('deleteFuncionario:', e); }
+}
+
+// Salva / atualiza uma avaliação
+async function saveAvaliacao(av) {
+  try {
+    await firestore.collection(COL_AVAL).doc(av.id).set(av);
+  } catch(e) { console.error('saveAvaliacao:', e); toast('Erro ao salvar no Firebase','error'); }
+}
+
+// Remove uma avaliação
+async function deleteAvaliacaoFS(id) {
+  try {
+    await firestore.collection(COL_AVAL).doc(id).delete();
+  } catch(e) { console.error('deleteAvaliacao:', e); }
+}
+
+// Remove todas as avaliações de um funcionário (ao excluir ele)
+async function deleteAvaliacoesByFunc(funcId) {
+  try {
+    const snap = await firestore.collection(COL_AVAL).where('funcId','==',funcId).get();
+    const batch = firestore.batch();
+    snap.forEach(doc => batch.delete(doc.ref));
+    await batch.commit();
+  } catch(e) { console.error('deleteAvaliacoesByFunc:', e); }
+}
+
+// ── Listener em tempo real — mantém db sincronizado ──
+function initRealtimeListeners() {
+  setStatus('⏳ Conectando…', true);
+
+  firestore.collection(COL_FUNC).orderBy('createdAt','asc').onSnapshot(snap => {
+    db.funcionarios = snap.docs.map(d => d.data());
+    populateSelects();
+    // Re-renderiza a view ativa
+    const ativa = document.querySelector('.view.active')?.id?.replace('view-','');
+    if (ativa === 'funcionarios') renderFuncionarios();
+    if (ativa === 'dashboard')    renderDashboard();
+    setStatus('🟢 Online', true);
+  }, err => {
+    console.error('Listener funcionarios:', err);
+    setStatus('🔴 Sem conexão', false);
+  });
+
+  firestore.collection(COL_AVAL).orderBy('createdAt','desc').onSnapshot(snap => {
+    db.avaliacoes = snap.docs.map(d => d.data());
+    const ativa = document.querySelector('.view.active')?.id?.replace('view-','');
+    if (ativa === 'historico')  renderHistorico();
+    if (ativa === 'dashboard')  renderDashboard();
+    if (ativa === 'comparar')   renderComparativo();
+  }, err => {
+    console.error('Listener avaliacoes:', err);
+  });
+}
+
+// ── Funções de compatibilidade (chamadas pelo resto do app) ──
+// O app não usa mais save(db) genérico — cada operação chama a função específica.
+// Mantemos save() vazia para não quebrar chamadas de demo/import.
+function save(d) { /* Firestore — operações individuais */ }
+function load()  { return db; }
+
+// ══════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════
+function uuid()   { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
+function esc(s)   { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function bimLabel(bim,ano) { return (BIM_LABELS[bim]||bim) + ' ' + ano; }
+function bimKey(bim,ano)   { return bim + '/' + ano; }
+
+// Detecta grupo de cargo para pesos
+function cargoGrupo(cargo) {
+  const c = (cargo||'').toLowerCase();
+  if (/gar[çc]|sal[aã]o|atend|maître/i.test(c)) return 'garcom';
+  if (/caix|finan|admin/i.test(c)) return 'caixa';
+  if (/cozin|chefe|auxiliar de cozin|gelat/i.test(c)) return 'cozinha';
+  return 'default';
+}
+
+function getPeso(compId, cargo) {
+  const grupo = cargoGrupo(cargo);
+  const comp = COMPETENCIAS.find(c=>c.id===compId);
+  return comp?.pesos?.[grupo] ?? comp?.pesos?.default ?? 1;
+}
+
+function calcMedia(notas, cargo) {
+  const entries = Object.entries(notas);
+  if (!entries.length) return 0;
+  let soma = 0, pesosTotal = 0;
+  entries.forEach(([id, val]) => {
+    const p = getPeso(id, cargo);
+    soma += val * p; pesosTotal += p;
+  });
+  return pesosTotal ? soma / pesosTotal : 0;
+}
+
+function scoreClass(n) {
+  if (n>=9) return 's9'; if (n>=7) return 's7'; if (n>=5) return 's5'; if (n>=3) return 's3'; return 's1';
+}
+function scoreLabel(n) {
+  if (!n) return '—'; if (n>=9) return 'Excepcional'; if (n>=7) return 'Bom'; if (n>=5) return 'Regular'; if (n>=3) return 'Ruim'; return 'Crítico';
+}
+function scoreColor(n) {
+  if (n>=9) return '#5b8dee'; if (n>=7) return '#4caf7d'; if (n>=5) return '#c9b44a'; if (n>=3) return '#e08c3c'; return '#e05c5c';
+}
+function avatarColor(i) {
+  return ['#C97A0A','#5b8dee','#4caf7d','#e05c5c','#a67be8','#e0884c'][i%6];
+}
+function initials(name) { return String(name||'?').split(' ').slice(0,2).map(w=>w[0]).join('').toUpperCase(); }
+
+// Classificação gerencial
+function classificar(f, avs) {
+  const fa = avs.filter(a=>a.funcId===f.id).sort((a,b)=>b.createdAt-a.createdAt);
+  if (!fa.length) return null;
+  const last = fa[0]; const prev = fa[1];
+  const m = last.media;
+  if (m >= 8.5) return { label:'Destaque',     cls:'clf-destaque',  icon:'⭐' };
+  if (prev && (m - prev.media) >= 0.5) return { label:'Em Evolução', cls:'clf-evolucao',  icon:'↑' };
+  if (prev && (prev.media - m) >= 0.8) return { label:'Em Atenção',  cls:'clf-atencao',   icon:'⚠️' };
+  if (m >= 7)  return { label:'Estável',       cls:'clf-estavel',   icon:'→' };
+  if (m >= 5)  return { label:'Em Atenção',    cls:'clf-atencao',   icon:'⚠️' };
+  return { label:'Crítico', cls:'clf-critico', icon:'🔴' };
+}
+
+function toast(msg, type='') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast' + (type?' '+type:'') + ' show';
+  setTimeout(()=>t.className='toast', 2900);
+}
+function openModal(id)  { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+// ══════════════════════════════════════════════════════════
+// NAV
+// ══════════════════════════════════════════════════════════
+function showView(v) {
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(el=>el.classList.remove('active'));
+  document.getElementById('view-'+v).classList.add('active');
+  const map = ['dashboard','funcionarios','avaliar','historico','comparar'];
+  document.querySelectorAll('.nav-btn')[map.indexOf(v)].classList.add('active');
+  if (v==='dashboard')    renderDashboard();
+  if (v==='funcionarios') renderFuncionarios();
+  if (v==='avaliar')      renderAvaliacao();
+  if (v==='historico')    renderHistorico();
+  if (v==='comparar')     renderComparativo();
+}
+
+// ══════════════════════════════════════════════════════════
+// PDF PERFIL — PARSER via PDF.js
+// ══════════════════════════════════════════════════════════
+let perfilExtraido = null;
+
+// Carrega PDF.js do CDN ao primeiro uso
+let _pdfJsReady = false;
+function loadPdfJs(cb) {
+  if (_pdfJsReady) { cb(); return; }
+  const script = document.createElement('script');
+  script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+  script.onload = () => {
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    _pdfJsReady = true;
+    cb();
+  };
+  script.onerror = () => {
+    document.getElementById('pdf-filename').textContent = '❌ Erro ao carregar leitor de PDF. Verifique sua conexão.';
+  };
+  document.head.appendChild(script);
+}
+
+function parsePdfText(text) {
+  // Normaliza espaços mas preserva quebras para busca por linhas
+  const full  = text.replace(/[ \t]+/g,' ');
+  const lines = full.split('\n').map(l=>l.trim()).filter(Boolean);
+
+  // ── Nome ──
+  // Estratégia 1: linha imediatamente após "Perfil Comportamental"
+  let nome = '';
+  for (let i=0; i<lines.length; i++) {
+    if (/perfil\s+comportamental/i.test(lines[i]) && lines[i+1]) {
+      const candidate = lines[i+1].trim();
+      // Rejeita linhas que parecem ser metadados
+      if (!/realizado|pontuação|resultado|mapeamento|peixaria|primus/i.test(candidate)) {
+        nome = candidate; break;
+      }
+      // Tenta i+2 se i+1 foi rejeitado
+      if (lines[i+2]) {
+        const c2 = lines[i+2].trim();
+        if (!/realizado|pontuação|resultado|mapeamento|peixaria|primus/i.test(c2)) {
+          nome = c2; break;
+        }
+      }
+    }
+  }
+  // Estratégia 2: primeira linha que parece nome próprio (2–4 palavras capitalizadas)
+  if (!nome) {
+    for (const l of lines) {
+      if (/^[A-ZÁÉÍÓÚÀÂÊÎÔÛÃÕÇ][a-záéíóúàâêîôûãõç]+(?: [A-ZÁÉÍÓÚÀÂÊÎÔÛÃÕÇ][a-záéíóúàâêîôûãõç]+){1,3}$/.test(l)
+          && !/peixaria|primus|mapeamento/i.test(l)) {
+        nome = l; break;
+      }
+    }
+  }
+
+  // ── Pontuações ──
+  const pts = { A:0, V:0, Ve:0, Az:0 };
+  const oneStr = full.replace(/\n/g,' ');
+
+  // Padrão principal: "Chapeleiro Maluco ... 33 pts" (número separado por qualquer coisa)
+  const patterns = [
+    { re:/Chapeleiro\s+Maluco[\s\S]{0,60}?(\d{1,3})\s*pts?/i, key:'A'  },
+    { re:/Rainha\s+de\s+Copas[\s\S]{0,60}?(\d{1,3})\s*pts?/i,  key:'V'  },
+    { re:/Coelho\s+Branco[\s\S]{0,60}?(\d{1,3})\s*pts?/i,       key:'Ve' },
+    { re:/Gato\s+de\s+Cheshire[\s\S]{0,60}?(\d{1,3})\s*pts?/i,  key:'Az' },
+  ];
+  patterns.forEach(p=>{ const m=oneStr.match(p.re); if(m) pts[p.key]=parseInt(m[1]); });
+
+  // Fallback: procura padrão "NomePerfil\nXX pts" nas linhas
+  if (Object.values(pts).every(v=>v===0)) {
+    const perfilLinhas = {
+      A:  /chapeleiro\s*maluco/i,
+      V:  /rainha\s*de\s*copas/i,
+      Ve: /coelho\s*branco/i,
+      Az: /gato\s*de\s*cheshire/i,
+    };
+    lines.forEach((l,i)=>{
+      Object.entries(perfilLinhas).forEach(([key,re])=>{
+        if (re.test(l)) {
+          // Procura número nas próximas 3 linhas
+          for (let j=i+1; j<=i+3 && j<lines.length; j++) {
+            const numMatch = lines[j].match(/^(\d{1,3})\s*(?:pts?)?$/);
+            if (numMatch) { pts[key] = parseInt(numMatch[1]); break; }
+            // Ou número inline
+            const inlineMatch = lines[j].match(/(\d{1,3})\s*pts?/i);
+            if (inlineMatch) { pts[key] = parseInt(inlineMatch[1]); break; }
+          }
+        }
+      });
+    });
+  }
+
+  const total     = Object.values(pts).reduce((a,b)=>a+b,0);
+  const dominante = Object.entries(pts).sort((a,b)=>b[1]-a[1])[0][0];
+  const extraido  = total > 0;
+  return { nome, pts, dominante, extraido };
+}
+
+function onDragOver(e)  { e.preventDefault(); document.getElementById('pdf-drop-area').classList.add('drag'); }
+function onDragLeave(e) { document.getElementById('pdf-drop-area').classList.remove('drag'); }
+function onDrop(e) {
+  e.preventDefault();
+  document.getElementById('pdf-drop-area').classList.remove('drag');
+  const file = e.dataTransfer.files[0];
+  if (file?.type==='application/pdf') processPdf(file);
+}
+function onPdfSelect(e) { const f=e.target.files[0]; if(f) processPdf(f); }
+
+function processPdf(file) {
+  document.getElementById('pdf-filename').textContent = '⏳ Lendo '+file.name+'...';
+  loadPdfJs(() => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const typedArray = new Uint8Array(e.target.result);
+        const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+        let fullText = '';
+        for (let p=1; p<=pdf.numPages; p++) {
+          const page    = await pdf.getPage(p);
+          const content = await page.getTextContent();
+          // Preserva quebras de linha usando transform Y
+          let lastY = null;
+          const items = content.items;
+          for (const item of items) {
+            const y = item.transform[5];
+            if (lastY !== null && Math.abs(y - lastY) > 2) fullText += '\n';
+            fullText += item.str;
+            lastY = y;
+          }
+          fullText += '\n';
+        }
+        const dados = parsePdfText(fullText);
+        perfilExtraido = dados;
+        mostrarPerfilExtraido(dados, file.name);
+      } catch(err) {
+        console.error('PDF parse error:', err);
+        document.getElementById('pdf-filename').textContent = '❌ Erro ao ler o PDF: '+err.message;
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+function mostrarPerfilExtraido(dados, filename) {
+  document.getElementById('pdf-filename').textContent = dados.extraido ? '✅ '+filename : '⚠️ '+filename+' (dados não encontrados — confira manualmente)';
+  const res = document.getElementById('perf-result');
+  res.classList.add('show');
+  document.getElementById('perf-extracted-nome').textContent = dados.nome ? 'Nome: '+dados.nome : 'Nome não identificado automaticamente';
+  const total = Object.values(dados.pts).reduce((a,b)=>a+b,0)||100;
+  const ordem = Object.entries(dados.pts).sort((a,b)=>b[1]-a[1]);
+  document.getElementById('perf-bars-preview').innerHTML = ordem.map(([key,val])=>{
+    const p = PERFIS_COMP[key];
+    return `<div class="perf-bar-row">
+      <div class="perf-bar-label" style="color:${p.cor}">${p.label} <span style="color:var(--muted);font-size:10px">${p.tag}</span></div>
+      <div class="perf-bar-bg"><div class="perf-bar-fill" style="width:${(val/total*100).toFixed(1)}%;background:${p.cor}"></div></div>
+      <div class="perf-bar-pts" style="color:${p.cor}">${val}</div>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+// FUNCIONÁRIOS
+// ══════════════════════════════════════════════════════════
+let editFuncId = null;
+
+function openModal_func(id) {
+  editFuncId = id;
+  perfilExtraido = null;
+  document.getElementById('perf-result').classList.remove('show');
+  document.getElementById('pdf-filename').textContent = '';
+  document.getElementById('pdf-perfil-input').value = '';
+
+  if (id) {
+    const f = db.funcionarios.find(x=>x.id===id);
+    document.getElementById('func-nome').value    = f.nome;
+    document.getElementById('func-cargo').value   = f.cargo;
+    document.getElementById('func-admissao').value = f.admissao||'';
+    document.getElementById('func-setor').value   = f.setor||'';
+    document.getElementById('modal-func-title').textContent = 'Editar Funcionário';
+    if (f.perfil) { perfilExtraido=f.perfil; mostrarPerfilExtraido(f.perfil,'Perfil salvo'); }
+  } else {
+    ['func-nome','func-cargo','func-admissao','func-setor'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('modal-func-title').textContent = 'Novo Funcionário';
+  }
+  openModal('modal-func');
+}
+
+function salvarFuncionario() {
+  const nome  = esc(document.getElementById('func-nome').value.trim());
+  const cargo = esc(document.getElementById('func-cargo').value.trim());
+  if (!nome||!cargo) { toast('Preencha nome e cargo','error'); return; }
+  const admissao = document.getElementById('func-admissao').value;
+  const setor    = esc(document.getElementById('func-setor').value.trim());
+  const perfil   = perfilExtraido || null;
+
+  if (editFuncId) {
+    const idx = db.funcionarios.findIndex(x=>x.id===editFuncId);
+    const updated = {
+      ...(idx !== -1 ? db.funcionarios[idx] : {}),
+      id: editFuncId, nome, cargo, admissao, setor,
+      perfil: perfil ?? (idx !== -1 ? db.funcionarios[idx].perfil : null) ?? null
+    };
+    saveFuncionario(updated);
+    toast('Funcionário atualizado!');
+  } else {
+    const novo = { id:uuid(), nome, cargo, admissao, setor, perfil, createdAt:Date.now() };
+    saveFuncionario(novo);
+    toast('Funcionário adicionado!');
+  }
+  closeModal('modal-func');
+  editFuncId = null;
+}
+
+function deleteFuncionario(id) {
+  if (!confirm('Excluir este funcionário e todas suas avaliações?')) return;
+  deleteFuncionarioFS(id);
+  deleteAvaliacoesByFunc(id);
+  toast('Funcionário removido.','error');
+}
+
+function renderFuncionarios() {
+  const list = document.getElementById('emp-list');
+  if (!db.funcionarios.length) {
+    list.innerHTML = `<div class="empty"><div class="empty-icon">👥</div><h3>Nenhum funcionário cadastrado</h3><p>Clique em "Novo Funcionário" para começar ou carregue dados de demonstração.</p></div>`;
+    return;
+  }
+  list.innerHTML = db.funcionarios.map((f,i)=>{
+    const avs    = db.avaliacoes.filter(a=>a.funcId===f.id);
+    const ultima = avs.sort((a,b)=>b.createdAt-a.createdAt)[0];
+    const clf    = classificar(f, db.avaliacoes);
+    const domP   = f.perfil?.dominante ? PERFIS_COMP[f.perfil.dominante] : null;
+    return `<div class="emp-card">
+      <div class="emp-info">
+        <div class="emp-avatar" style="background:${avatarColor(i)}">${initials(f.nome)}</div>
+        <div>
+          <div class="emp-name">${esc(f.nome)}</div>
+          <div class="emp-role">${esc(f.cargo)}${f.setor?' · '+esc(f.setor):''}</div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:5px">
+            ${clf ? `<span class="clf-badge ${clf.cls}">${clf.icon} ${clf.label}</span>` : ''}
+            ${domP ? `<span class="perf-badge" style="color:${domP.cor};border-color:${domP.cor};background:${domP.bg}" onclick="verPerfil('${f.id}')">${domP.label}</span>` : ''}
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        ${ultima ? `<div class="media-badge" style="background:${scoreColor(ultima.media)}22;color:${scoreColor(ultima.media)}">⭐ ${ultima.media.toFixed(1)} · ${ultima.periodo||''}</div>` : '<span style="color:var(--muted);font-size:12px">Sem avaliação</span>'}
+        <div style="display:flex;gap:6px">
+          <button class="icon-btn" title="Editar" onclick="openModal_func('${f.id}')">✏️</button>
+          <button class="icon-btn" title="Excluir" onclick="deleteFuncionario('${f.id}')">🗑</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+// PERFIL COMPORTAMENTAL — PAINEL GERENCIAL
+// ══════════════════════════════════════════════════════════
+function verPerfil(id) {
+  const f = db.funcionarios.find(x=>x.id===id);
+  if (!f?.perfil) return;
+  const p = f.perfil;
+  const dom = PERFIS_COMP[p.dominante];
+  const total = Object.values(p.pts).reduce((a,b)=>a+b,0)||100;
+  const ordem = Object.entries(p.pts).sort((a,b)=>b[1]-a[1]);
+  document.getElementById('perfil-modal-title').textContent = 'Perfil · '+esc(f.nome);
+  document.getElementById('perfil-modal-body').innerHTML = `
+    <div style="background:${dom.bg};border:1px solid ${dom.cor}55;border-radius:10px;padding:14px 16px;margin-bottom:16px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:2px">PERFIL DOMINANTE</div>
+      <div style="font-size:20px;font-weight:700;color:${dom.cor};font-family:'Syne',sans-serif">${dom.label}</div>
+      <div style="font-size:13px;color:var(--muted)">${dom.tag}</div>
+    </div>
+    <div style="margin-bottom:14px">
+      ${ordem.map(([key,val])=>{
+        const pp = PERFIS_COMP[key];
+        return `<div class="perf-bar-row">
+          <div class="perf-bar-label" style="color:${pp.cor}">${pp.label} <span style="font-size:10px;color:var(--muted)">${pp.tag}</span></div>
+          <div class="perf-bar-bg"><div class="perf-bar-fill" style="width:${(val/total*100).toFixed(1)}%;background:${pp.cor}"></div></div>
+          <div class="perf-bar-pts" style="color:${pp.cor}">${val} pts</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="gestao-grid">
+      <div class="gestao-card">
+        <div class="gestao-card-title">💛 Motivadores</div>
+        <ul>${dom.motivadores.map(m=>`<li>${m}</li>`).join('')}</ul>
+      </div>
+      <div class="gestao-card">
+        <div class="gestao-card-title">💬 Como dar feedback</div>
+        <ul>${dom.feedback.map(m=>`<li>${m}</li>`).join('')}</ul>
+      </div>
+      <div class="gestao-card">
+        <div class="gestao-card-title">🎯 Estilo de cobrança</div>
+        <ul>${dom.cobranca.map(m=>`<li>${m}</li>`).join('')}</ul>
+      </div>
+      <div class="gestao-card">
+        <div class="gestao-card-title">⚠️ Riscos comportamentais</div>
+        <ul>${dom.riscos.map(m=>`<li>${m}</li>`).join('')}</ul>
+      </div>
+    </div>
+    <div class="gestao-card" style="margin-top:12px">
+      <div class="gestao-card-title">🏷️ Funções mais adequadas</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px">
+        ${dom.funcoes.map(m=>`<span style="background:${dom.bg};color:${dom.cor};border:1px solid ${dom.cor}44;padding:3px 10px;border-radius:20px;font-size:12px">${m}</span>`).join('')}
+      </div>
+    </div>`;
+  openModal('modal-perfil');
+}
+
+// ══════════════════════════════════════════════════════════
+// AVALIAÇÃO — FORMULÁRIO
+// ══════════════════════════════════════════════════════════
+function renderAvaliacao() {
+  populateSelects();
+  document.getElementById('av-data').value = new Date().toISOString().slice(0,10);
+  const mes = new Date().getMonth();
+  document.getElementById('av-bimestre').value = BIMESTRES[Math.floor(mes/2)];
+  document.getElementById('av-ano').value = new Date().getFullYear();
+  renderCompetencias();
+}
+
+function renderCompetencias() {
+  const funcId = document.getElementById('av-funcionario').value;
+  const f = funcId ? db.funcionarios.find(x=>x.id===funcId) : null;
+  const grupo = cargoGrupo(f?.cargo||'');
+  document.getElementById('competencias-form').innerHTML = COMPETENCIAS.map(c=>{
+    const peso = getPeso(c.id, f?.cargo||'');
+    const hasW = peso !== 1;
+    return `<div class="comp-item ${hasW?'has-weight':''}">
+      <div>
+        <div class="comp-name">${c.nome}</div>
+        <div class="comp-desc">${c.desc}</div>
+        ${hasW ? `<div class="comp-weight">Peso ${peso.toFixed(1)}× para ${esc(f.cargo)}</div>` : ''}
+      </div>
+      <div class="comp-score">
+        <input class="score-input" type="number" id="nota-${c.id}" min="1" max="10"
+          placeholder="—" oninput="updateMedia();colorBadge('badge-${c.id}',this.value)">
+        <div class="score-badge" id="badge-${c.id}">—</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function checkDuplicata() {
+  renderCompetencias();
+  const funcId  = document.getElementById('av-funcionario').value;
+  const bim     = document.getElementById('av-bimestre').value;
+  const ano     = document.getElementById('av-ano').value;
+  const existe  = funcId && db.avaliacoes.some(a=>a.funcId===funcId && a.bimestre===bim && String(a.ano)===String(ano));
+  document.getElementById('alert-duplicata').classList.toggle('show', !!existe);
+}
+
+function colorBadge(id, val) {
+  const v = parseFloat(val); const el = document.getElementById(id);
+  if (!el) return;
+  if (!val||isNaN(v)) { el.textContent='—'; el.className='score-badge'; return; }
+  el.textContent = v; el.className = 'score-badge '+scoreClass(v);
+}
+
+function updateMedia() {
+  const funcId = document.getElementById('av-funcionario').value;
+  const f = funcId ? db.funcionarios.find(x=>x.id===funcId) : null;
+  const notas = {};
+  COMPETENCIAS.forEach(c=>{ const v=parseFloat(document.getElementById('nota-'+c.id)?.value); if(!isNaN(v)) notas[c.id]=v; });
+  const display = document.getElementById('av-media-display');
+  const cls     = document.getElementById('av-class-display');
+  if (!Object.keys(notas).length) { display.textContent='—'; cls.textContent=''; return; }
+  const media = calcMedia(notas, f?.cargo||'');
+  display.textContent = media.toFixed(2);
+  display.style.color = scoreColor(media);
+  cls.innerHTML = `<span class="score-badge ${scoreClass(media)}" style="font-size:15px;padding:7px 15px">${scoreLabel(media)}</span>`;
+}
+
+function limparForm() {
+  COMPETENCIAS.forEach(c=>{ const el=document.getElementById('nota-'+c.id); if(el)el.value=''; colorBadge('badge-'+c.id,''); });
+  document.getElementById('av-comentarios').value='';
+  document.getElementById('av-funcionario').value='';
+  document.getElementById('alert-duplicata').classList.remove('show');
+  updateMedia();
+}
+
+function salvarAvaliacao() {
+  const funcId = document.getElementById('av-funcionario').value;
+  if (!funcId) { toast('Selecione um funcionário','error'); return; }
+  const bimestre = document.getElementById('av-bimestre').value;
+  const ano      = String(document.getElementById('av-ano').value);
+  const f        = db.funcionarios.find(x=>x.id===funcId);
+  const notas    = {};
+  COMPETENCIAS.forEach(c=>{ const v=parseFloat(document.getElementById('nota-'+c.id).value); if(!isNaN(v)&&v>=1&&v<=10) notas[c.id]=v; });
+  if (!Object.keys(notas).length) { toast('Preencha ao menos uma nota','error'); return; }
+  const media = calcMedia(notas, f?.cargo||'');
+
+  // Remove duplicata anterior do mesmo período no Firestore
+  const duplic = db.avaliacoes.filter(a=>a.funcId===funcId && a.bimestre===bimestre && String(a.ano)===ano);
+  duplic.forEach(a => deleteAvaliacaoFS(a.id));
+
+  const novaAv = {
+    id: uuid(), funcId, bimestre, ano,
+    periodo: bimLabel(bimestre,ano),
+    gestor: esc(document.getElementById('av-gestor').value.trim()),
+    data:   document.getElementById('av-data').value,
+    comentarios: esc(document.getElementById('av-comentarios').value.trim()),
+    notas, media: parseFloat(media.toFixed(4)), createdAt: Date.now()
+  };
+  saveAvaliacao(novaAv);
+  limparForm();
+  toast('Avaliação salva! ✅');
+  setTimeout(()=>showView('historico'),600);
+}
+
+// ══════════════════════════════════════════════════════════
+// HISTÓRICO
+// ══════════════════════════════════════════════════════════
+function renderHistorico() {
+  const funcFilt = document.getElementById('hist-funcionario')?.value||'';
+  const bimFilt  = document.getElementById('hist-bimestre')?.value||'';
+  const anoFilt  = document.getElementById('hist-ano')?.value||'';
+  let avs = [...db.avaliacoes];
+  if (funcFilt) avs = avs.filter(a=>a.funcId===funcFilt);
+  if (bimFilt)  avs = avs.filter(a=>a.bimestre===bimFilt);
+  if (anoFilt)  avs = avs.filter(a=>String(a.ano)===anoFilt);
+  avs.sort((a,b)=>b.createdAt-a.createdAt);
+  const list = document.getElementById('hist-list');
+  if (!avs.length) { list.innerHTML=`<div class="empty"><div class="empty-icon">📋</div><h3>Nenhuma avaliação encontrada</h3></div>`; return; }
+  list.innerHTML = avs.map(av=>{
+    const f  = db.funcionarios.find(x=>x.id===av.funcId);
+    const fi = db.funcionarios.indexOf(f);
+    const dateStr = av.data ? new Date(av.data+'T12:00:00').toLocaleDateString('pt-BR') : '—';
+    return `<div class="tl-item" onclick="openDetail('${av.id}')">
+      <div class="emp-avatar" style="background:${avatarColor(fi)};width:34px;height:34px;font-size:12px;flex-shrink:0">${initials(f?.nome||'?')}</div>
+      <div>
+        <div style="font-weight:600;font-size:14px">${esc(f?.nome||'?')}</div>
+        <div style="font-size:12px;color:var(--muted)">${esc(f?.cargo||'')} · ${esc(av.gestor||'Sem gestor')}</div>
+      </div>
+      <div class="tl-date">${dateStr}<br><span style="color:var(--amber)">${esc(av.periodo||'')}</span></div>
+      <div class="tl-score-wrap">
+        <span class="score-badge ${scoreClass(av.media)}" style="min-width:50px;padding:5px 10px">${av.media.toFixed(1)}</span>
+        <span style="font-size:12px;color:var(--muted)">${scoreLabel(av.media)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+// DETALHE AVALIAÇÃO — com PDI e edição
+// ══════════════════════════════════════════════════════════
+function openDetail(id) {
+  const av = db.avaliacoes.find(a=>a.id===id);
+  const f  = db.funcionarios.find(x=>x.id===av?.funcId);
+  if (!av||!f) return;
+  document.getElementById('detail-title').textContent = `${esc(f.nome)} · ${esc(av.periodo||'')}`;
+  const dateStr = av.data ? new Date(av.data+'T12:00:00').toLocaleDateString('pt-BR') : '—';
+
+  // Gera PDI
+  const pdi = gerarPDI(av, f);
+
+  document.getElementById('detail-body').innerHTML = `
+    <div style="margin-bottom:14px;display:flex;gap:14px;flex-wrap:wrap">
+      <div><span style="color:var(--muted);font-size:11px">CARGO</span><br><b>${esc(f.cargo)}</b></div>
+      <div><span style="color:var(--muted);font-size:11px">DATA</span><br><b>${dateStr}</b></div>
+      <div><span style="color:var(--muted);font-size:11px">GESTOR</span><br><b>${esc(av.gestor||'—')}</b></div>
+      <div><span style="color:var(--muted);font-size:11px">MÉDIA</span><br><b style="color:${scoreColor(av.media)}">${av.media.toFixed(2)} · ${scoreLabel(av.media)}</b></div>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px">
+      <tr style="color:var(--muted);font-size:11px;border-bottom:1px solid var(--border)">
+        <th style="padding:7px 0;text-align:left">Competência</th>
+        <th style="padding:7px 0;text-align:right">Nota</th>
+        <th style="padding:7px 0;text-align:right">Peso</th>
+      </tr>
+      ${COMPETENCIAS.map(c=>`
+        <tr style="border-bottom:1px solid var(--border)">
+          <td style="padding:7px 0">${c.nome}</td>
+          <td style="padding:7px 0;text-align:right">${av.notas[c.id]!==undefined?`<span class="score-badge ${scoreClass(av.notas[c.id])}" style="min-width:38px">${av.notas[c.id]}</span>`:'<span style="color:var(--muted)">—</span>'}</td>
+          <td style="padding:7px 0;text-align:right;font-size:11px;color:var(--muted)">${getPeso(c.id,f.cargo).toFixed(1)}×</td>
+        </tr>`).join('')}
+    </table>
+    ${av.comentarios ? `<div style="background:var(--surface);border-radius:8px;padding:12px;font-size:13px;line-height:1.6;margin-bottom:14px"><b>Comentários:</b> ${av.comentarios}</div>` : ''}
+    ${pdi}`;
+
+  document.getElementById('detail-del-btn').onclick = () => {
+    if (!confirm('Excluir esta avaliação?')) return;
+    deleteAvaliacaoFS(id);
+    closeModal('modal-av-detail');
+    toast('Avaliação excluída.','error');
+  };
+  document.getElementById('detail-edit-btn').onclick = () => {
+    closeModal('modal-av-detail');
+    carregarAvaliacaoParaEdicao(id);
+  };
+  openModal('modal-av-detail');
+}
+
+function carregarAvaliacaoParaEdicao(id) {
+  const av = db.avaliacoes.find(a=>a.id===id);
+  const f  = db.funcionarios.find(x=>x.id===av?.funcId);
+  if (!av) return;
+  showView('avaliar');
+  setTimeout(()=>{
+    document.getElementById('av-funcionario').value = av.funcId;
+    document.getElementById('av-bimestre').value    = av.bimestre||'jan-fev';
+    document.getElementById('av-ano').value         = av.ano||'2026';
+    document.getElementById('av-gestor').value      = av.gestor||'';
+    document.getElementById('av-data').value        = av.data||'';
+    document.getElementById('av-comentarios').value = av.comentarios||'';
+    renderCompetencias();
+    COMPETENCIAS.forEach(c=>{
+      const el = document.getElementById('nota-'+c.id);
+      if (el && av.notas[c.id]!==undefined) { el.value=av.notas[c.id]; colorBadge('badge-'+c.id,av.notas[c.id]); }
+    });
+    updateMedia();
+    // Remove o registro antigo para que salvar substitua
+    deleteAvaliacaoFS(id);
+    toast('Avaliação carregada para edição. Ajuste e salve.','warn');
+  }, 100);
+}
+
+// ══════════════════════════════════════════════════════════
+// PDI — Plano de Desenvolvimento Individual
+// ══════════════════════════════════════════════════════════
+function gerarPDI(av, f) {
+  const notas = Object.entries(av.notas).sort((a,b)=>b[1]-a[1]);
+  const forcas    = notas.slice(0,3).map(([id])=>COMPETENCIAS.find(c=>c.id===id)?.nome||id);
+  const fraquezas = notas.slice(-3).reverse().map(([id])=>COMPETENCIAS.find(c=>c.id===id)?.nome||id);
+  const piorComp  = fraquezas[0];
+  const melhorComp = forcas[0];
+
+  // Ação sugerida baseada no perfil comportamental e na pior competência
+  const domKey = f?.perfil?.dominante;
+  const dom = domKey ? PERFIS_COMP[domKey] : null;
+  let acao = `Focar no desenvolvimento de <b>${esc(piorComp)}</b> no próximo bimestre.`;
+  if (domKey==='A')  acao = `Como Comunicador, canalize o entusiasmo para melhorar <b>${esc(piorComp)}</b>. Combine tarefas criativas com metas específicas nessa competência.`;
+  if (domKey==='V')  acao = `Como Executor, defina uma meta numérica clara para <b>${esc(piorComp)}</b> e estabeleça checkpoint semanal.`;
+  if (domKey==='Ve') acao = `Como Planejador, estruture uma rotina de melhoria para <b>${esc(piorComp)}</b> com passos claros e prazos definidos.`;
+  if (domKey==='Az') acao = `Como Analista, levante os dados de performance em <b>${esc(piorComp)}</b> e elabore um plano de ação baseado em evidências.`;
+
+  const metaProx = Math.min(10, (av.media + 0.5)).toFixed(1);
+
+  return `<div class="pdi-section">
+    <div class="pdi-title">📋 PDI — Plano de Desenvolvimento Individual</div>
+    <div class="pdi-row">
+      <div class="pdi-group">
+        <div class="pdi-label">✅ 3 Forças</div>
+        <div class="pdi-items">${forcas.map(n=>`<div class="pdi-item forca">${esc(n)}</div>`).join('')}</div>
+      </div>
+      <div class="pdi-group">
+        <div class="pdi-label">🎯 3 Pontos de Melhoria</div>
+        <div class="pdi-items">${fraquezas.map(n=>`<div class="pdi-item fraqueza">${esc(n)}</div>`).join('')}</div>
+      </div>
+    </div>
+    <div class="pdi-acao-full">
+      <div class="pdi-label" style="margin-bottom:6px">⚡ Ação para 60 dias</div>
+      <div class="pdi-item acao" style="font-size:13px;line-height:1.5">${acao}</div>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:12px;align-items:center;font-size:13px">
+      <span style="color:var(--muted)">Meta próximo bimestre:</span>
+      <span style="font-family:'Syne',sans-serif;font-weight:700;color:var(--amber);font-size:16px">${metaProx}</span>
+      ${dom ? `<span class="perf-badge" style="color:${dom.cor};border-color:${dom.cor};background:${dom.bg}">${dom.label}</span>` : ''}
+    </div>
+  </div>`;
+}
+
+// ══════════════════════════════════════════════════════════
+// DASHBOARD — Evolução individual
+// ══════════════════════════════════════════════════════════
+let chartsDash = {};
+
+function renderDashboard() {
+  const total   = db.funcionarios.length;
+  const totalAv = db.avaliacoes.length;
+
+  let mediaGeral = 0;
+  if (db.avaliacoes.length) {
+    const recentes = db.funcionarios.map(f=>{
+      const fa = db.avaliacoes.filter(a=>a.funcId===f.id).sort((a,b)=>b.createdAt-a.createdAt);
+      return fa[0]?.media||null;
+    }).filter(Boolean);
+    mediaGeral = recentes.length ? recentes.reduce((a,b)=>a+b,0)/recentes.length : 0;
+  }
+
+  // Classificações
+  const clfs = db.funcionarios.map(f=>classificar(f,db.avaliacoes)).filter(Boolean);
+  const destaques = clfs.filter(c=>c.label==='Destaque').length;
+  const atencao   = clfs.filter(c=>['Em Atenção','Crítico'].includes(c.label)).length;
+
+  document.getElementById('kpi-cards').innerHTML = `
+    <div class="card">
+      <div class="card-label">Funcionários</div>
+      <div class="card-value">${total}</div>
+      <div class="card-sub">cadastrados</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Avaliações</div>
+      <div class="card-value">${totalAv}</div>
+      <div class="card-sub">realizadas</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Média Geral</div>
+      <div class="card-value" style="color:${scoreColor(mediaGeral)}">${mediaGeral?mediaGeral.toFixed(1):'—'}</div>
+      <div class="card-sub">${mediaGeral?scoreLabel(mediaGeral):'sem dados'}</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Destaques / Atenção</div>
+      <div class="card-value"><span style="color:#5b8dee">${destaques}</span> <span style="font-size:18px;color:var(--muted)">/</span> <span style="color:#e08c3c">${atencao}</span></div>
+      <div class="card-sub">última avaliação</div>
+    </div>`;
+
+  // Evolução individual
+  Object.values(chartsDash).forEach(c=>{ try{c.destroy();}catch(e){} });
+  chartsDash = {};
+
+  const container = document.getElementById('evolucao-individual');
+  const anos  = [...new Set(db.avaliacoes.map(a=>String(a.ano||'2026')))].sort();
+  const eixos = [];
+  anos.forEach(ano=>{
+    BIMESTRES.forEach(bim=>{
+      if (db.avaliacoes.some(a=>a.bimestre===bim&&String(a.ano)===ano))
+        eixos.push({ bim, ano, label: BIM_LABELS[bim]+' '+ano });
+    });
+  });
+
+  if (!total) {
+    container.innerHTML = '<div class="empty"><div class="empty-icon">📈</div><h3>Nenhum funcionário cadastrado</h3></div>';
+  } else {
+    container.innerHTML = db.funcionarios.map((f,i)=>{
+      const fa = db.avaliacoes.filter(a=>a.funcId===f.id);
+      if (!fa.length) return '';
+      const clf  = classificar(f, db.avaliacoes);
+      const domP = f.perfil?.dominante ? PERFIS_COMP[f.perfil.dominante] : null;
+
+      // Evolução por competência (last vs prev)
+      const sorted = fa.sort((a,b)=>b.createdAt-a.createdAt);
+      const last = sorted[0]; const prev = sorted[1];
+      let deltaMedia = null, deltaArr = '';
+      if (prev) {
+        deltaMedia = last.media - prev.media;
+        deltaArr = deltaMedia > 0 ? '↑' : deltaMedia < 0 ? '↓' : '→';
+      }
+
+      const compDelta = COMPETENCIAS.map(c=>{
+        const vl = last.notas[c.id]; const vp = prev?.notas[c.id];
+        if (vl===undefined) return '';
+        const d = (vp!==undefined) ? vl-vp : null;
+        const cls = d===null ? '' : d>0 ? 'delta-up' : d<0 ? 'delta-down' : 'delta-eq';
+        const arr = d===null ? '' : d>0 ? '↑' : d<0 ? '↓' : '→';
+        return `<div class="comp-delta-item">
+          <div class="comp-delta-name">${c.nome.split('/')[0].trim()}</div>
+          <div class="comp-delta-val" style="color:${scoreColor(vl)}">${vl}</div>
+          ${d!==null ? `<div class="comp-delta-arrow ${cls}">${arr} ${Math.abs(d).toFixed(1)}</div>` : ''}
+        </div>`;
+      }).join('');
+
+      return `<div class="ev-card">
+        <div class="ev-header">
+          <div class="emp-avatar" style="background:${avatarColor(i)};width:36px;height:36px;font-size:13px;flex-shrink:0">${initials(f.nome)}</div>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:15px">${esc(f.nome)}</div>
+            <div style="font-size:12px;color:var(--muted)">${esc(f.cargo)}${f.setor?' · '+esc(f.setor):''}</div>
+          </div>
+          ${clf ? `<span class="clf-badge ${clf.cls}">${clf.icon} ${clf.label}</span>` : ''}
+          ${domP ? `<span class="perf-badge" style="color:${domP.cor};border-color:${domP.cor};background:${domP.bg};cursor:pointer" onclick="verPerfil('${f.id}')">${domP.label}</span>` : ''}
+          <div style="text-align:right">
+            <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:22px;color:${scoreColor(last.media)}">${last.media.toFixed(1)}</div>
+            ${deltaMedia!==null ? `<div style="font-size:12px;color:${deltaMedia>0?'#4caf7d':deltaMedia<0?'#e05c5c':'var(--muted)'}">${deltaArr} ${Math.abs(deltaMedia).toFixed(1)} vs anterior</div>` : ''}
+          </div>
+        </div>
+        ${eixos.length > 1 ? `<div class="ev-chart-wrap"><canvas id="chart-ev-${f.id}"></canvas></div>` : ''}
+        <div class="comp-delta-grid">${compDelta}</div>
+      </div>`;
+    }).join('');
+
+    // Desenha gráficos
+    setTimeout(()=>{
+      db.funcionarios.forEach((f,fi)=>{
+        const fa = db.avaliacoes.filter(a=>a.funcId===f.id);
+        if (fa.length < 2 || eixos.length < 2) return;
+        const canvas = document.getElementById('chart-ev-'+f.id);
+        if (!canvas) return;
+        const data = eixos.map(e=>{
+          const m = fa.filter(a=>a.bimestre===e.bim&&String(a.ano)===e.ano);
+          return m.length ? parseFloat((m.reduce((s,x)=>s+x.media,0)/m.length).toFixed(2)) : null;
+        });
+        const color = COLORS[fi%COLORS.length];
+        chartsDash['ev-'+f.id] = new Chart(canvas, {
+          type:'line',
+          data:{ labels:eixos.map(e=>e.label), datasets:[{ label:'Média', data, borderColor:color,
+            backgroundColor:color+'22', tension:.4, spanGaps:true, pointRadius:5,
+            pointBackgroundColor:color, borderWidth:2, fill:true }] },
+          options:{ responsive:true, maintainAspectRatio:false,
+            scales:{ y:{min:0,max:10,ticks:{color:'#7a8099',stepSize:2},grid:{color:'#2a2f42'}},
+              x:{ticks:{color:'#7a8099'},grid:{color:'#2a2f42'}} },
+            plugins:{ legend:{display:false} } }
+        });
+      });
+    }, 60);
+  }
+
+  // Ranking
+  const ranking = db.funcionarios.map(f=>{
+    const fa = db.avaliacoes.filter(a=>a.funcId===f.id).sort((a,b)=>b.createdAt-a.createdAt);
+    return { f, media:fa[0]?.media||0 };
+  }).filter(x=>x.media>0).sort((a,b)=>b.media-a.media);
+  const rl = document.getElementById('ranking-list');
+  if (!ranking.length) { rl.innerHTML='<div style="color:var(--muted);font-size:13px">Nenhuma avaliação ainda.</div>'; return; }
+  rl.innerHTML = ranking.map(({f,media},i)=>{
+    const fi  = db.funcionarios.indexOf(f);
+    const clf = classificar(f,db.avaliacoes);
+    return `<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+      <div style="color:var(--muted);font-size:13px;min-width:18px">${i+1}</div>
+      <div class="emp-avatar" style="background:${avatarColor(fi)};width:30px;height:30px;font-size:11px;flex-shrink:0">${initials(f.nome)}</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:500;margin-bottom:3px">${esc(f.nome)} ${clf?`<span class="clf-badge ${clf.cls}" style="font-size:11px">${clf.icon} ${clf.label}</span>`:''}</div>
+        <div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style="width:${(media/10*100).toFixed(1)}%;background:${scoreColor(media)}"></div></div></div>
+      </div>
+      <div style="font-family:'Syne',sans-serif;font-weight:700;color:${scoreColor(media)};min-width:34px;text-align:right">${media.toFixed(1)}</div>
+    </div>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+// COMPARATIVO — filtro de ano corrigido
+// ══════════════════════════════════════════════════════════
+let chartCmpRadar;
+
+function filtraAv(funcId) {
+  const bim = document.getElementById('cmp-bimestre').value;
+  const ano = document.getElementById('cmp-ano').value;
+  let fa = db.avaliacoes.filter(a=>a.funcId===funcId);
+  if (bim) fa = fa.filter(a=>a.bimestre===bim);
+  if (ano) fa = fa.filter(a=>String(a.ano)===ano);   // ← FIX: aplica ano independente do bimestre
+  return fa.sort((a,b)=>b.createdAt-a.createdAt)[0];
+}
+
+function renderComparativo() {
+  const datasets = [];
+  db.funcionarios.forEach((f,i)=>{
+    const av = filtraAv(f.id);
+    if (av) datasets.push({ f, av, color: COLORS[i%COLORS.length] });
+  });
+
+  if (chartCmpRadar) chartCmpRadar.destroy();
+  const ctx = document.getElementById('chart-cmp-radar');
+  chartCmpRadar = new Chart(ctx, {
+    type:'radar',
+    data:{
+      labels: COMPETENCIAS.map(c=>c.nome.split('/')[0].trim()),
+      datasets: datasets.map(d=>({
+        label: esc(d.f.nome),   // ← nome completo na legenda
+        data: COMPETENCIAS.map(c=>d.av.notas[c.id]??0),
+        backgroundColor: d.color+'33', borderColor: d.color,
+        pointBackgroundColor: d.color, borderWidth:2
+      }))
+    },
+    options:{ responsive:true, maintainAspectRatio:false,
+      scales:{ r:{min:0,max:10,ticks:{stepSize:2,color:'#7a8099',backdropColor:'transparent'},
+        grid:{color:'#2a2f42'},pointLabels:{color:'#e8eaf0',font:{size:11}}} },
+      plugins:{legend:{labels:{color:'#e8eaf0',font:{size:11}}}} }
+  });
+
+  const table = document.getElementById('cmp-table');
+  if (!datasets.length) { table.innerHTML='<tr><td style="padding:20px;color:var(--muted)">Nenhuma avaliação para o filtro selecionado.</td></tr>'; return; }
+  table.innerHTML = `
+    <thead><tr>
+      <th>Competência</th>
+      ${datasets.map(d=>`<th style="color:${d.color}">${esc(d.f.nome)}</th>`).join('')}
+    </tr></thead>
+    <tbody>
+    ${COMPETENCIAS.map(c=>`<tr><td>${c.nome}</td>
+      ${datasets.map(d=>{ const v=d.av.notas[c.id];
+        return v!==undefined?`<td><div class="bar-wrap"><div class="bar-bg"><div class="bar-fill" style="width:${v*10}%;background:${d.color}"></div></div><span style="min-width:22px;text-align:right;font-weight:600">${v}</span></div></td>`:'<td style="color:var(--muted)">—</td>';
+      }).join('')}</tr>`).join('')}
+    <tr style="border-top:2px solid var(--border)">
+      <td style="font-weight:700">Média Ponderada</td>
+      ${datasets.map(d=>{
+        const f = db.funcionarios.find(x=>x.id===d.av.funcId);
+        return `<td><b style="color:${scoreColor(d.av.media)}">${d.av.media.toFixed(1)}</b></td>`;
+      }).join('')}
+    </tr></tbody>`;
+}
+
+// ══════════════════════════════════════════════════════════
+// PDF RELATÓRIO
+// ══════════════════════════════════════════════════════════
+function gerarPDF() {
+  const datasets = [];
+  db.funcionarios.forEach(f=>{
+    const av = filtraAv(f.id);
+    if (av) datasets.push({f,av});
+  });
+  if (!datasets.length) { toast('Nenhuma avaliação para exportar','error'); return; }
+  const bim = document.getElementById('cmp-bimestre').value;
+  const ano = document.getElementById('cmp-ano').value;
+  const filtroLabel = [bim?BIM_LABELS[bim]:'', ano||''].filter(Boolean).join(' ') || 'Última avaliação';
+  const now = new Date().toLocaleDateString('pt-BR');
+  const win = window.open('','_blank');
+  if (!win) { toast('Habilite pop-ups para gerar o PDF','error'); return; }
+  win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+  <title>Relatório · Primus</title>
+  <style>
+    body{font-family:Arial,sans-serif;color:#111;background:#fff;padding:32px;font-size:12px}
+    h1{font-size:20px;margin-bottom:4px;color:#C97A0A}
+    .sub{color:#666;margin-bottom:22px}
+    table{width:100%;border-collapse:collapse;margin-bottom:26px}
+    th{background:#1e2130;color:#fff;padding:9px 11px;text-align:left;font-size:11px}
+    td{padding:8px 11px;border-bottom:1px solid #e0e0e0}
+    tr:nth-child(even) td{background:#f9f9f9}
+    .func-section{margin-bottom:30px;page-break-inside:avoid}
+    .func-title{font-size:15px;font-weight:700;border-bottom:2px solid #C97A0A;padding-bottom:4px;margin-bottom:6px}
+    .func-meta{color:#555;margin-bottom:10px;font-size:11px}
+    @media print{body{padding:14px}}
+  </style></head><body>
+  <h1>🐟 Primus · Relatório de Avaliações</h1>
+  <div class="sub">Gerado em ${now} · Período: ${filtroLabel}</div>
+  <table>
+    <thead><tr><th>Funcionário</th><th>Cargo</th><th>Período</th><th>Data</th>
+    ${COMPETENCIAS.map(c=>`<th>${c.nome.split('/')[0].trim()}</th>`).join('')}
+    <th>Média</th><th>Classificação</th></tr></thead>
+    <tbody>
+    ${datasets.sort((a,b)=>b.av.media-a.av.media).map(({f,av})=>`
+      <tr><td><b>${esc(f.nome)}</b></td><td>${esc(f.cargo)}</td><td>${esc(av.periodo||'')}</td>
+      <td>${av.data?new Date(av.data+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</td>
+      ${COMPETENCIAS.map(c=>`<td style="text-align:center">${av.notas[c.id]??'—'}</td>`).join('')}
+      <td style="font-weight:700">${av.media.toFixed(2)}</td><td>${scoreLabel(av.media)}</td></tr>`).join('')}
+    </tbody>
+  </table>
+  ${datasets.map(({f,av})=>`
+  <div class="func-section">
+    <div class="func-title">${esc(f.nome)}</div>
+    <div class="func-meta">Cargo: ${esc(f.cargo)} · Período: ${esc(av.periodo||'')} · Gestor: ${esc(av.gestor||'—')} · Data: ${av.data?new Date(av.data+'T12:00:00').toLocaleDateString('pt-BR'):'—'}</div>
+    <table><thead><tr><th>Competência</th><th>Nota</th><th>Peso</th></tr></thead><tbody>
+      ${COMPETENCIAS.map(c=>`<tr><td>${c.nome}</td><td style="text-align:center;font-weight:600">${av.notas[c.id]??'—'}</td><td style="text-align:center;color:#666">${getPeso(c.id,f.cargo).toFixed(1)}×</td></tr>`).join('')}
+      <tr><td><b>Média Ponderada</b></td><td style="text-align:center;font-weight:700;font-size:15px" colspan="2">${av.media.toFixed(2)}</td></tr>
+    </tbody></table>
+    ${av.comentarios?`<p style="margin-top:8px"><b>Comentários:</b> ${esc(av.comentarios)}</p>`:''}
+    <p style="margin-top:16px">Assinatura Gestor: ___________________________ &nbsp;&nbsp;&nbsp; Data: ____________</p>
+    <p style="margin-top:10px">Assinatura Colaborador: _______________________ &nbsp;&nbsp;&nbsp; Data: ____________</p>
+  </div>`).join('')}
+  <script>window.onload=()=>setTimeout(()=>window.print(),400)<\/script>
+  </body></html>`);
+  win.document.close();
+  toast('Relatório gerado!');
+}
+
+// ══════════════════════════════════════════════════════════
+// BACKUP / RESTORE
+// ══════════════════════════════════════════════════════════
+function exportBackup() {
+  const blob = new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'primus_avaliacoes_'+new Date().toISOString().slice(0,10)+'.json';
+  a.click(); URL.revokeObjectURL(url);
+  toast('Backup exportado!');
+}
+
+function importBackup(e) {
+  const file = e.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async ev => {
+    try {
+      const imported = JSON.parse(ev.target.result);
+      if (!imported.funcionarios||!imported.avaliacoes) throw new Error('Formato inválido');
+      if (!confirm(`Importar ${imported.funcionarios.length} funcionários e ${imported.avaliacoes.length} avaliações? Os dados serão adicionados ao Firestore.`)) return;
+      const batch = firestore.batch();
+      imported.funcionarios.forEach(f => batch.set(firestore.collection(COL_FUNC).doc(f.id), f));
+      imported.avaliacoes.forEach(a   => batch.set(firestore.collection(COL_AVAL).doc(a.id), a));
+      await batch.commit();
+      toast('Dados importados com sucesso!');
+    } catch(err) { console.error(err); toast('Arquivo inválido ou erro no Firebase.','error'); }
+  };
+  reader.readAsText(file);
+}
+
+// ══════════════════════════════════════════════════════════
+// DEMO — separado da produção
+// ══════════════════════════════════════════════════════════
+function carregarDemo() {
+  if (!confirm('Isso adicionará funcionários e avaliações de demonstração. Continuar?')) return;
+  const ids = [uuid(),uuid(),uuid()];
+  const funcs = [
+    { id:ids[0], nome:'Jonas Dantas',  cargo:'Garçom',     admissao:'2023-03-01', setor:'Salão',      createdAt:Date.now()-3000,
+      perfil:{ nome:'Jonas Dantas', pts:{A:30,V:28,Ve:22,Az:20}, dominante:'A', extraido:true } },
+    { id:ids[1], nome:'Maria Silva',   cargo:'Caixa',      admissao:'2023-06-15', setor:'Financeiro', createdAt:Date.now()-2000,
+      perfil:{ nome:'Maria Silva', pts:{Az:35,Ve:28,A:22,V:15}, dominante:'Az', extraido:true } },
+    { id:ids[2], nome:'Carlos Souza',  cargo:'Cozinheiro', admissao:'2022-11-10', setor:'Cozinha',    createdAt:Date.now()-1000,
+      perfil:{ nome:'Carlos Souza', pts:{V:32,A:28,Az:22,Ve:18}, dominante:'V', extraido:true } }
+  ];
+  const mk = (funcId,bim,ano,notas,comentarios,cargo) => {
+    const media = calcMedia(notas,cargo);
+    return { id:uuid(), funcId, bimestre:bim, ano:String(ano), periodo:bimLabel(bim,String(ano)),
+      gestor:'Jhonathan', data:`${ano}-01-15`, comentarios, notas, media:parseFloat(media.toFixed(4)), createdAt:Date.now()-Math.random()*500000 };
+  };
+  const avs = [
+    mk(ids[0],'jan-fev','2026',{pontualidade:8,iniciativa:9,relacionamento:10,organizacao:8,metas:9,qualidade:9,postura:10,conhecimento:8,lideranca:7},'Excelente desempenho no salão.','Garçom'),
+    mk(ids[0],'mar-abr','2026',{pontualidade:9,iniciativa:9,relacionamento:10,organizacao:9,metas:9,qualidade:9,postura:10,conhecimento:9,lideranca:8},'Evolução consistente.','Garçom'),
+    mk(ids[1],'jan-fev','2026',{pontualidade:7,iniciativa:6,relacionamento:8,organizacao:7,metas:7,qualidade:8,postura:8,conhecimento:7,lideranca:5},'Melhorar iniciativa.','Caixa'),
+    mk(ids[1],'mar-abr','2026',{pontualidade:8,iniciativa:7,relacionamento:8,organizacao:8,metas:7,qualidade:9,postura:8,conhecimento:7,lideranca:6},'Boa evolução em qualidade.','Caixa'),
+    mk(ids[2],'jan-fev','2026',{pontualidade:9,iniciativa:7,relacionamento:8,organizacao:9,metas:8,qualidade:9,postura:9,conhecimento:9,lideranca:6},'Ótimo técnico, desenvolver liderança.','Cozinheiro'),
+    mk(ids[2],'mar-abr','2026',{pontualidade:9,iniciativa:8,relacionamento:9,organizacao:9,metas:9,qualidade:9,postura:9,conhecimento:9,lideranca:7},'Crescendo como referência.','Cozinheiro')
+  ];
+  // Grava no Firestore via batch
+  const batch = firestore.batch();
+  funcs.forEach(f => batch.set(firestore.collection(COL_FUNC).doc(f.id), f));
+  avs.forEach(a   => batch.set(firestore.collection(COL_AVAL).doc(a.id), a));
+  batch.commit()
+    .then(()=>toast('Dados de demonstração carregados!'))
+    .catch(e=>{ console.error(e); toast('Erro ao carregar demo','error'); });
+}
+
+// ══════════════════════════════════════════════════════════
+// SELECTS
+// ══════════════════════════════════════════════════════════
+function populateSelects() {
+  const opts = db.funcionarios.map(f=>`<option value="${f.id}">${esc(f.nome)}</option>`).join('');
+  const avEl   = document.getElementById('av-funcionario');
+  const histEl = document.getElementById('hist-funcionario');
+  if (avEl)   avEl.innerHTML   = '<option value="">— Selecione —</option>'+opts;
+  if (histEl) histEl.innerHTML = '<option value="">Todos</option>'+opts;
+}
+
+// ══════════════════════════════════════════════════════════
+// INIT — inicia listeners Firestore (dados chegam em tempo real)
+// ══════════════════════════════════════════════════════════
+initRealtimeListeners();
+renderDashboard(); // renderiza vazio enquanto Firestore carrega
+</script>
+</body>
+</html>
