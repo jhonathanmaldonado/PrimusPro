@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Primus — Corrigir Usuários</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:#0d1117; color:#e6edf3; font-family:'Segoe UI',sans-serif; display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px; }
+  .box { background:#161b22; border:1px solid #30363d; border-radius:12px; padding:30px; max-width:500px; width:100%; }
+  h1 { color:#e8a045; font-size:20px; margin-bottom:8px; }
+  p { color:#7d8590; font-size:13px; margin-bottom:20px; line-height:1.6; }
+  .btn { width:100%; padding:14px; border-radius:8px; border:none; cursor:pointer; font-size:15px; font-weight:700; background:#e8a045; color:#000; transition:all .15s; }
+  .btn:hover { background:#f0b560; }
+  .btn:disabled { opacity:.4; cursor:not-allowed; }
+  .log { background:#0d2010; border:1px solid #30363d; border-radius:8px; padding:14px; font-family:'Courier New',monospace; font-size:12px; line-height:2; margin-top:16px; display:none; white-space:pre-wrap; }
+  .ok  { color:#3fb950; }
+  .err { color:#f85149; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h1>🔧 Corrigir Perfis de Usuário</h1>
+  <p>Este arquivo cria os documentos de perfil no Firestore para os 4 usuários. Execute uma vez e depois descarte.</p>
+  <button class="btn" onclick="corrigir()">✅ Criar Perfis no Firestore</button>
+  <div class="log" id="log"></div>
+</div>
+
+<script>
+firebase.initializeApp({
+  apiKey:            "AIzaSyDEo7pB-dLtSHFGjqvYf8Bt8n7VSu5HdrY",
+  authDomain:        "projeto-primus-9b643.firebaseapp.com",
+  projectId:         "projeto-primus-9b643",
+  storageBucket:     "projeto-primus-9b643.firebasestorage.app",
+  messagingSenderId: "547842320766",
+  appId:             "1:547842320766:web:a87b857ce7c2d434cdab2f"
+});
+
+const db = firebase.firestore();
+
+const USUARIOS = [
+  { uid: 'Ae3No4uApDTFo7BwFUZwstiYwHI2', nome: 'Gerente Principal', email: 'gerente@primus.com.br',    perfil: 'gerente'    },
+  { uid: '1tKzpxnVXVM51hPsAlJuzeMnZDE3', nome: 'Jhonathan',         email: 'admin@primus.com.br',       perfil: 'admin'      },
+  { uid: 'GQGAI9HZk7autzrK0bxZcOGs2re2', nome: 'Financeiro',        email: 'financeiro@primus.com.br',  perfil: 'financeiro' },
+  { uid: 'DIyqmPrWRQXLkhuKXvyYV62L0pw2', nome: 'Diretoria',         email: 'diretoria@primus.com.br',   perfil: 'diretoria'  },
+];
+
+function log(msg, tipo='') {
+  const el = document.getElementById('log');
+  el.style.display = 'block';
+  el.innerHTML += `<span class="${tipo}">${msg}</span>\n`;
+}
+
+async function corrigir() {
+  document.querySelector('.btn').disabled = true;
+  log('Criando perfis no Firestore...');
+
+  const batch = db.batch();
+  USUARIOS.forEach(u => {
+    const ref = db.collection('usuarios').doc(u.uid);
+    batch.set(ref, {
+      uid:      u.uid,
+      nome:     u.nome,
+      email:    u.email,
+      perfil:   u.perfil,
+      ativo:    true,
+      criadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+
+  try {
+    await batch.commit();
+    log('✅ Todos os perfis criados com sucesso!', 'ok');
+    USUARIOS.forEach(u => log(`  ${u.email} → ${u.perfil}`, 'ok'));
+    log('\nAgora pode fechar este arquivo e testar o login!', 'ok');
+  } catch(e) {
+    log('❌ Erro: ' + e.message, 'err');
+    log('Verifique se as regras do Firestore estão publicadas.', 'err');
+  }
+
+  document.querySelector('.btn').disabled = false;
+}
+</script>
+</body>
+</html>
