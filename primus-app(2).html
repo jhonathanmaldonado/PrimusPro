@@ -1,0 +1,2159 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Peixaria Primus — Gestão</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F7F4EF;--surface:#FFFFFF;--surface2:#F0EDE6;--border:#E2DDD5;--border2:#CCC7BC;
+  --accent:#C8782A;--accent-lt:#F5E6D3;--accent-dk:#A05E1E;--gold:#D4A03A;
+  --danger:#C0392B;--danger-lt:#FDECEA;--success:#276749;--success-lt:#E8F5EE;
+  --text:#1A1714;--text2:#4A4540;--muted:#8A837A;
+  --shadow:0 1px 4px rgba(0,0,0,.07),0 4px 16px rgba(0,0,0,.04);
+  --shadow-md:0 4px 20px rgba(0,0,0,.11);--radius:10px;--radius-sm:6px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;min-height:100vh;font-size:15px;line-height:1.5;}
+::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:var(--bg);}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
+/* LOGIN */
+#loginScreen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.login-wrap{width:100%;max-width:380px;}
+.login-brand{text-align:center;margin-bottom:32px;}
+.login-brand-eyebrow{font-size:12px;font-weight:600;letter-spacing:4px;text-transform:uppercase;color:var(--muted);}
+.login-brand-title{font-size:36px;font-weight:800;color:var(--accent);letter-spacing:-1.5px;margin-top:4px;}
+.login-brand-sub{font-size:11px;color:var(--muted);margin-top:6px;letter-spacing:1.5px;text-transform:uppercase;}
+.login-card{background:var(--surface);border-radius:16px;padding:32px 28px;box-shadow:var(--shadow-md);border:1.5px solid var(--border);}
+.login-field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
+.login-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;}
+.login-input{background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-family:inherit;padding:11px 14px;width:100%;transition:border-color .15s;}
+.login-input:focus{outline:none;border-color:var(--accent);background:#fff;}
+.login-btn{width:100%;padding:13px;border-radius:var(--radius-sm);border:none;cursor:pointer;font-size:15px;font-family:inherit;font-weight:700;background:var(--accent);color:#fff;margin-top:6px;transition:all .15s;letter-spacing:.2px;}
+.login-btn:hover{background:var(--accent-dk);transform:translateY(-1px);box-shadow:0 4px 12px rgba(200,120,42,.3);}
+.login-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none;}
+.login-error{color:var(--danger);font-size:13px;margin-top:10px;display:none;padding:10px 12px;background:var(--danger-lt);border-radius:var(--radius-sm);font-weight:500;}
+.login-error.show{display:block;}
+/* APP */
+#appScreen{display:none;}
+.header{background:var(--surface);border-bottom:1.5px solid var(--border);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:100;box-shadow:0 1px 6px rgba(0,0,0,.05);}
+.logo{display:flex;align-items:center;gap:10px;}
+.logo-icon{width:34px;height:34px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+.logo-text .logo-name{font-size:16px;font-weight:800;color:var(--text);letter-spacing:-.3px;line-height:1;}
+.logo-text .logo-sub{font-size:10px;color:var(--muted);font-weight:500;letter-spacing:1px;text-transform:uppercase;margin-top:1px;}
+.header-right{display:flex;align-items:center;gap:10px;}
+.user-info{text-align:right;}
+.user-name{font-size:13px;font-weight:600;color:var(--text2);}
+.perfil-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px;display:inline-block;}
+.perfil-gerente{background:#E3F0FB;color:#1A6FA8;}
+.perfil-financeiro{background:var(--accent-lt);color:var(--accent-dk);}
+.perfil-diretoria{background:#EEE8F8;color:#6B3FA8;}
+.perfil-admin{background:var(--success-lt);color:var(--success);}
+.btn-logout{background:transparent;border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--muted);font-size:11px;padding:5px 12px;cursor:pointer;font-family:inherit;font-weight:600;transition:all .15s;}
+.btn-logout:hover{border-color:var(--danger);color:var(--danger);}
+/* TABS */
+.tabs{display:flex;background:var(--surface);border-bottom:1.5px solid var(--border);padding:0 16px;gap:2px;overflow-x:auto;scrollbar-width:none;}
+.tabs::-webkit-scrollbar{display:none;}
+.tab{padding:13px 14px;cursor:pointer;font-size:13px;font-weight:500;color:var(--muted);border-bottom:2.5px solid transparent;transition:all .2s;white-space:nowrap;flex-shrink:0;}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:700;}
+.tab:hover:not(.active){color:var(--text2);}
+.tab.hidden{display:none;}
+/* LAYOUT */
+.main{padding:20px;max-width:900px;margin:0 auto;}
+.section{display:none;}.section.active{display:block;}
+.section-title{font-size:22px;font-weight:800;color:var(--text);letter-spacing:-.5px;}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+/* CARDS */
+.card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:14px;box-shadow:var(--shadow);}
+.card-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;}
+/* BUTTONS */
+.btn{padding:9px 18px;border-radius:var(--radius-sm);border:none;cursor:pointer;font-size:13px;font-family:inherit;font-weight:600;transition:all .15s;white-space:nowrap;}
+.btn-primary{background:var(--accent);color:#fff;}.btn-primary:hover{background:var(--accent-dk);}
+.btn-secondary{background:var(--surface2);color:var(--text2);border:1.5px solid var(--border);}.btn-secondary:hover{border-color:var(--accent);color:var(--accent);}
+.btn-success{background:var(--success);color:#fff;}.btn-success:hover{background:#1e5238;}
+.btn-danger{background:transparent;color:var(--danger);border:1.5px solid var(--danger);}.btn-danger:hover{background:var(--danger-lt);}
+.btn-sm{padding:5px 12px;font-size:12px;}.btn-block{width:100%;margin-top:8px;}.btn:disabled{opacity:.4;cursor:not-allowed;}
+/* STATUS */
+.status-pill{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px;}
+.status-em_aberto{background:#E3F0FB;color:#1A6FA8;border:1px solid #B8D9F0;}
+.status-aguardando_fechamento{background:var(--accent-lt);color:var(--accent-dk);border:1px solid #EDCBA0;}
+.status-fechado{background:var(--success-lt);color:var(--success);border:1px solid #B8DFC9;}
+.status-reaberto{background:var(--danger-lt);color:var(--danger);border:1px solid #F5C0BA;}
+/* CALENDAR */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;text-align:center;}
+.cal-sem{font-size:11px;color:var(--muted);font-weight:700;padding:4px 0;}
+.cal-day{border-radius:var(--radius-sm);padding:8px 2px;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s;user-select:none;border:1.5px solid transparent;}
+.cal-day:hover{filter:brightness(.94);}
+.cal-day.hoje{border-color:var(--accent)!important;font-weight:800;}
+.cal-day.selecionado{outline:2.5px solid var(--accent);outline-offset:1px;}
+/* BADGES */
+.badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;text-transform:uppercase;white-space:nowrap;}
+.c-garcom{color:#A05E1E;background:var(--accent-lt);}
+.c-bar{color:#1A6FA8;background:#E3F0FB;}
+.c-cozinha{color:#C0392B;background:#FDECEA;}
+.c-cumim{color:#6B3FA8;background:#EEE8F8;}
+.c-gerente{color:var(--success);background:var(--success-lt);}
+.c-outros{color:var(--muted);background:var(--surface2);}
+.tag-atrasado{font-size:10px;padding:2px 8px;border-radius:20px;background:var(--accent-lt);color:var(--accent-dk);font-weight:700;}
+/* EMP ROWS */
+.emp-list{display:flex;flex-direction:column;gap:6px;}
+.emp-row{background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;display:grid;grid-template-columns:24px 1fr auto auto auto;gap:8px;align-items:center;}
+.emp-row.presente{border-color:#B8DFC9;background:#FAFFFE;}
+.emp-row.ausente{opacity:.45;background:var(--surface2);}
+.check-box{width:22px;height:22px;border:2px solid var(--border2);border-radius:5px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;user-select:none;}
+.check-box.on{background:var(--success);border-color:var(--success);}
+.check-box.on::after{content:'✓';font-size:13px;color:#fff;font-weight:800;}
+.emp-name{font-size:14px;font-weight:500;line-height:1.3;min-width:0;}
+.emp-name small{display:block;font-size:11px;color:var(--muted);margin-top:1px;}
+.late-btn{font-size:11px;padding:4px 9px;border-radius:20px;border:1.5px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;font-family:inherit;white-space:nowrap;font-weight:600;}
+.late-btn.on{background:var(--accent-lt);border-color:var(--accent);color:var(--accent-dk);}
+.late-btn:disabled{opacity:.4;cursor:not-allowed;}
+.cons-input{width:64px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:5px 7px;color:var(--text);font-size:12px;font-family:inherit;text-align:right;}
+.cons-input:focus{outline:none;border-color:var(--accent);background:#fff;}
+.cons-input:disabled{opacity:.4;}
+.grupo-header{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;font-weight:700;margin-bottom:7px;padding-bottom:6px;border-bottom:1.5px solid var(--border);}
+.grupo-section{margin-bottom:16px;}
+/* FORMS */
+.field-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px;}
+.form-input,.form-select{background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-family:inherit;padding:10px 12px;width:100%;transition:border-color .15s;}
+.form-input:focus,.form-select:focus{outline:none;border-color:var(--accent);background:#fff;}
+.form-group{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+@media(max-width:520px){.grid2{grid-template-columns:1fr;}}
+.cad-form{display:flex;flex-direction:column;gap:12px;}
+/* FINANCEIRO */
+.money-wrap{position:relative;}
+.money-wrap span{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;font-weight:600;}
+.money-input{width:100%;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:12px 12px 12px 30px;color:var(--text);font-size:20px;font-weight:800;}
+.money-input:focus{outline:none;border-color:var(--accent);background:#fff;}
+.gorjeta-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+@media(max-width:520px){.gorjeta-grid{grid-template-columns:1fr;}}
+.gorjeta-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+.chip{font-size:11px;padding:4px 10px;border-radius:20px;border:1.5px solid var(--border);color:var(--text2);background:var(--surface2);}
+.chip strong{color:var(--accent-dk);}
+.diaria-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1.5px solid var(--border);}
+.diaria-row:last-child{border-bottom:none;}
+.diaria-name{flex:1;font-size:14px;font-weight:500;}
+.diaria-name small{display:block;font-size:11px;color:var(--muted);}
+.diaria-input{width:90px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-size:14px;font-weight:700;text-align:right;font-family:inherit;}
+.diaria-input:focus{outline:none;border-color:var(--accent);background:#fff;}
+.diaria-input:disabled{opacity:.5;}
+/* TABELAS */
+.result-table{width:100%;border-collapse:collapse;}
+.result-table th{text-align:left;font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:8px 10px;border-bottom:2px solid var(--border);}
+.result-table td{padding:9px 10px;border-bottom:1.5px solid var(--border);font-size:13px;}
+.result-table tbody tr:hover{background:var(--surface2);}
+.right{text-align:right;}
+.val-pos{color:var(--success);font-weight:700;}.val-neg{color:var(--danger);}
+.total-row td{font-weight:800;font-size:14px;border-top:2px solid var(--border)!important;color:var(--accent-dk);background:var(--accent-lt)!important;}
+/* HISTÓRICO */
+.hist-item{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow);}
+.hist-header{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:background .15s;}
+.hist-header:hover{background:var(--surface2);}
+.hist-date{font-size:14px;font-weight:700;color:var(--text);}
+.hist-meta{display:flex;gap:14px;align-items:center;font-size:12px;color:var(--muted);}
+.hist-meta .val{color:var(--success);font-weight:800;font-size:14px;}
+.hist-body{display:none;padding:0 16px 14px;border-top:1.5px solid var(--border);}
+.hist-body.open{display:block;}
+/* RESUMO/PGTO/USERS */
+.resumo-card,.pgto-card,.user-card{background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow);}
+.resumo-avatar,.user-avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0;}
+.resumo-info,.user-info-card{flex:1;}
+.resumo-name,.user-nome{font-weight:700;font-size:14px;color:var(--text);}
+.resumo-sub,.user-email{font-size:11px;color:var(--muted);margin-top:3px;}
+.resumo-total,.pgto-total{font-weight:800;font-size:18px;color:var(--success);}
+.pgto-card{display:block;}
+.pgto-name{font-weight:700;font-size:15px;color:var(--text);}
+.pgto-pix{font-size:12px;color:var(--muted);margin-top:2px;font-style:italic;}
+.pgto-detail{font-size:12px;color:var(--muted);margin-top:4px;}
+.user-actions{display:flex;gap:6px;flex-wrap:wrap;}
+/* MISC */
+.alert{padding:10px 14px;border-radius:var(--radius-sm);font-size:13px;margin-bottom:12px;display:none;font-weight:500;}
+.alert.success{background:var(--success-lt);border:1.5px solid #B8DFC9;color:var(--success);display:block;}
+.alert.error{background:var(--danger-lt);border:1.5px solid #F5C0BA;color:var(--danger);display:block;}
+.divider{height:1.5px;background:var(--border);margin:14px 0;}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:13px;border-bottom:1.5px solid var(--border);}
+.info-row:last-child{border-bottom:none;}.info-row .lbl{color:var(--muted);}
+.empty-state{text-align:center;padding:48px 20px;color:var(--muted);}
+.empty-state .icon{font-size:40px;margin-bottom:12px;}.empty-state p{font-size:14px;line-height:1.6;}
+.obs-box{background:var(--accent-lt);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:10px 14px;font-size:13px;margin-bottom:12px;color:var(--text2);}
+textarea{width:100%;min-height:70px;resize:vertical;font-size:13px;line-height:1.5;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;padding:10px 12px;transition:border-color .15s;}
+textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea:disabled{opacity:.5;}
+.summary-bar{display:flex;gap:16px;flex-wrap:wrap;background:var(--accent-lt);border:1.5px solid #EDCBA0;border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:13px;}
+.summary-bar span{color:var(--muted);}.summary-bar strong{color:var(--accent-dk);font-weight:800;}
+.bloqueado-banner{border-radius:8px;padding:11px 14px;font-size:13px;margin-bottom:14px;line-height:1.5;font-weight:500;}
+.bloqueado-banner.warn{background:var(--accent-lt);border:1.5px solid #EDCBA0;color:var(--accent-dk);}
+.bloqueado-banner.lock{background:var(--danger-lt);border:1.5px solid #F5C0BA;color:var(--danger);}
+.sync-indicator{font-size:11px;font-weight:600;}
+.sync-indicator.saving{color:var(--accent-dk);}.sync-indicator.saved{color:var(--success);}
+.loading-spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(26,23,20,.55);backdrop-filter:blur(3px);z-index:200;align-items:center;justify-content:center;padding:16px;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:24px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-md);}
+.modal-title{font-size:16px;font-weight:800;color:var(--text);margin-bottom:12px;letter-spacing:-.3px;}
+.modal-sub{font-size:13px;color:var(--muted);margin-bottom:14px;}
+.qr-section{display:none;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);flex-direction:row;align-items:flex-start;gap:16px;}
+.qr-section.visible{display:flex;}
+.qr-info{font-size:11px;color:var(--muted);}
+.qr-info strong{display:block;font-size:13px;color:var(--text2);margin-bottom:4px;font-weight:700;}
+.import-zone{border:2px dashed var(--border2);border-radius:12px;padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface2);margin-bottom:14px;}
+.import-zone:hover{border-color:var(--accent);background:var(--accent-lt);}
+.scan-result{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;display:none;}
+.scan-result.visible{display:block;}.scan-result.ok{border-color:#B8DFC9;}
+@media print{.no-print{display:none!important;}body{background:#fff!important;color:#000!important;}.header,.tabs{display:none!important;}.main{padding:0!important;max-width:100%!important;}.card{border:1px solid #ddd!important;box-shadow:none!important;}.emp-row{border:1px solid #ddd!important;}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="login-wrap">
+    <div class="login-brand">
+      <div class="login-brand-eyebrow">Peixaria</div>
+      <div class="login-brand-title">Primus</div>
+      <div class="login-brand-sub">Sistema de Gestão</div>
+    </div>
+    <div class="login-card">
+      <div class="login-field"><div class="login-label">E-mail</div><input type="email" id="loginEmail" class="login-input" placeholder="seu@email.com" autocomplete="username"></div>
+      <div class="login-field"><div class="login-label">Senha</div><input type="password" id="loginPass" class="login-input" placeholder="••••••••" autocomplete="current-password"></div>
+      <button class="login-btn" id="loginBtn" onclick="doLogin()">Entrar</button>
+      <div class="login-error" id="loginError"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EXTRA -->
+<div class="modal-overlay" id="modalExtra"><div class="modal-box">
+  <div class="modal-title">➕ Funcionário Extra do Dia</div>
+  <div class="form-group"><div class="field-label">Nome completo</div><input type="text" id="extNome" class="form-input" placeholder="Nome"></div>
+  <div class="form-group"><div class="field-label">Função no dia</div><select id="extCargo" class="form-select" onchange="preencherDiariaExtra()"><option>Gerente</option><option>Garçom</option><option>Cumim</option><option>Cozinheiro</option>
+        <option>Bar</option><option>Aux. Bar</option><option>Caixa</option><option>Recepcionista</option>
+        <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div>
+  <div class="form-group"><div class="field-label">Chave Pix</div><input type="text" id="extPix" class="form-input" placeholder="CPF, celular, e-mail ou conta Itaú"></div>
+  <div class="form-group"><div class="field-label">Diária (R$) <span id="extHint" style="color:var(--muted);font-weight:400;text-transform:none;font-size:11px"></span></div><input type="number" id="extDiaria" class="form-input" step="0.01"></div>
+  <div id="segAuxWrap" style="display:none" class="form-group">
+    <div class="field-label">Auxiliares de Segurança (R$120 cada)</div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <button type="button" onclick="ajustarAuxExtra(-1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-size:20px;width:40px;height:40px;cursor:pointer;font-weight:700">−</button>
+      <span id="auxExtCount" style="font-size:24px;font-weight:800;min-width:28px;text-align:center">2</span>
+      <button type="button" onclick="ajustarAuxExtra(1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-size:20px;width:40px;height:40px;cursor:pointer;font-weight:700">+</button>
+      <span id="auxExtTotal" style="font-size:13px;color:var(--muted);font-weight:600"></span>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:6px">
+    <button class="btn btn-primary" style="flex:1" onclick="confirmarExtra()">✅ Adicionar</button>
+    <button class="btn btn-secondary" onclick="fecharModal('modalExtra')">Cancelar</button>
+  </div>
+</div></div>
+
+<!-- MODAL CARGO -->
+<div class="modal-overlay" id="modalCargo"><div class="modal-box">
+  <div class="modal-title">🔄 Função de Hoje</div>
+  <div class="modal-sub" id="modalCargoNome"></div>
+  <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Muda só para este dia. O cadastro permanente não é alterado.</p>
+  <div class="form-group"><div class="field-label">Função no dia</div><select id="modalCargoSel" class="form-select"><option>Gerente</option><option>Garçom</option><option>Cumim</option><option>Cozinheiro</option>
+        <option>Bar</option><option>Aux. Bar</option><option>Caixa</option><option>Recepcionista</option>
+        <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-primary" style="flex:1" onclick="confirmarCargo()">✅ Confirmar</button>
+    <button class="btn btn-secondary" onclick="fecharModal('modalCargo')">Cancelar</button>
+  </div>
+</div></div>
+
+<!-- MODAL REABRIR -->
+<div class="modal-overlay" id="modalReabrir"><div class="modal-box">
+  <div class="modal-title">🔴 Reabrir Dia</div>
+  <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Informe o motivo. Ficará registrado no histórico permanente.</p>
+  <textarea id="reabrirMotivo" style="margin-bottom:12px" placeholder="Ex: Erro no valor da gorjeta..."></textarea>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-danger" style="flex:1" onclick="confirmarReabrir()">Confirmar Reabertura</button>
+    <button class="btn btn-secondary" onclick="fecharModal('modalReabrir')">Cancelar</button>
+  </div>
+</div></div>
+
+<!-- MODAL EDITAR FUNCIONÁRIO -->
+<div class="modal-overlay" id="modalEditFunc"><div class="modal-box">
+  <div class="modal-title">✏️ Editar Funcionário</div>
+  <input type="hidden" id="editFuncId">
+  <div class="cad-form">
+    <div class="grid2"><div><div class="field-label">Nome</div><input type="text" id="editNome" class="form-input"></div><div><div class="field-label">Cargo</div><select id="editCargo" class="form-select"><option>Gerente</option><option>Garçom</option><option>Cumim</option><option>Cozinheiro</option>
+        <option>Bar</option><option>Aux. Bar</option><option>Caixa</option><option>Recepcionista</option>
+        <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div></div>
+    <div class="grid2"><div><div class="field-label">Tipo</div><select id="editTipo" class="form-select"><option value="fixo">Fixo (registrado)</option><option value="frequente">Frequente (vai sempre)</option></select></div><div><div class="field-label">Diária Padrão (R$)</div><input type="number" id="editDiaria" class="form-input" step="0.01"></div></div>
+    <div><div class="field-label">Chave Pix</div><input type="text" id="editPix" class="form-input"></div>
+    <div id="editFuncAlert" class="alert"></div>
+    <div style="display:flex;gap:8px;margin-top:4px"><button class="btn btn-primary" style="flex:1" onclick="salvarEdicaoFunc()">✅ Salvar</button><button class="btn btn-secondary" onclick="fecharModal('modalEditFunc')">Cancelar</button></div>
+  </div>
+</div></div>
+
+<!-- MODAL NOVO USUÁRIO -->
+<div class="modal-overlay" id="modalNovoUsuario"><div class="modal-box">
+  <div class="modal-title">👤 Novo Usuário</div>
+  <div class="form-group"><div class="field-label">Nome completo</div><input type="text" id="nuNome" class="form-input" placeholder="Nome"></div>
+  <div class="form-group"><div class="field-label">E-mail</div><input type="email" id="nuEmail" class="form-input" placeholder="email@exemplo.com"></div>
+  <div class="form-group"><div class="field-label">Senha</div><input type="password" id="nuSenha" class="form-input" placeholder="Mínimo 8 caracteres"></div>
+  <div class="form-group"><div class="field-label">Perfil de Acesso</div>
+    <select id="nuPerfil" class="form-select"><option value="gerente">Gerente — só Presença</option><option value="financeiro">Financeiro — Fechamento e Pagamentos</option><option value="diretoria">Diretoria — tudo + Reabrir dias</option><option value="admin">Admin — acesso total</option></select>
+  </div>
+  <div id="nuAlert" class="alert"></div>
+  <div style="display:flex;gap:8px;margin-top:4px"><button class="btn btn-primary" style="flex:1" onclick="criarUsuario()">✅ Criar Usuário</button><button class="btn btn-secondary" onclick="fecharModal('modalNovoUsuario')">Cancelar</button></div>
+</div></div>
+
+<!-- APP -->
+<div id="appScreen">
+  <div class="header">
+    <div class="logo">
+      <div class="logo-icon">🐟</div>
+      <div class="logo-text"><div class="logo-name">Primus</div><div class="logo-sub">Peixaria · Gestão</div></div>
+    </div>
+    <div class="header-right">
+      <div class="user-info"><div class="user-name" id="userLabel"></div><div><span id="perfilBadge" class="perfil-badge"></span></div></div>
+      <button class="btn-logout" onclick="doLogout()">Sair</button>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabsBar">
+    <div class="tab hidden" data-tab="presenca"   onclick="showTab('presenca',this)">📋 Presença</div>
+    <div class="tab hidden" data-tab="calendario" onclick="showTab('calendario',this)">📅 Calendário</div>
+    <div class="tab hidden" data-tab="fechamento" onclick="showTab('fechamento',this)">💰 Fechamento</div>
+    <div class="tab hidden" data-tab="pagamentos" onclick="showTab('pagamentos',this)">💳 Pagamentos</div>
+    <div class="tab hidden" data-tab="historico"  onclick="showTab('historico',this)">📋 Histórico</div>
+    <div class="tab hidden" data-tab="resumo"     onclick="showTab('resumo',this)">📊 Resumo</div>
+    <div class="tab hidden" data-tab="cadastro"   onclick="showTab('cadastro',this)">👥 Funcionários</div>
+    <div class="tab hidden" data-tab="usuarios"   onclick="showTab('usuarios',this)">🔑 Usuários</div>
+    <div class="tab hidden" data-tab="escala"     onclick="showTab('escala',this)">📅 Escala</div>
+    <div class="tab hidden" data-tab="qrfallback" onclick="showTab('qrfallback',this)">📥 QR Fallback</div>
+  </div>
+
+  <div class="main">
+    <!-- PRESENÇA -->
+    <div class="section" id="sec-presenca">
+      <div class="card no-print">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Selecione o Dia</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button onclick="mudarMesGer(-1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;color:var(--text2);cursor:pointer;font-size:16px;padding:3px 12px;font-weight:700">‹</button>
+            <span id="gerCalLabel" style="font-size:13px;font-weight:700;min-width:130px;text-align:center"></span>
+            <button onclick="mudarMesGer(1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;color:var(--text2);cursor:pointer;font-size:16px;padding:3px 12px;font-weight:700">›</button>
+          </div>
+        </div>
+        <div class="cal-grid" id="gerCalGrid"></div>
+        <div style="display:flex;gap:14px;margin-top:10px;font-size:11px;flex-wrap:wrap;font-weight:600">
+          <span style="color:#1A6FA8">🔵 Em aberto</span><span style="color:var(--accent-dk)">🟡 Aguardando</span><span style="color:var(--success)">🟢 Fechado</span>
+        </div>
+      </div>
+      <div id="gerContent" style="display:none">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px" class="no-print">
+          <div id="gerStatusPill"></div><div class="sync-indicator" id="syncIndicator"></div>
+        </div>
+        <div id="gerBanner" class="bloqueado-banner" style="display:none"></div>
+        <div class="summary-bar no-print">
+          <div><span>Data: </span><strong id="gerSumDate">—</strong></div>
+          <div><span>Presentes: </span><strong id="gerPres">0</strong></div>
+          <div><span>Ausentes: </span><strong id="gerAus">0</strong></div>
+          <div><span>Atrasados: </span><strong id="gerAtras">0</strong></div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+            <span>Funcionários</span>
+            <div style="display:flex;gap:4px" class="no-print">
+              <button onclick="setFiltro('todos')" id="ftTodos" class="btn btn-primary btn-sm">Todos</button>
+              <button onclick="setFiltro('fixos')" id="ftFixos" class="btn btn-secondary btn-sm">Fixos</button>
+              <button onclick="setFiltro('frequentes')" id="ftFreq" class="btn btn-secondary btn-sm">Frequentes</button>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:12px;font-weight:500" id="gerEmpCount"></div>
+          <div id="grpFixos" class="grupo-section"><div class="grupo-header">🏷️ Fixos</div><div class="emp-list" id="listFixos"></div></div>
+          <div id="grpFreq" class="grupo-section"><div class="grupo-header">🔄 Frequentes</div><div class="emp-list" id="listFreq"></div><div id="emptyFreq" style="font-size:13px;color:var(--muted);padding:8px 0;display:none">Nenhum frequente cadastrado</div></div>
+          <div id="grpExtras" class="grupo-section"><div class="grupo-header">➕ Extras do Dia</div><div class="emp-list" id="listExtras"></div></div>
+          <div id="btnAddExtra" style="margin-top:10px;display:none" class="no-print">
+            <button class="btn btn-secondary btn-block" style="border-style:dashed" onclick="abrirModal('modalExtra');preencherDiariaExtra()">➕ Adicionar Extra do Dia</button>
+          </div>
+        </div>
+        <div class="card"><div class="card-title">Observações do Dia</div><textarea id="gerObs" placeholder="Ocorrências, avisos, informações para o Jhonathan..."></textarea></div>
+        <div id="gerAlert" class="alert"></div>
+        <div id="gerAcoes" class="no-print"></div>
+        <div style="margin-top:10px" class="no-print" id="gerQrWrap">
+          <button class="btn btn-secondary btn-block" onclick="toggleGerQR()" style="font-size:12px">📄 Gerar QR Code (contingência offline)</button>
+          <div class="qr-section" id="gerQrSection"><div id="gerQrCanvas"></div><div class="qr-info"><strong>QR Code de Contingência</strong>Use só sem internet.<br><span id="gerQrSize"></span></div></div>
+        </div>
+      </div>
+
+      <!-- FUNCIONÁRIOS (visível ao gerente) -->
+      <div class="card" id="gerFuncCard" style="display:none">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>👥 Funcionários Cadastrados</span>
+          <button class="btn btn-secondary btn-sm" onclick="toggleGerFunc()">✕ Fechar</button>
+        </div>
+        <div id="gerFuncList"></div>
+      </div>
+      <div class="no-print" style="margin-top:10px">
+        <button class="btn btn-secondary btn-block" onclick="toggleGerFunc()" id="btnVerFunc">👥 Ver Funcionários</button>
+      </div>
+    </div>
+
+    <!-- CALENDÁRIO -->
+    <div class="section" id="sec-calendario">
+      <div class="section-header">
+        <div class="section-title">Calendário</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button onclick="mudarMesFin(-1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;color:var(--text2);cursor:pointer;padding:5px 14px;font-size:16px;font-weight:700">‹</button>
+          <span id="finCalLabel" style="font-size:14px;font-weight:700;min-width:155px;text-align:center"></span>
+          <button onclick="mudarMesFin(1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;color:var(--text2);cursor:pointer;padding:5px 14px;font-size:16px;font-weight:700">›</button>
+          <button class="btn btn-secondary btn-sm" onclick="carregarCalFin()">🔄</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:14px;margin-bottom:14px;font-size:12px;flex-wrap:wrap;font-weight:600">
+        <span style="color:var(--muted)">⬜ Sem registro</span><span style="color:#1A6FA8">🔵 Em Aberto</span><span style="color:var(--accent-dk)">🟡 Aguardando</span><span style="color:var(--success)">🟢 Fechado</span><span style="color:var(--danger)">🔴 Reaberto</span>
+      </div>
+      <div class="cal-grid" id="finCalGrid"></div>
+    </div>
+
+    <!-- FECHAMENTO -->
+    <div class="section" id="sec-fechamento">
+      <div class="section-header"><div class="section-title">Fechamento do Dia</div><div id="fechStatusPill"></div></div>
+      <div id="fechAlert" class="alert"></div>
+      <div id="fechContent" style="display:none">
+        <div id="fechObsBox"></div>
+        <div class="card">
+          <div class="card-title">Taxa de Serviço (Gorjeta)</div>
+          <div class="gorjeta-grid">
+            <div><div class="field-label">Total da Gorjeta</div><div class="money-wrap"><span>R$</span><input type="number" class="money-input" id="gorjetaTotal" placeholder="0,00" step="0.01" oninput="calcGorjeta()"></div></div>
+            <div><div class="field-label">Divisão por Setor</div><div class="gorjeta-chips" id="gorjetaChips"></div></div>
+          </div>
+        </div>
+        <div class="card"><div class="card-title">Diárias</div><div id="diariasList"></div></div>
+        <div class="card">
+          <div class="card-title">Resumo do Dia</div>
+          <table class="result-table">
+            <thead><tr><th>Funcionário</th><th>Cargo</th><th class="right">Diária</th><th class="right">Gorjeta</th><th class="right">Consumo</th><th class="right">Total</th></tr></thead>
+            <tbody id="resultBody"></tbody>
+          </table>
+        </div>
+        <div id="fechAlert2" class="alert"></div>
+        <div id="fechAcoes"></div>
+      </div>
+      <div id="fechEmpty" class="empty-state"><div class="icon">📅</div><p>Selecione um dia no <strong>Calendário</strong></p></div>
+    </div>
+
+    <!-- PAGAMENTOS -->
+    <div class="section" id="sec-pagamentos">
+      <div class="section-header"><div class="section-title">Pagamentos</div></div>
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
+        <div><div class="field-label">Período</div><select id="pgtoTipo" class="form-select" style="max-width:200px" onchange="onPgtoTipo()"><option value="semana">Esta Semana (Qua–Dom)</option><option value="semana_ant">Semana Anterior</option><option value="mes">Este Mês</option><option value="custom">Personalizado</option></select></div>
+        <div id="pgtoCustom" style="display:none;gap:8px;flex-wrap:wrap"><div><div class="field-label">De</div><input type="date" id="pgtoDe" class="form-input" style="max-width:150px"></div><div><div class="field-label">Até</div><input type="date" id="pgtoAte" class="form-input" style="max-width:150px"></div><div style="align-self:flex-end"><button class="btn btn-primary btn-sm" onclick="renderPagamentos()">Buscar</button></div></div>
+        <button class="btn btn-secondary btn-sm" onclick="renderPagamentos()" style="align-self:flex-end">Atualizar</button>
+        <button class="btn btn-secondary btn-sm" onclick="window.print()" style="align-self:flex-end">🖨️ Imprimir</button>
+      </div>
+      <div id="pgtoAlert" class="alert"></div><div id="pgtoContent"></div>
+    </div>
+
+    <!-- HISTÓRICO -->
+    <div class="section" id="sec-historico">
+      <div class="section-header"><div class="section-title">Histórico</div><button class="btn btn-secondary btn-sm" onclick="renderHistorico()">🔄</button></div>
+      <div id="historicoList"></div>
+    </div>
+
+    <!-- RESUMO -->
+    <div class="section" id="sec-resumo">
+      <div class="section-header"><div class="section-title">Resumo Mensal</div></div>
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <select id="resumoMes" class="form-select" style="max-width:210px" onchange="renderResumo()"><option value="">Todos os meses</option></select>
+        <button class="btn btn-secondary btn-sm" onclick="window.print()">🖨️ Imprimir</button>
+      </div>
+      <div id="resumoContent"></div>
+    </div>
+
+    <!-- FUNCIONÁRIOS -->
+    <div class="section" id="sec-cadastro">
+      <div class="section-header"><div class="section-title">Funcionários</div></div>
+      <div class="card">
+        <div class="card-title">Novo Funcionário</div>
+        <div class="cad-form">
+          <div class="grid2"><div><div class="field-label">ID Fixo</div><input type="text" id="cadId" class="form-input" placeholder="EMP016"></div><div><div class="field-label">Nome</div><input type="text" id="cadNome" class="form-input" placeholder="Nome completo"></div></div>
+          <div class="grid2"><div><div class="field-label">Cargo</div><select id="cadCargo" class="form-select"><option>Gerente</option><option>Garçom</option><option>Cumim</option><option>Cozinheiro</option>
+        <option>Bar</option><option>Aux. Bar</option><option>Caixa</option><option>Recepcionista</option>
+        <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div><div><div class="field-label">Tipo</div><select id="cadTipo" class="form-select"><option value="fixo">Fixo (registrado)</option><option value="frequente">Frequente (vai sempre)</option></select></div></div>
+          <div class="grid2"><div><div class="field-label">Diária Padrão (R$)</div><input type="number" id="cadDiaria" class="form-input" step="0.01"></div><div><div class="field-label">Chave Pix</div><input type="text" id="cadPix" class="form-input" placeholder="CPF, celular ou e-mail"></div></div>
+          <div id="cadAlert" class="alert"></div>
+          <button class="btn btn-primary" onclick="addFunc()">➕ Adicionar</button>
+        </div>
+      </div>
+      <div class="card"><div class="card-title">Funcionários Cadastrados</div><div id="cadList"></div></div>
+    </div>
+
+    <!-- USUÁRIOS (admin) -->
+    <div class="section" id="sec-usuarios">
+      <div class="section-header">
+        <div class="section-title">Usuários do Sistema</div>
+        <button class="btn btn-primary" onclick="abrirModal('modalNovoUsuario')">➕ Novo Usuário</button>
+      </div>
+      <div class="card" style="background:var(--accent-lt);border-color:#EDCBA0;margin-bottom:16px">
+        <div style="font-size:13px;color:var(--accent-dk);line-height:1.6"><strong>ℹ️ Atenção:</strong> Ao criar um usuário ele acessa o sistema imediatamente. O perfil determina o que pode ver e fazer. Guarde as senhas com segurança.</div>
+      </div>
+      <div id="usuariosAlert" class="alert"></div>
+      <div id="usuariosList"></div>
+    </div>
+
+    <!-- ESCALA -->
+    <div class="section" id="sec-escala">
+      <div class="section-header">
+        <div class="section-title">Escala Semanal</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="escalaLimpar()">🗑️ Limpar</button>
+          <button class="btn btn-primary" onclick="abrirPublicarEscala()">📤 Publicar no Sistema</button>
+        </div>
+      </div>
+
+      <!-- FORM ADICIONAR -->
+      <div class="card">
+        <div class="card-title">Adicionar à Escala</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:1;min-width:160px">
+            <div class="field-label">Funcionário</div>
+            <select id="escFuncSel" class="form-select">
+              <option value="">— selecione ou adicione abaixo —</option>
+            </select>
+          </div>
+          <div>
+            <div class="field-label">Ou nome avulso</div>
+            <input type="text" id="escFuncNome" class="form-input" placeholder="Nome do funcionário" style="max-width:180px">
+          </div>
+          <div>
+            <div class="field-label">Função</div>
+            <select id="escFuncCargo" class="form-select" style="max-width:150px">
+              <option>Gerente</option><option>Garçom</option><option>Cumim</option>
+              <option>Cozinheiro</option><option>Bar</option><option>Aux. Bar</option>
+              <option>Caixa</option><option>Recepcionista</option><option>Monitora</option>
+              <option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="escalaAddFunc()">+ Adicionar</button>
+        </div>
+      </div>
+
+      <!-- GRID DA ESCALA -->
+      <div class="card">
+        <div class="card-title">Grade da Semana</div>
+        <div style="overflow-x:auto">
+          <table class="result-table" id="escalaTable" style="min-width:700px">
+            <thead id="escalaHead"></thead>
+            <tbody id="escalaBody"></tbody>
+          </table>
+        </div>
+        <div id="escalaEmpty" class="empty-state" style="display:none"><div class="icon">📅</div><p>Adicione funcionários para montar a escala</p></div>
+      </div>
+
+      <!-- RESUMO -->
+      <div class="card" id="escalaResumoCard" style="display:none">
+        <div class="card-title">Resumo da Semana</div>
+        <div id="escalaResumo" style="display:flex;gap:10px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+
+    <!-- MODAL PUBLICAR ESCALA -->
+    <div class="modal-overlay" id="modalPublicarEscala">
+      <div class="modal-box" style="max-width:500px">
+        <div class="modal-title">📤 Publicar Escala no Sistema</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6">
+          Os funcionários da escala serão adicionados automaticamente aos dias correspondentes.<br>
+          O gerente só precisará registrar faltas, atrasos e consumos.
+        </p>
+        <div class="form-group">
+          <div class="field-label">Data de início da semana (Segunda-feira)</div>
+          <input type="date" id="escalaDataInicio" class="form-input" onchange="atualizarPreviewPublicacao()">
+        </div>
+        <div id="escalaPublicarPreview" style="margin:12px 0;font-size:13px;color:var(--muted)"></div>
+        <div id="escalaPublicarAlert" class="alert"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-primary" style="flex:1" onclick="confirmarPublicarEscala()">✅ Publicar</button>
+          <button class="btn btn-secondary" onclick="fecharModal('modalPublicarEscala')">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- QR FALLBACK -->
+    <div class="section" id="sec-qrfallback">
+      <div class="section-header"><div class="section-title">Importar QR Code</div></div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.6">Use apenas quando o gerente enviou PDF sem internet. O fluxo normal é via nuvem.</p>
+      <div class="import-zone" onclick="document.getElementById('qrFileInput').click()" ondragover="event.preventDefault()" ondrop="onQRDrop(event)">
+        <div style="font-size:38px;margin-bottom:10px">📄</div>
+        <div style="font-weight:700;font-size:15px;margin-bottom:4px">Clique ou arraste o PDF / imagem</div>
+        <div style="font-size:13px;color:var(--muted)">O sistema lê o QR Code automaticamente</div>
+      </div>
+      <input type="file" id="qrFileInput" style="display:none" accept="image/*,application/pdf" onchange="handleQRFile(this.files[0])">
+      <div id="qrImportAlert" class="alert"></div>
+      <div class="scan-result" id="qrScanResult">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap"><div style="font-size:17px;font-weight:800" id="qrScanDate"></div><div id="qrScanBadge" style="font-size:12px;padding:4px 10px;border-radius:20px;background:var(--success-lt);color:var(--success);font-weight:700"></div></div>
+        <div id="qrObsBox"></div><div class="emp-list" id="qrEmpList"></div>
+        <div class="divider"></div>
+        <button class="btn btn-success btn-block" onclick="importarQR()">✅ Confirmar Importação</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+
+/* ═══════════════════════════════════════════════════
+   PEIXARIA PRIMUS — SISTEMA DE GESTÃO UNIFICADO
+   Arquitetura limpa — IDs canônicos do HTML
+═══════════════════════════════════════════════════ */
+
+/* ══ FIREBASE ══ */
+firebase.initializeApp({
+  apiKey:            "AIzaSyDEo7pB-dLtSHFGjqvYf8Bt8n7VSu5HdrY",
+  authDomain:        "projeto-primus-9b643.firebaseapp.com",
+  projectId:         "projeto-primus-9b643",
+  storageBucket:     "projeto-primus-9b643.firebasestorage.app",
+  messagingSenderId: "547842320766",
+  appId:             "1:547842320766:web:a87b857ce7c2d434cdab2f"
+});
+const auth = firebase.auth();
+const db   = firebase.firestore();
+
+/* ══ CONSTANTES ══ */
+const CARGO_SETOR = {
+  'Garçom':'garcom','Bar':'bar','Cozinheiro':'cozinha','Cumim':'cumim',
+  'Gerente':'gerente','Aux. Bar':'bar','Limpeza':'outros','Recepcionista':'outros',
+  'Monitora':'outros','Aux. Cozinha':'cozinha','Caixa':'outros','Segurança':'outros'
+};
+const DIARIA_PADRAO = {
+  'Gerente':0,'Garçom':80,'Cumim':100,'Cozinheiro':0,'Bar':0,'Aux. Bar':80,
+  'Caixa':150,'Recepcionista':120,'Monitora':120,'Aux. Cozinha':140,'Limpeza':120,'Segurança':200
+};
+const STATUS_LABEL = {
+  em_aberto:'🔵 Em Aberto',aguardando_fechamento:'🟡 Aguardando Fechamento',
+  fechado:'🟢 Fechado',reaberto:'🔴 Reaberto'
+};
+const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+               'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const COLORS = ['#C8782A','#1A6FA8','#276749','#C0392B','#6B3FA8','#D4A03A','#A05E1E','#56d364'];
+
+/* ══ ESTADO GLOBAL ══ */
+let currentUser = null, currentPerfil = null;
+let gorjetaRegras = {};
+
+// Gerente
+let gerFuncionarios = [], gerDayStatus = null, gerDocExists = false;
+let gerSaveTimer = null, gerCurrentDate = '';
+let gerCalAno = new Date().getFullYear(), gerCalMes = new Date().getMonth();
+let gerDiasStatus = {}, gerFiltro = 'todos', gerCargoIdx = -1, gerAuxExtra = 2;
+
+// Financeiro
+let finDate = null, finPresentes = [], finGorjetaMap = {}, finDayStatus = null;
+let finCalAno = new Date().getFullYear(), finCalMes = new Date().getMonth();
+let finDiasStatus = {};
+
+// QR
+let pendingQR = null;
+
+/* ══ UTILS ══ */
+const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const todayStr = () => new Date().toISOString().split('T')[0];
+const $ = id => document.getElementById(id);
+function fmtDate(d) {
+  if(!d) return '—';
+  const [y,m,day] = d.split('-');
+  const nomes = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  return `${nomes[new Date(+y,+m-1,+day).getDay()]}, ${day}/${m}/${y}`;
+}
+function setor(c) { return CARGO_SETOR[c] || 'outros'; }
+function badge(c) { return `<span class="badge c-${setor(c)}">${c}</span>`; }
+function showAlert(id, msg, type, dur=5000) {
+  const el = $(id); if(!el) return;
+  el.textContent = msg; el.className = 'alert ' + type;
+  if(dur) setTimeout(() => el.className = 'alert', dur);
+}
+function hideAlert(id) { const el=$(id); if(el) el.className='alert'; }
+function abrirModal(id) { $(id)?.classList.add('open'); }
+function fecharModal(id) { $(id)?.classList.remove('open'); }
+function setSyncStatus(st) {
+  const el = $('syncIndicator'); if(!el) return;
+  if(st==='saving'){el.className='sync-indicator saving';el.textContent='⏳ Salvando...';}
+  else if(st==='saved'){el.className='sync-indicator saved';el.textContent='✅ Salvo na nuvem';}
+  else{el.className='sync-indicator';el.textContent='';}
+}
+async function logAuditoria(acao, entidade, antes, depois) {
+  try {
+    await db.collection('auditoria').add({
+      ts: firebase.firestore.FieldValue.serverTimestamp(),
+      usuarioId: currentUser.uid,
+      usuarioNome: $('userLabel')?.textContent || '',
+      perfil: currentPerfil, acao, entidade,
+      valorAntes: antes, valorDepois: depois
+    });
+  } catch(_) {}
+}
+async function carregarGorjetaConfig() {
+  try {
+    const s = await db.collection('configuracoes').doc('gorjeta').get();
+    gorjetaRegras = s.exists ? (s.data().regras || {}) : {};
+  } catch(_) { gorjetaRegras = {}; }
+}
+function pctGorjeta(c) { return gorjetaRegras[c]?.percentual ?? 0; }
+
+/* ══ AUTH ══ */
+auth.onAuthStateChanged(async user => {
+  if(!user) { showLogin(); return; }
+  try {
+    const snap = await db.collection('usuarios').doc(user.uid).get();
+    if(!snap.exists || !snap.data().ativo) { await auth.signOut(); showLogin(); return; }
+    const data = snap.data();
+    currentUser = user; currentPerfil = data.perfil;
+    $('userLabel').textContent = data.nome || user.email;
+    const pb = $('perfilBadge');
+    const labels = {gerente:'Gerente',financeiro:'Financeiro',diretoria:'Diretoria',admin:'Admin'};
+    pb.textContent = labels[data.perfil] || data.perfil;
+    pb.className = `perfil-badge perfil-${data.perfil}`;
+    await carregarGorjetaConfig();
+    configurarAbas();
+    showApp();
+  } catch(e) { await auth.signOut(); showLogin('Erro: ' + e.message); }
+});
+
+function showLogin(msg='') {
+  $('loginScreen').style.display = 'flex';
+  $('appScreen').style.display = 'none';
+  const el = $('loginError');
+  if(msg) { el.textContent = msg; el.classList.add('show'); }
+  else { el.classList.remove('show'); }
+}
+function showApp() {
+  $('loginScreen').style.display = 'none';
+  $('appScreen').style.display = 'block';
+  $('gerObs').addEventListener('input', () => gerAutoSave());
+  if(currentPerfil === 'gerente') { ativarTab('presenca'); gerCarregarMes(); }
+  else { ativarTab('calendario'); carregarCalFin(); }
+  // Pre-load escala state for gerente (silently)
+  if(['gerente','admin'].includes(currentPerfil)) escalaCarregar();
+}
+async function doLogin() {
+  const email = $('loginEmail').value.trim();
+  const pass  = $('loginPass').value;
+  const btn   = $('loginBtn');
+  $('loginError').classList.remove('show');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-spinner"></span>Entrando...';
+  try { await auth.signInWithEmailAndPassword(email, pass); }
+  catch(e) {
+    $('loginError').textContent = e.code === 'auth/invalid-credential' ? 'E-mail ou senha incorretos.' : e.message;
+    $('loginError').classList.add('show');
+    btn.disabled = false; btn.textContent = 'Entrar';
+  }
+}
+async function doLogout() { await auth.signOut(); }
+document.addEventListener('keydown', e => {
+  if(e.key === 'Enter' && $('loginScreen').style.display !== 'none') doLogin();
+});
+
+/* ══ TABS ══ */
+function configurarAbas() {
+  const isGer = currentPerfil === 'gerente';
+  const isFin = ['financeiro','diretoria','admin'].includes(currentPerfil);
+  const isDir = ['diretoria','admin'].includes(currentPerfil);
+  const isAdm = currentPerfil === 'admin';
+  const mapa  = {
+    presenca:isGer, escala:isGer, calendario:isFin, fechamento:isFin, pagamentos:isFin,
+    historico:isFin, resumo:isFin, cadastro:isDir, usuarios:isAdm, qrfallback:true
+  };
+  Object.entries(mapa).forEach(([tab,vis]) =>
+    document.querySelector(`[data-tab="${tab}"]`)?.classList.toggle('hidden',!vis)
+  );
+}
+function ativarTab(tab) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  $('sec-' + tab)?.classList.add('active');
+  document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
+}
+function showTab(tab, el) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  $('sec-' + tab)?.classList.add('active');
+  el.classList.add('active');
+  if(tab==='historico') renderHistorico();
+  if(tab==='resumo')    renderResumoInit();
+  if(tab==='cadastro')  renderCadList();
+  if(tab==='pagamentos') renderPagamentos();
+  if(tab==='calendario') carregarCalFin();
+  if(tab==='usuarios')   renderUsuarios();
+  if(tab==='escala')     escalaCarregar();
+}
+
+/* ════════════════════════════════════════
+   MÓDULO GERENTE — PRESENÇA
+════════════════════════════════════════ */
+
+/* ── Calendário do Gerente ── */
+async function gerCarregarMes() {
+  const ym = `${gerCalAno}-${String(gerCalMes+1).padStart(2,'0')}`;
+  try {
+    const s = await db.collection('presencas_diarias')
+      .where('data','>=',ym+'-01').where('data','<=',ym+'-31').get();
+    gerDiasStatus = {};
+    s.docs.forEach(d => gerDiasStatus[d.id] = d.data().status || 'em_aberto');
+  } catch(_) { gerDiasStatus = {}; }
+  renderGerCal();
+}
+function mudarMesGer(delta) {
+  gerCalMes += delta;
+  if(gerCalMes < 0)  { gerCalMes = 11; gerCalAno--; }
+  if(gerCalMes > 11) { gerCalMes = 0;  gerCalAno++; }
+  gerCarregarMes();
+}
+function renderGerCal() {
+  $('gerCalLabel').textContent = `${MESES[gerCalMes]} ${gerCalAno}`;
+  const grid = $('gerCalGrid'), hoje = todayStr();
+  const pDia = new Date(gerCalAno,gerCalMes,1).getDay();
+  const nDias = new Date(gerCalAno,gerCalMes+1,0).getDate();
+  let html = ['D','S','T','Q','Q','S','S'].map(d=>`<div class="cal-sem">${d}</div>`).join('');
+  for(let i=0;i<pDia;i++) html += '<div></div>';
+  for(let d=1;d<=nDias;d++) {
+    const ds = `${gerCalAno}-${String(gerCalMes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const st = gerDiasStatus[ds];
+    const isH = ds===hoje, isS = ds===gerCurrentDate;
+    let bg='#F0EDE6',color='#8A837A';
+    if(st==='em_aberto'){bg='#E3F0FB';color='#1A6FA8';}
+    else if(st==='aguardando_fechamento'){bg='#F5E6D3';color='#A05E1E';}
+    else if(st==='fechado'){bg='#E8F5EE';color='#276749';}
+    else if(st==='reaberto'){bg='#FDECEA';color='#C0392B';}
+    html += `<div class="cal-day${isH?' hoje':''}${isS?' selecionado':''}" style="background:${bg};color:${color}" onclick="gerSelecionarDia('${ds}')">${d}</div>`;
+  }
+  grid.innerHTML = html;
+}
+async function gerSelecionarDia(ds) {
+  gerCurrentDate = ds; renderGerCal(); await gerCarregarDia(ds);
+}
+
+/* ── Carregar Dia (Gerente) ── */
+async function gerCarregarDia(dateStr) {
+  $('gerContent').style.display = 'none';
+  setSyncStatus('');
+  try {
+    const fSnap = await db.collection('funcionarios').where('ativo','==',true).get();
+    const cadastros = fSnap.docs.map(d=>({id:d.id,...d.data()}))
+      .sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+    const daySnap = await db.collection('presencas_diarias').doc(dateStr).get();
+    if(daySnap.exists) {
+      const dd = daySnap.data();
+      gerDayStatus = dd.status; gerDocExists = true;
+      gerFuncionarios = cadastros.map(f => {
+        const p = (dd.funcionarios||{})[f.id] || {};
+        return {
+          id:f.id, nome:f.nome, cargo:p.cargo||f.cargo, cargoPadrao:f.cargo,
+          isExtra:false, isFrequente:f.tipo==='frequente',
+          presente:p.presente!==undefined?p.presente:true,
+          atrasado:p.atrasado||false, consumo:p.consumo||0,
+          auxCount:p.auxCount||0, pix:f.pix||'',
+          diariaPadrao:p.diariaPadrao??f.diariaPadrao??DIARIA_PADRAO[f.cargo]??0
+        };
+      });
+      // extras
+      Object.entries(dd.funcionarios||{}).forEach(([id,p]) => {
+        if(id.startsWith('EXTRA_'))
+          gerFuncionarios.push({
+            id, nome:p.nome||id, cargo:p.cargo||'Garçom', pix:p.pix||'',
+            diariaPadrao:p.diariaPadrao||DIARIA_PADRAO[p.cargo]||0,
+            isExtra:true, isFrequente:false,
+            presente:p.presente!==false, atrasado:p.atrasado||false,
+            consumo:p.consumo||0, auxCount:p.auxCount||0
+          });
+      });
+      $('gerObs').value = dd.obs || '';
+    } else {
+      gerDayStatus = null; gerDocExists = false;
+      gerFuncionarios = cadastros.map(f => ({
+        id:f.id, nome:f.nome, cargo:f.cargo, cargoPadrao:f.cargo,
+        isExtra:false, isFrequente:f.tipo==='frequente',
+        presente:true, atrasado:false, consumo:0, auxCount:0,
+        pix:f.pix||'', diariaPadrao:f.diariaPadrao||DIARIA_PADRAO[f.cargo]||0
+      }));
+      $('gerObs').value = '';
+    }
+    $('gerSumDate').textContent = fmtDate(dateStr);
+    renderGerStatus();
+    renderGerList();
+    $('gerContent').style.display = 'block';
+    $('gerQrSection').classList.remove('visible');
+  } catch(e) { showAlert('gerAlert','❌ Erro: '+e.message,'error',0); }
+}
+
+/* ── Status UI (Gerente) ── */
+function renderGerStatus() {
+  const pill = $('gerStatusPill');
+  pill.innerHTML = gerDayStatus
+    ? `<span class="status-pill status-${gerDayStatus}">${STATUS_LABEL[gerDayStatus]}</span>`
+    : `<span class="status-pill status-em_aberto">🔵 Novo dia</span>`;
+  const podeEditar = !gerDayStatus || gerDayStatus === 'em_aberto';
+  const soPodeObs  = gerDayStatus === 'aguardando_fechamento';
+  const bloqueado  = gerDayStatus === 'fechado';
+  const banner = $('gerBanner');
+  if(bloqueado) {
+    banner.innerHTML = '🔒 Dia fechado. Apenas Diretoria pode reabrir.';
+    banner.className = 'bloqueado-banner lock'; banner.style.display = 'block';
+  } else if(soPadeObs) {
+    banner.innerHTML = '📤 Enviado para o financeiro. <strong>Presença e consumo bloqueados.</strong>';
+    banner.className = 'bloqueado-banner warn'; banner.style.display = 'block';
+  } else { banner.style.display = 'none'; }
+  $('btnAddExtra').style.display = podeEditar ? 'block' : 'none';
+  $('gerObs').disabled = bloqueado;
+  const acoes = $('gerAcoes'), qrW = $('gerQrWrap');
+  if(bloqueado) {
+    acoes.innerHTML = ''; qrW.style.display = 'none';
+  } else if(soPadeObs) {
+    acoes.innerHTML = `<button class="btn btn-secondary btn-block" onclick="gerSalvar(true)">💾 Salvar Observações</button>`;
+    qrW.style.display = 'block';
+  } else {
+    acoes.innerHTML = `
+      <button class="btn btn-primary btn-block" onclick="gerSalvar(false)">💾 Salvar Presença</button>
+      <button class="btn btn-success btn-block" onclick="gerEnviar()" style="margin-top:8px">📤 Enviar para o Financeiro</button>`;
+    qrW.style.display = 'block';
+  }
+}
+// typo fix helper
+const soPadeObs = () => gerDayStatus === 'aguardando_fechamento';
+
+/* ── Lista de Funcionários (Gerente) ── */
+function setFiltro(f) {
+  gerFiltro = f;
+  ['ftTodos','ftFixos','ftFreq'].forEach(id => $(id).className = 'btn btn-secondary btn-sm');
+  const activeId = f==='todos'?'ftTodos':f==='fixos'?'ftFixos':'ftFreq';
+  $(activeId).className = 'btn btn-primary btn-sm';
+  renderGerList();
+}
+function renderGrupoGer(lista) {
+  const podeEditar = !gerDayStatus || gerDayStatus === 'em_aberto';
+  return lista.map(f => {
+    const idx = gerFuncionarios.indexOf(f);
+    const isSeg = f.cargo === 'Segurança';
+    const cargoMudou = !f.isExtra && !f.isFrequente && f.cargo !== f.cargoPadrao;
+    return `<div class="emp-row ${f.presente?'presente':'ausente'}">
+      <div class="check-box ${f.presente?'on':''}" onclick="${podeEditar?`gerTogglePres(${idx})`:''}" style="${!podeEditar?'cursor:default':''}"></div>
+      <div class="emp-name">${f.nome}
+        ${f.isFrequente?'<span style="font-size:10px;color:#1A6FA8;margin-left:3px;font-weight:700">[freq]</span>':''}
+        ${f.isExtra?'<span style="font-size:10px;color:var(--muted);margin-left:3px">[extra]</span>':''}
+        <small>${f.cargo}${cargoMudou?`<span style="color:var(--accent-dk);font-size:10px;font-weight:700"> ✏️(${f.cargoPadrao})</span>`:''}
+        ${podeEditar&&!f.isExtra?`<span onclick="gerAbrirCargo(${idx})" style="color:var(--accent);cursor:pointer;margin-left:5px;font-size:10px;font-weight:700">🔄</span>`:''}
+        ${isSeg&&f.auxCount>0?`<span style="font-size:10px;color:var(--muted)"> +${f.auxCount}aux</span>`:''}</small>
+      </div>
+      <span class="badge c-${setor(f.cargo)}">${f.cargo}</span>
+      ${isSeg && podeEditar
+        ? `<div style="display:flex;align-items:center;gap:4px">
+             <button onclick="gerAjustarAux(${idx},-1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:5px;color:var(--text);font-size:13px;width:26px;height:26px;cursor:pointer;font-weight:700">−</button>
+             <span style="font-size:12px;min-width:20px;text-align:center;color:var(--muted);font-weight:700">${f.auxCount||0}</span>
+             <button onclick="gerAjustarAux(${idx},1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:5px;color:var(--text);font-size:13px;width:26px;height:26px;cursor:pointer;font-weight:700">+</button>
+           </div>`
+        : `<button class="late-btn ${f.atrasado?'on':''}" onclick="${podeEditar?`gerToggleAtras(${idx})`:''}" ${!podeEditar?'disabled':''}>
+             ${f.atrasado?'⏰ Atrasado':'No Horário'}</button>`}
+      <input class="cons-input" type="number" placeholder="R$" step="0.01" value="${f.consumo||''}"
+        onchange="gerSetConsumo(${idx},this.value)" ${!podeEditar?'disabled':''}>
+    </div>`;
+  }).join('');
+}
+function renderGerList() {
+  const fixos   = gerFuncionarios.filter(f => !f.isExtra && !f.isFrequente);
+  const freq    = gerFuncionarios.filter(f => f.isFrequente);
+  const extras  = gerFuncionarios.filter(f => f.isExtra);
+  const sf = gerFiltro==='todos'||gerFiltro==='fixos';
+  const sq = gerFiltro==='todos'||gerFiltro==='frequentes';
+  const se = gerFiltro==='todos';
+  $('grpFixos').style.display  = sf ? 'block' : 'none';
+  $('grpFreq').style.display   = sq ? 'block' : 'none';
+  $('grpExtras').style.display = se ? 'block' : 'none';
+  $('listFixos').innerHTML  = renderGrupoGer(fixos);
+  $('listFreq').innerHTML   = freq.length ? renderGrupoGer(freq) : '';
+  $('emptyFreq').style.display = freq.length ? 'none' : 'block';
+  $('listExtras').innerHTML = renderGrupoGer(extras);
+  const pres = gerFuncionarios.filter(f=>f.presente).length;
+  $('gerPres').textContent  = pres;
+  $('gerAus').textContent   = gerFuncionarios.filter(f=>!f.presente).length;
+  $('gerAtras').textContent = gerFuncionarios.filter(f=>f.atrasado).length;
+  $('gerEmpCount').textContent = `${pres} presentes de ${gerFuncionarios.length} (${fixos.length} fixos · ${freq.length} frequentes · ${extras.length} extras)`;
+}
+function gerTogglePres(i)  { gerFuncionarios[i].presente=!gerFuncionarios[i].presente; if(!gerFuncionarios[i].presente)gerFuncionarios[i].atrasado=false; renderGerList(); gerAutoSave(); }
+function gerToggleAtras(i) { gerFuncionarios[i].atrasado=!gerFuncionarios[i].atrasado; renderGerList(); gerAutoSave(); }
+function gerSetConsumo(i,v){ gerFuncionarios[i].consumo=parseFloat(v)||0; gerAutoSave(); }
+function gerAjustarAux(i,d){ gerFuncionarios[i].auxCount=Math.max(0,Math.min(4,(gerFuncionarios[i].auxCount||0)+d)); gerFuncionarios[i].diariaPadrao=200+(gerFuncionarios[i].auxCount*120); renderGerList(); gerAutoSave(); }
+function gerAbrirCargo(i) {
+  gerCargoIdx = i;
+  $('modalCargoNome').textContent = gerFuncionarios[i].nome;
+  $('modalCargoSel').value = gerFuncionarios[i].cargo;
+  abrirModal('modalCargo');
+}
+function confirmarCargo() {
+  if(gerCargoIdx < 0) return;
+  gerFuncionarios[gerCargoIdx].cargo = $('modalCargoSel').value;
+  fecharModal('modalCargo'); renderGerList(); gerAutoSave();
+}
+
+/* ── Extra do Dia ── */
+function preencherDiariaExtra() {
+  const c = $('extCargo').value;
+  const d = DIARIA_PADRAO[c] || 0;
+  const segW = $('segAuxWrap');
+  if(c === 'Segurança') {
+    segW.style.display = 'block'; gerAuxExtra = 2;
+    $('auxExtCount').textContent = 2; atualizarTotalSegExtra();
+  } else { segW.style.display = 'none'; }
+  $('extHint').textContent = c==='Gerente'?'(sem diária)':d?`(padrão: R$ ${d})`:'';
+  $('extDiaria').value = c==='Gerente' ? '' : d || '';
+}
+function ajustarAuxExtra(delta) {
+  gerAuxExtra = Math.max(0, Math.min(4, gerAuxExtra + delta));
+  $('auxExtCount').textContent = gerAuxExtra;
+  atualizarTotalSegExtra();
+}
+function atualizarTotalSegExtra() {
+  const t = 200 + (gerAuxExtra * 120);
+  $('auxExtTotal').textContent = `Total: R$ ${t}`;
+  $('extDiaria').value = t;
+}
+function confirmarExtra() {
+  const nome   = $('extNome').value.trim();
+  const cargo  = $('extCargo').value;
+  const pix    = $('extPix').value.trim();
+  const diaria = parseFloat($('extDiaria').value) || 0;
+  if(!nome) { alert('Informe o nome.'); return; }
+  gerFuncionarios.push({
+    id:'EXTRA_'+Date.now(), nome, cargo, pix, diariaPadrao:diaria,
+    isExtra:true, isFrequente:false, presente:true, atrasado:false,
+    consumo:0, auxCount:cargo==='Segurança'?gerAuxExtra:0
+  });
+  $('extNome').value=''; $('extPix').value='';
+  fecharModal('modalExtra'); renderGerList(); gerAutoSave();
+}
+
+/* ── Salvar / Enviar (Gerente) ── */
+function gerAutoSave() {
+  clearTimeout(gerSaveTimer);
+  setSyncStatus('saving');
+  gerSaveTimer = setTimeout(() => gerSalvar(false, true), 1500);
+}
+async function gerSalvar(apenasObs=false, silencioso=false) {
+  if(!gerCurrentDate || !currentUser) return;
+  if(gerDayStatus === 'fechado') return;
+  setSyncStatus('saving');
+  try {
+    const obs = $('gerObs').value.trim();
+    const payload = {
+      obs,
+      atualizadoPor: currentUser.uid,
+      atualizadoEm:  firebase.firestore.FieldValue.serverTimestamp()
+    };
+    if(!apenasObs) {
+      const fm = {};
+      gerFuncionarios.forEach(f => {
+        fm[f.id] = {nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,
+          presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0,auxCount:f.auxCount||0};
+      });
+      payload.funcionarios = fm;
+    }
+    if(!gerDocExists) {
+      payload.data = gerCurrentDate; payload.status = 'em_aberto';
+      payload.registradoPor = currentUser.uid;
+      payload.registradoEm  = firebase.firestore.FieldValue.serverTimestamp();
+      payload.statusHistorico = [{de:null,para:'em_aberto',por:currentUser.uid,em:new Date().toISOString(),motivo:''}];
+      if(!payload.funcionarios) {
+        const fm = {};
+        gerFuncionarios.forEach(f => { fm[f.id]={nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0,auxCount:f.auxCount||0}; });
+        payload.funcionarios = fm;
+      }
+      await db.collection('presencas_diarias').doc(gerCurrentDate).set(payload);
+      gerDocExists=true; gerDayStatus='em_aberto';
+      gerDiasStatus[gerCurrentDate]='em_aberto'; renderGerCal(); renderGerStatus();
+    } else {
+      await db.collection('presencas_diarias').doc(gerCurrentDate).update(payload);
+    }
+    await logAuditoria('PRESENCA_SALVA',`presencas_diarias/${gerCurrentDate}`,{},{status:gerDayStatus||'em_aberto'});
+    setSyncStatus('saved');
+    if(!silencioso) showAlert('gerAlert','✅ Salvo na nuvem!','success');
+  } catch(e) { setSyncStatus(''); showAlert('gerAlert','❌ Erro: '+e.message,'error',0); }
+}
+async function gerEnviar() {
+  if(!gerCurrentDate || !currentUser) return;
+  if(!confirm('Enviar para o financeiro? Presença e consumo ficarão bloqueados.')) return;
+  try {
+    await gerSalvar(false, true);
+    const ns = 'aguardando_fechamento';
+    const e = {de:gerDayStatus||'em_aberto',para:ns,por:currentUser.uid,em:new Date().toISOString(),motivo:''};
+    await db.collection('presencas_diarias').doc(gerCurrentDate).update({
+      status:ns, atualizadoPor:currentUser.uid,
+      atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      statusHistorico:firebase.firestore.FieldValue.arrayUnion(e)
+    });
+    gerDayStatus=ns; gerDiasStatus[gerCurrentDate]=ns;
+    await logAuditoria('STATUS_ALTERADO',`presencas_diarias/${gerCurrentDate}`,{status:e.de},{status:ns});
+    renderGerCal(); renderGerStatus(); renderGerList();
+    showAlert('gerAlert','✅ Enviado para o financeiro!','success');
+  } catch(e) { showAlert('gerAlert','❌ Erro: '+e.message,'error',0); }
+}
+
+/* ── QR (Gerente) ── */
+function toggleGerQR() {
+  const sec = $('gerQrSection');
+  if(sec.classList.contains('visible')) { sec.classList.remove('visible'); return; }
+  const obs = $('gerObs').value.trim();
+  const payload = {v:2,date:gerCurrentDate,ts:Date.now(),obs,
+    presenca:gerFuncionarios.map(f=>({id:f.id,nome:f.nome,cargo:f.cargo,pix:f.pix||'',
+      diariaPadrao:f.diariaPadrao||0,presente:f.presente,atrasado:f.atrasado,
+      consumo:f.consumo||0,auxCount:f.auxCount||0}))};
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  if(b64.length > 2800) { showAlert('gerAlert','⚠️ Dados grandes para QR. Reduza observações.','error'); return; }
+  $('gerQrCanvas').innerHTML = '';
+  new QRCode($('gerQrCanvas'),{text:b64,width:160,height:160,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+  $('gerQrSize').textContent = `${b64.length} chars`;
+  sec.classList.add('visible');
+  setTimeout(() => window.print(), 400);
+}
+
+/* ════════════════════════════════════════
+   MÓDULO FINANCEIRO
+════════════════════════════════════════ */
+
+/* ── Calendário Financeiro ── */
+async function carregarCalFin() {
+  const ym = `${finCalAno}-${String(finCalMes+1).padStart(2,'0')}`;
+  $('finCalLabel').textContent = `${MESES[finCalMes]} ${finCalAno}`;
+  try {
+    const s = await db.collection('presencas_diarias')
+      .where('data','>=',ym+'-01').where('data','<=',ym+'-31').get();
+    finDiasStatus = {};
+    s.docs.forEach(d => finDiasStatus[d.id] = d.data().status || 'em_aberto');
+  } catch(_) { finDiasStatus = {}; }
+  renderCalFin();
+}
+function mudarMesFin(delta) {
+  finCalMes += delta;
+  if(finCalMes < 0)  { finCalMes=11; finCalAno--; }
+  if(finCalMes > 11) { finCalMes=0;  finCalAno++; }
+  carregarCalFin();
+}
+function renderCalFin() {
+  const grid = $('finCalGrid'), hoje = todayStr();
+  const pDia = new Date(finCalAno,finCalMes,1).getDay();
+  const nDias = new Date(finCalAno,finCalMes+1,0).getDate();
+  let html = ['D','S','T','Q','Q','S','S'].map(d=>`<div class="cal-sem">${d}</div>`).join('');
+  for(let i=0;i<pDia;i++) html += '<div></div>';
+  for(let d=1;d<=nDias;d++) {
+    const ds = `${finCalAno}-${String(finCalMes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const st = finDiasStatus[ds];
+    const isH = ds===hoje, isS = ds===finDate;
+    let bg='#F0EDE6',color='#8A837A';
+    if(st==='em_aberto'){bg='#E3F0FB';color='#1A6FA8';}
+    else if(st==='aguardando_fechamento'){bg='#F5E6D3';color='#A05E1E';}
+    else if(st==='fechado'){bg='#E8F5EE';color='#276749';}
+    else if(st==='reaberto'){bg='#FDECEA';color='#C0392B';}
+    html += `<div class="cal-day${isH?' hoje':''}${isS?' selecionado':''}" style="background:${bg};color:${color}" onclick="finSelecionarDia('${ds}')" title="${fmtDate(ds)}${st?' — '+STATUS_LABEL[st]:''}">${d}</div>`;
+  }
+  grid.innerHTML = html;
+}
+async function finSelecionarDia(ds) {
+  finDate = ds; renderCalFin();
+  ativarTab('fechamento');
+  document.querySelector('[data-tab="fechamento"]')?.classList.add('active');
+  await loadFechamento(ds);
+}
+
+/* ── Fechamento ── */
+async function loadFechamento(date) {
+  finDate = date;
+  $('fechContent').style.display = 'none';
+  $('fechEmpty').style.display   = 'block';
+  hideAlert('fechAlert');
+  try {
+    const daySnap = await db.collection('presencas_diarias').doc(date).get();
+    if(!daySnap.exists) { showAlert('fechAlert','Dia não encontrado.','error',0); return; }
+    const dd = daySnap.data();
+    finDayStatus = dd.status;
+    if(currentPerfil==='financeiro' && finDayStatus==='em_aberto') {
+      showAlert('fechAlert','Dia ainda em aberto. Aguarde o gerente enviar.','error',0); return;
+    }
+    $('fechObsBox').innerHTML = dd.obs ? `<div class="obs-box">📝 ${dd.obs}</div>` : '';
+    $('fechStatusPill').innerHTML = `<span class="status-pill status-${finDayStatus}">${STATUS_LABEL[finDayStatus]||finDayStatus}</span>`;
+    const fSnap = await db.collection('funcionarios').get();
+    const cadastro = {}; fSnap.docs.forEach(d => cadastro[d.id]=d.data());
+    finPresentes = Object.entries(dd.funcionarios||{})
+      .filter(([,p]) => p.presente!==false)
+      .map(([id,p]) => ({
+        id, nome:p.nome, cargo:p.cargo, consumo:p.consumo||0,
+        atrasado:p.atrasado||false, auxCount:p.auxCount||0,
+        pix:p.pix||cadastro[id]?.pix||'',
+        diariaPadrao:p.diariaPadrao??cadastro[id]?.diariaPadrao??DIARIA_PADRAO[p.cargo]??0
+      }));
+    const bloqueado = finDayStatus === 'fechado';
+    $('gorjetaTotal').value = '';
+    $('diariasList').innerHTML = finPresentes.map(f =>
+      `<div class="diaria-row">
+        <div class="diaria-name">${f.nome}<small>${f.cargo}${f.auxCount>0?` +${f.auxCount} aux.`:''}</small></div>
+        ${badge(f.cargo)}
+        <input type="number" class="diaria-input" id="diaria-${f.id}" value="${f.diariaPadrao||''}" step="0.01" oninput="calcGorjeta()" ${bloqueado?'disabled':''}>
+      </div>`
+    ).join('');
+    $('fechContent').style.display = 'block';
+    $('fechEmpty').style.display   = 'none';
+    await carregarDiariasSalvas(date);
+    calcGorjeta();
+    renderFechAcoes(bloqueado);
+  } catch(e) { showAlert('fechAlert','❌ Erro: '+e.message,'error',0); }
+}
+async function carregarDiariasSalvas(date) {
+  try {
+    const snaps = await Promise.all(finPresentes.map(f =>
+      db.collection('fechamento_funcionario').doc(`${date}_${f.id}`).get()
+    ));
+    let gt = 0;
+    snaps.forEach((s,i) => {
+      if(s.exists) {
+        const el = $(`diaria-${finPresentes[i].id}`);
+        if(el) el.value = s.data().diaria ?? '';
+        gt = s.data().baseGorjeta || gt;
+      }
+    });
+    if(gt) $('gorjetaTotal').value = gt;
+    calcGorjeta();
+  } catch(_) {}
+}
+function calcGorjeta() {
+  const total = parseFloat($('gorjetaTotal').value) || 0;
+  const groups = {};
+  finPresentes.forEach(f => { if(!groups[f.cargo]) groups[f.cargo]=[]; groups[f.cargo].push(f); });
+  finGorjetaMap = {};
+  Object.entries(groups).forEach(([c,m]) => {
+    const pct = pctGorjeta(c);
+    const pp  = m.length ? (total*pct)/m.length : 0;
+    m.forEach(f => finGorjetaMap[f.id] = pp);
+  });
+  const seen = {};
+  finPresentes.forEach(f => seen[f.cargo]=(seen[f.cargo]||0)+1);
+  $('gorjetaChips').innerHTML = Object.entries(seen).map(([c,cnt]) => {
+    const pct = pctGorjeta(c); if(!pct) return '';
+    return `<div class="chip"><strong>${c}</strong> ${(pct*100).toFixed(0)}% → ${fmt(total*pct)} ÷ ${cnt}</div>`;
+  }).filter(Boolean).join('');
+  calcResultado();
+}
+function calcResultado() {
+  let total = 0;
+  $('resultBody').innerHTML = finPresentes.map(f => {
+    const d = parseFloat($(`diaria-${f.id}`)?.value||0)||0;
+    const g = finGorjetaMap[f.id]||0;
+    const c = f.consumo||0;
+    const t = d+g-c; total += t;
+    return `<tr>
+      <td>${f.nome}${f.atrasado?' <span class="tag-atrasado">⏰</span>':''}</td>
+      <td>${badge(f.cargo)}</td>
+      <td class="right">${fmt(d)}</td>
+      <td class="right">${fmt(g)}</td>
+      <td class="right val-neg">${c>0?'- '+fmt(c):'—'}</td>
+      <td class="right val-pos">${fmt(t)}</td>
+    </tr>`;
+  }).join('') + `<tr class="total-row"><td colspan="5">Total do Dia</td><td class="right">${fmt(total)}</td></tr>`;
+}
+function renderFechAcoes(bloqueado) {
+  const el = $('fechAcoes');
+  const podeFin = ['financeiro','admin'].includes(currentPerfil);
+  const podeDir = ['diretoria','admin'].includes(currentPerfil);
+  if(bloqueado) {
+    el.innerHTML = podeDir
+      ? `<button class="btn btn-danger btn-block" onclick="abrirModal('modalReabrir')">🔴 Reabrir Dia</button>`
+      : `<div class="empty-state" style="padding:14px"><p style="color:var(--muted)">Dia fechado. Somente Diretoria pode reabrir.</p></div>`;
+  } else if(['aguardando_fechamento','reaberto','em_aberto'].includes(finDayStatus) && podeFin) {
+    el.innerHTML = `
+      <button class="btn btn-primary btn-block" onclick="salvarFechamento(false)">💾 Salvar Fechamento</button>
+      <button class="btn btn-success btn-block" onclick="salvarFechamento(true)" style="margin-top:8px">✅ Fechar o Dia</button>`;
+  } else { el.innerHTML = ''; }
+}
+async function salvarFechamento(fechar=false) {
+  if(!finDate) return; if(finDayStatus==='fechado') return;
+  try {
+    const gt  = parseFloat($('gorjetaTotal').value)||0;
+    const gd  = Object.values(finGorjetaMap).reduce((a,b)=>a+b,0);
+    let td=0,tc=0,tl=0;
+    const rSnap = await db.collection('configuracoes').doc('gorjeta').get();
+    const rSnapshot = rSnap.exists ? rSnap.data().regras : {};
+    const batch = db.batch();
+    finPresentes.forEach(f => {
+      const d = parseFloat($(`diaria-${f.id}`)?.value||0)||0;
+      const g = finGorjetaMap[f.id]||0; const c=f.consumo||0; const l=d+g-c;
+      td+=d; tc+=c; tl+=l;
+      batch.set(db.collection('fechamento_funcionario').doc(`${finDate}_${f.id}`),{
+        data:finDate,funcId:f.id,nomeSnapshot:f.nome,cargoSnapshot:f.cargo,
+        presente:true,atrasado:f.atrasado,consumo:c,diaria:d,gorjeta:g,
+        baseGorjeta:gt,percentualCargo:pctGorjeta(f.cargo),
+        regrasGorjetaSnapshot:rSnapshot,totalLiquido:l,pix:f.pix||'',
+        criadoPor:currentUser.uid,criadoEm:firebase.firestore.FieldValue.serverTimestamp(),versao:1
+      },{merge:true});
+    });
+    batch.set(db.collection('fechamento_diario').doc(finDate),{
+      data:finDate,gorjetaTotal:gt,gorjetaDistribuida:gd,gorjetaCasa:gt-gd,
+      gorjetaPerFunc:finGorjetaMap,regrasGorjetaSnapshot:rSnapshot,
+      totalFuncionarios:finPresentes.length,totalDiarias:td,totalConsumos:tc,
+      totalLiquidoDia:tl,fechadoPor:currentUser.uid,
+      fechadoEm:firebase.firestore.FieldValue.serverTimestamp(),versao:1
+    },{merge:true});
+    if(fechar) {
+      const e = {de:finDayStatus,para:'fechado',por:currentUser.uid,em:new Date().toISOString(),motivo:''};
+      batch.update(db.collection('presencas_diarias').doc(finDate),{
+        status:'fechado',atualizadoPor:currentUser.uid,
+        atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+        statusHistorico:firebase.firestore.FieldValue.arrayUnion(e)
+      });
+    }
+    await batch.commit();
+    await logAuditoria(fechar?'DIA_FECHADO':'FECHAMENTO_SALVO',`presencas_diarias/${finDate}`,{},{gorjetaTotal:gt,fechar});
+    if(fechar) {
+      finDayStatus='fechado'; finDiasStatus[finDate]='fechado';
+      $('fechStatusPill').innerHTML=`<span class="status-pill status-fechado">${STATUS_LABEL['fechado']}</span>`;
+      renderFechAcoes(true); renderCalFin();
+      showAlert('fechAlert2','✅ Dia fechado!','success');
+    } else { showAlert('fechAlert2','✅ Fechamento salvo!','success'); }
+  } catch(e) { showAlert('fechAlert2','❌ Erro: '+e.message,'error',0); }
+}
+async function confirmarReabrir() {
+  const motivo = $('reabrirMotivo').value.trim();
+  if(!motivo) { alert('Informe o motivo.'); return; }
+  try {
+    const e = {de:'fechado',para:'reaberto',por:currentUser.uid,em:new Date().toISOString(),motivo};
+    await db.collection('presencas_diarias').doc(finDate).update({
+      status:'reaberto',atualizadoPor:currentUser.uid,
+      atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      statusHistorico:firebase.firestore.FieldValue.arrayUnion(e)
+    });
+    await logAuditoria('DIA_REABERTO',`presencas_diarias/${finDate}`,{status:'fechado'},{status:'reaberto',motivo});
+    finDayStatus='reaberto'; finDiasStatus[finDate]='reaberto';
+    $('fechStatusPill').innerHTML=`<span class="status-pill status-reaberto">${STATUS_LABEL['reaberto']}</span>`;
+    fecharModal('modalReabrir'); renderFechAcoes(false); renderCalFin();
+    finPresentes.forEach(f => { const el=$(`diaria-${f.id}`); if(el) el.disabled=false; });
+    $('gorjetaTotal').disabled=false;
+    showAlert('fechAlert','✅ Dia reaberto.','success');
+  } catch(e) { showAlert('fechAlert','❌ Erro: '+e.message,'error',0); }
+}
+
+/* ── Pagamentos ── */
+function onPgtoTipo() {
+  const c = $('pgtoTipo').value === 'custom';
+  $('pgtoCustom').style.display = c ? 'flex' : 'none';
+  if(!c) renderPagamentos();
+}
+function getPeriodo() {
+  const t = $('pgtoTipo').value, h = new Date(); let de, ate;
+  if(t==='semana') {
+    const dow=h.getDay(); let qua=new Date(h);
+    qua.setDate(h.getDate()-(dow>=3?dow-3:dow+4));
+    const dom=new Date(qua); dom.setDate(qua.getDate()+4);
+    de=qua.toISOString().split('T')[0]; ate=dom.toISOString().split('T')[0];
+  } else if(t==='semana_ant') {
+    const dow=h.getDay(); let qua=new Date(h);
+    qua.setDate(h.getDate()-(dow>=3?dow-3:dow+4)-7);
+    const dom=new Date(qua); dom.setDate(qua.getDate()+4);
+    de=qua.toISOString().split('T')[0]; ate=dom.toISOString().split('T')[0];
+  } else if(t==='mes') {
+    de=`${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-01`;
+    ate=`${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-31`;
+  } else {
+    de=$('pgtoDe').value; ate=$('pgtoAte').value;
+  }
+  return {de,ate};
+}
+async function renderPagamentos() {
+  const {de,ate} = getPeriodo();
+  if(!de||!ate) { showAlert('pgtoAlert','Selecione o período.','error'); return; }
+  const cont = $('pgtoContent');
+  cont.innerHTML='<div class="empty-state"><span class="loading-spinner"></span></div>';
+  try {
+    const snap = await db.collection('fechamento_funcionario')
+      .where('data','>=',de).where('data','<=',ate).get();
+    const totals = {};
+    snap.docs.forEach(d => {
+      const r=d.data(); if(!r.presente) return;
+      if(!totals[r.funcId]) totals[r.funcId]={nome:r.nomeSnapshot,cargo:r.cargoSnapshot,pix:r.pix||'',dias:[],gorjeta:0,diarias:0,consumo:0,total:0};
+      totals[r.funcId].dias.push(r.data);
+      totals[r.funcId].gorjeta+=r.gorjeta||0; totals[r.funcId].diarias+=r.diaria||0;
+      totals[r.funcId].consumo+=r.consumo||0; totals[r.funcId].total+=r.totalLiquido||0;
+    });
+    const sorted = Object.values(totals).sort((a,b)=>b.total-a.total);
+    if(!sorted.length) { cont.innerHTML='<div class="empty-state"><div class="icon">💳</div><p>Nenhum fechamento no período</p></div>'; return; }
+    const totalGeral = sorted.reduce((a,t)=>a+t.total,0);
+    const lbl = {semana:'Esta Semana',semana_ant:'Semana Anterior',mes:'Este Mês',custom:'Período Personalizado'}[$('pgtoTipo').value];
+    cont.innerHTML = `<div class="card" style="border-color:var(--accent);margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div><div style="font-size:16px;font-weight:800">📋 ${lbl}</div><div style="font-size:12px;color:var(--muted)">${de} → ${ate} · ${sorted.length} func.</div></div>
+        <div style="font-size:24px;font-weight:800;color:var(--accent)">${fmt(totalGeral)}</div>
+      </div></div>
+    ${sorted.map(t => {
+      const s=setor(t.cargo);
+      const metodo=t.pix.toLowerCase().includes('itaú')||t.pix.toLowerCase().includes('salário')?'🏦 Conta Salário Itaú':t.pix?'📱 Pix: '+t.pix:'❓ Sem chave';
+      return `<div class="pgto-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="pgto-name">${t.nome} <span class="badge c-${s}">${t.cargo}</span></div>
+            <div class="pgto-pix">${metodo}</div>
+            <div class="pgto-detail">${t.dias.length} dia(s) · Diárias: ${fmt(t.diarias)} · Gorjeta: ${fmt(t.gorjeta)}${t.consumo>0?` · <span style="color:var(--danger)">-${fmt(t.consumo)}</span>`:''}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">📅 ${t.dias.sort().map(d=>d.split('-').reverse().slice(0,2).join('/')).join(' · ')}</div>
+          </div>
+          <div class="pgto-total">${fmt(t.total)}</div>
+        </div></div>`;
+    }).join('')}`;
+  } catch(e) { cont.innerHTML=`<div class="empty-state"><p>Erro: ${e.message}</p></div>`; }
+}
+
+/* ── Histórico ── */
+async function renderHistorico() {
+  const el = $('historicoList');
+  el.innerHTML='<div class="empty-state"><span class="loading-spinner"></span></div>';
+  try {
+    const snap = await db.collection('presencas_diarias').orderBy('data','desc').limit(60).get();
+    if(!snap.size) { el.innerHTML='<div class="empty-state"><div class="icon">📋</div><p>Nenhum dia ainda</p></div>'; return; }
+    const fechSnaps = await Promise.all(snap.docs.map(d=>db.collection('fechamento_diario').doc(d.id).get()));
+    const fechMap={}; fechSnaps.forEach(s=>{ if(s.exists) fechMap[s.id]=s.data(); });
+    el.innerHTML = snap.docs.map(d => {
+      const day=d.data(), fech=fechMap[d.id];
+      const pres=Object.entries(day.funcionarios||{}).filter(([,f])=>f.presente!==false);
+      return `<div class="hist-item">
+        <div class="hist-header" onclick="this.nextElementSibling.classList.toggle('open')">
+          <div>
+            <div class="hist-date">${fmtDate(d.id)}</div>
+            <div style="margin-top:4px"><span class="status-pill status-${day.status||'em_aberto'}">${STATUS_LABEL[day.status]||day.status}</span></div>
+          </div>
+          <div class="hist-meta">
+            <span>${pres.length} pres.</span>
+            ${fech?`<span class="val">${fmt(fech.totalLiquidoDia)}</span>`:'<span style="color:var(--accent)">Pendente</span>'}
+            <span>▾</span>
+          </div>
+        </div>
+        <div class="hist-body">
+          ${day.obs?`<div class="obs-box" style="margin-bottom:10px">📝 ${day.obs}</div>`:''}
+          ${pres.map(([id,p])=>{
+            const s=setor(p.cargo); const g=fech?.gorjetaPerFunc?.[id]||0;
+            return `<div class="info-row"><span class="lbl">${p.nome||id} ${badge(p.cargo)}${p.atrasado?'<span class="tag-atrasado" style="margin-left:4px">⏰</span>':''}</span><span>${fech?fmt(g-(p.consumo||0)):'—'}</span></div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`; }
+}
+
+/* ── Resumo Mensal ── */
+async function renderResumoInit() {
+  const snap = await db.collection('presencas_diarias').orderBy('data','desc').limit(120).get();
+  const meses = new Set(snap.docs.map(d=>d.id.substring(0,7)));
+  const sel = $('resumoMes'); const cur = sel.value;
+  sel.innerHTML = '<option value="">Todos os meses</option>' +
+    [...meses].sort().reverse().map(m => {
+      const [y,mo]=m.split('-');
+      return `<option value="${m}" ${m===cur?'selected':''}>${new Date(+y,+mo-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</option>`;
+    }).join('');
+  renderResumo();
+}
+async function renderResumo() {
+  const mes = $('resumoMes').value;
+  const cont = $('resumoContent');
+  cont.innerHTML='<div class="empty-state"><span class="loading-spinner"></span></div>';
+  try {
+    let q = db.collection('fechamento_funcionario');
+    if(mes) q=q.where('data','>=',mes+'-01').where('data','<=',mes+'-31');
+    const snap = await q.get(); const totals={};
+    snap.docs.forEach(d => {
+      const r=d.data(); if(!r.presente) return;
+      if(!totals[r.funcId]) totals[r.funcId]={nome:r.nomeSnapshot,cargo:r.cargoSnapshot,pix:r.pix||'',dias:0,gorjeta:0,diarias:0,consumo:0,total:0};
+      totals[r.funcId].dias++; totals[r.funcId].gorjeta+=r.gorjeta||0;
+      totals[r.funcId].diarias+=r.diaria||0; totals[r.funcId].consumo+=r.consumo||0;
+      totals[r.funcId].total+=r.totalLiquido||0;
+    });
+    const sorted=Object.values(totals).sort((a,b)=>b.total-a.total);
+    if(!sorted.length) { cont.innerHTML='<div class="empty-state"><div class="icon">📊</div><p>Nenhum fechamento no período</p></div>'; return; }
+    const totalGeral=sorted.reduce((a,t)=>a+t.total,0);
+    cont.innerHTML=`<div class="card" style="border-color:var(--accent);margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><div style="font-size:16px;font-weight:800">Total do Período</div><div style="font-size:12px;color:var(--muted)">${sorted.length} funcionários</div></div>
+        <div style="font-size:24px;font-weight:800;color:var(--accent)">${fmt(totalGeral)}</div>
+      </div></div>
+    ${sorted.map((t,i)=>{
+      const color=COLORS[i%COLORS.length];
+      const init=t.nome.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+      const s=setor(t.cargo);
+      const pct=totalGeral>0?((t.total/totalGeral)*100).toFixed(1):0;
+      return `<div class="resumo-card">
+        <div class="resumo-avatar" style="background:${color}18;color:${color}">${init}</div>
+        <div class="resumo-info">
+          <div class="resumo-name">${t.nome} ${badge(t.cargo)}</div>
+          <div class="resumo-sub">${t.dias} dia(s) · Gorjeta ${fmt(t.gorjeta)} · Diárias ${fmt(t.diarias)}${t.consumo>0?` · <span style="color:var(--danger)">-${fmt(t.consumo)}</span>`:''} · <span style="color:${color};font-weight:700">${pct}%</span></div>
+          ${t.pix?`<div style="font-size:11px;color:var(--muted);font-style:italic;margin-top:2px">${t.pix}</div>`:''}
+        </div>
+        <div class="resumo-total">${fmt(t.total)}</div>
+      </div>`;
+    }).join('')}`;
+  } catch(e) { cont.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`; }
+}
+
+/* ════════════════════════════════════════
+   MÓDULO FUNCIONÁRIOS
+════════════════════════════════════════ */
+async function addFunc() {
+  const id   = $('cadId').value.trim().toUpperCase();
+  const nome = $('cadNome').value.trim();
+  if(!id||!nome) { showAlert('cadAlert','Informe ID e nome.','error'); return; }
+  if(!id.match(/^EMP\d{3,}$/)) { showAlert('cadAlert','ID deve ser EMP016, EMP017...','error'); return; }
+  try {
+    await db.collection('funcionarios').doc(id).set({
+      id, nome, cargo:$('cadCargo').value, tipo:$('cadTipo').value,
+      pix:$('cadPix').value.trim(),
+      diariaPadrao:parseFloat($('cadDiaria').value)||0,
+      ativo:true, criadoPor:currentUser.uid,
+      criadoEm:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await logAuditoria('FUNCIONARIO_CRIADO',`funcionarios/${id}`,{},{nome});
+    showAlert('cadAlert',`✅ ${nome} adicionado!`,'success');
+    ['cadNome','cadPix','cadDiaria','cadId'].forEach(x=>$(x).value='');
+    renderCadList();
+  } catch(e) { showAlert('cadAlert','❌ '+e.message,'error'); }
+}
+async function renderCadList() {
+  const el = $('cadList');
+  el.innerHTML='<span class="loading-spinner"></span>';
+  try {
+    const snap = await db.collection('funcionarios').orderBy('nome').get();
+    if(!snap.size) { el.innerHTML='<div class="empty-state"><p>Nenhum cadastrado</p></div>'; return; }
+    const podeEdit = ['diretoria','admin'].includes(currentPerfil);
+    el.innerHTML = snap.docs.map(d => {
+      const f=d.data(), s=setor(f.cargo);
+      const tBadge = f.tipo==='frequente'
+        ? `<span style="font-size:10px;color:#1A6FA8;border:1.5px solid #B8D9F0;border-radius:10px;padding:1px 7px;font-weight:700">Frequente</span>`
+        : `<span style="font-size:10px;color:var(--muted);border:1.5px solid var(--border);border-radius:10px;padding:1px 7px">Fixo</span>`;
+      return `<div class="diaria-row" style="${!f.ativo?'opacity:.4':''}">
+        <div class="diaria-name">${f.nome}${!f.ativo?' <span style="color:var(--danger);font-size:11px">[inativo]</span>':''} ${tBadge}
+          <small>${f.pix||'Sem Pix'} · R$ ${f.diariaPadrao||0}/dia</small></div>
+        ${badge(f.cargo)}
+        ${podeEdit ? `
+          <button class="btn btn-secondary btn-sm" onclick="abrirEditFunc('${d.id}')">✏️</button>
+          ${f.ativo?`<button class="btn btn-danger btn-sm" onclick="desativarFunc('${d.id}')">Desativar</button>`:''}
+        ` : ''}
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`; }
+}
+async function abrirEditFunc(id) {
+  const snap = await db.collection('funcionarios').doc(id).get();
+  if(!snap.exists) return; const f=snap.data();
+  $('editFuncId').value=id; $('editNome').value=f.nome||'';
+  $('editCargo').value=f.cargo||'Garçom'; $('editTipo').value=f.tipo||'fixo';
+  $('editPix').value=f.pix||''; $('editDiaria').value=f.diariaPadrao||'';
+  abrirModal('modalEditFunc');
+}
+async function salvarEdicaoFunc() {
+  const id = $('editFuncId').value; if(!id) return;
+  try {
+    const dados = {nome:$('editNome').value.trim(),cargo:$('editCargo').value,
+      tipo:$('editTipo').value,pix:$('editPix').value.trim(),
+      diariaPadrao:parseFloat($('editDiaria').value)||0};
+    await db.collection('funcionarios').doc(id).update(dados);
+    await logAuditoria('FUNCIONARIO_ATUALIZADO',`funcionarios/${id}`,{},{...dados});
+    showAlert('editFuncAlert','✅ Salvo!','success');
+    setTimeout(()=>{ fecharModal('modalEditFunc'); renderCadList(); }, 900);
+  } catch(e) { showAlert('editFuncAlert','❌ '+e.message,'error'); }
+}
+async function desativarFunc(id) {
+  const snap=await db.collection('funcionarios').doc(id).get();
+  if(!confirm(`Desativar ${snap.data()?.nome}?`)) return;
+  await db.collection('funcionarios').doc(id).update({ativo:false});
+  renderCadList();
+}
+
+/* ════════════════════════════════════════
+   MÓDULO USUÁRIOS (ADMIN)
+════════════════════════════════════════ */
+async function renderUsuarios() {
+  const el = $('usuariosList');
+  el.innerHTML='<div class="empty-state"><span class="loading-spinner"></span></div>';
+  try {
+    const snap = await db.collection('usuarios').get();
+    if(!snap.size) { el.innerHTML='<div class="empty-state"><p>Nenhum usuário</p></div>'; return; }
+    const labels={gerente:'Gerente',financeiro:'Financeiro',diretoria:'Diretoria',admin:'Admin'};
+    const cores={gerente:'#1A6FA8',financeiro:'#A05E1E',diretoria:'#6B3FA8',admin:'#276749'};
+    el.innerHTML = snap.docs.map(d => {
+      const u=d.data();
+      const init=(u.nome||u.email||'?')[0].toUpperCase();
+      const cor=cores[u.perfil]||'#8A837A';
+      return `<div class="user-card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div class="user-avatar" style="background:${cor}18;color:${cor}">${init}</div>
+        <div class="user-info-card" style="flex:1">
+          <div class="user-nome">${u.nome||'(sem nome)'}</div>
+          <div class="user-email">${u.email||d.id}</div>
+        </div>
+        <span class="perfil-badge perfil-${u.perfil}">${labels[u.perfil]||u.perfil}</span>
+        <div class="user-actions">
+          ${u.ativo!==false
+            ?`<button class="btn btn-secondary btn-sm" onclick="trocarPerfil('${d.id}','${u.perfil}')">✏️ Perfil</button>
+              <button class="btn btn-danger btn-sm" onclick="desativarUsuario('${d.id}','${u.nome||u.email}')">Desativar</button>`
+            :'<span style="font-size:12px;color:var(--danger);font-weight:700">Inativo</span>'}
+        </div>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`; }
+}
+async function criarUsuario() {
+  const nome   = $('nuNome').value.trim();
+  const email  = $('nuEmail').value.trim();
+  const senha  = $('nuSenha').value;
+  const perfil = $('nuPerfil').value;
+  if(!nome||!email||!senha) { showAlert('nuAlert','Preencha todos os campos.','error'); return; }
+  if(senha.length<8) { showAlert('nuAlert','Senha deve ter mínimo 8 caracteres.','error'); return; }
+  try {
+    showAlert('nuAlert','⏳ Criando...','success');
+    const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyDEo7pB-dLtSHFGjqvYf8Bt8n7VSu5HdrY`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email,password:senha,returnSecureToken:true})
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error?.message||'Erro ao criar conta');
+    const uid = data.localId;
+    await db.collection('usuarios').doc(uid).set({
+      uid,nome,email,perfil,ativo:true,
+      criadoPor:currentUser.uid,criadoEm:firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await logAuditoria('USUARIO_CRIADO',`usuarios/${uid}`,{},{nome,email,perfil});
+    showAlert('nuAlert',`✅ ${nome} criado!`,'success');
+    ['nuNome','nuEmail','nuSenha'].forEach(x=>$(x).value='');
+    setTimeout(()=>{ fecharModal('modalNovoUsuario'); renderUsuarios(); },1200);
+  } catch(e) { showAlert('nuAlert','❌ '+e.message,'error'); }
+}
+async function trocarPerfil(uid, atual) {
+  const perfis = ['gerente','financeiro','diretoria','admin'];
+  const novo = prompt(`Perfil atual: ${atual}\nDigite o novo perfil:\n${perfis.join(', ')}`);
+  if(!novo || !perfis.includes(novo.toLowerCase().trim())) return;
+  await db.collection('usuarios').doc(uid).update({perfil:novo.toLowerCase().trim()});
+  await logAuditoria('USUARIO_PERFIL_ALTERADO',`usuarios/${uid}`,{perfil:atual},{perfil:novo});
+  showAlert('usuariosAlert','✅ Perfil atualizado!','success');
+  renderUsuarios();
+}
+async function desativarUsuario(uid, nome) {
+  if(!confirm(`Desativar ${nome}?`)) return;
+  await db.collection('usuarios').doc(uid).update({ativo:false});
+  await logAuditoria('USUARIO_DESATIVADO',`usuarios/${uid}`,{ativo:true},{ativo:false});
+  renderUsuarios();
+}
+
+/* ════════════════════════════════════════
+   MÓDULO QR FALLBACK
+════════════════════════════════════════ */
+function onQRDrop(e) { e.preventDefault(); if(e.dataTransfer.files[0]) handleQRFile(e.dataTransfer.files[0]); }
+function handleQRFile(file) {
+  if(!file) return;
+  $('qrScanResult').classList.remove('visible','ok');
+  pendingQR = null;
+  if(file.type.startsWith('image/')) readQRImg(file);
+  else if(file.type==='application/pdf') readQRPDF(file);
+  else showAlert('qrImportAlert','Arquivo não suportado.','error');
+}
+function readQRImg(file) {
+  const r = new FileReader();
+  r.onload = e => {
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement('canvas'); c.width=img.width; c.height=img.height;
+      const ctx=c.getContext('2d'); ctx.drawImage(img,0,0);
+      const code=jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height);
+      code ? parseQRData(code.data) : showAlert('qrImportAlert','QR não encontrado.','error');
+    };
+    img.src=e.target.result;
+  };
+  r.readAsDataURL(file);
+}
+async function readQRPDF(file) {
+  showAlert('qrImportAlert','⏳ Lendo PDF...','success');
+  try {
+    if(!window.pdfjsLib) {
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    const pdf = await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+    let found = false;
+    for(let p=1;p<=pdf.numPages&&!found;p++) {
+      const page=await pdf.getPage(p);
+      const vp=page.getViewport({scale:3});
+      const c=document.createElement('canvas'); c.width=vp.width; c.height=vp.height;
+      const ctx=c.getContext('2d');
+      await page.render({canvasContext:ctx,viewport:vp}).promise;
+      const code=jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height);
+      if(code) { parseQRData(code.data); found=true; }
+    }
+    if(!found) showAlert('qrImportAlert','QR não encontrado.','error');
+  } catch(e) { showAlert('qrImportAlert','❌ '+e.message,'error'); }
+}
+function loadScript(src) {
+  return new Promise((res,rej)=>{
+    if(document.querySelector(`script[src="${src}"]`)){res();return;}
+    const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s);
+  });
+}
+function parseQRData(raw) {
+  try {
+    const data = JSON.parse(decodeURIComponent(escape(atob(raw))));
+    if(!data.date||!data.presenca) throw new Error('Inválido');
+    pendingQR = data;
+    $('qrScanDate').textContent = fmtDate(data.date);
+    $('qrScanBadge').textContent = `${data.presenca.filter(f=>f.presente).length} presentes`;
+    $('qrObsBox').innerHTML = data.obs ? `<div class="obs-box">📝 ${data.obs}</div>` : '';
+    $('qrEmpList').innerHTML = data.presenca.map(f =>
+      `<div class="emp-row ${f.presente?'presente':'ausente'}">
+        <div class="emp-name">${f.nome}<small>${f.cargo}</small></div>
+        ${badge(f.cargo)}
+        <div>${f.atrasado?'<span class="tag-atrasado">⏰</span>':''}</div>
+      </div>`
+    ).join('');
+    $('qrScanResult').classList.add('visible','ok');
+    showAlert('qrImportAlert',`✅ QR do dia ${fmtDate(data.date)} lido!`,'success');
+  } catch(e) { showAlert('qrImportAlert','❌ QR inválido.','error'); }
+}
+async function importarQR() {
+  if(!pendingQR) return;
+  try {
+    const date=pendingQR.date; const fm={};
+    pendingQR.presenca.forEach(f=>{
+      fm[f.id]={nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,
+        presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0};
+    });
+    const snap=await db.collection('presencas_diarias').doc(date).get();
+    const e={de:snap.exists?snap.data().status:null,para:'aguardando_fechamento',
+      por:currentUser.uid,em:new Date().toISOString(),motivo:'Importado via QR Code offline'};
+    await db.collection('presencas_diarias').doc(date).set({
+      data:date,status:'aguardando_fechamento',obs:pendingQR.obs||'',funcionarios:fm,
+      registradoPor:currentUser.uid,registradoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      atualizadoPor:currentUser.uid,atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      statusHistorico:firebase.firestore.FieldValue.arrayUnion(e)
+    },{merge:true});
+    showAlert('qrImportAlert',`✅ Dia ${fmtDate(date)} importado!`,'success');
+    pendingQR=null; carregarCalFin();
+  } catch(e) { showAlert('qrImportAlert','❌ '+e.message,'error'); }
+}
+
+
+/* ════════════════════════════════════════
+   MÓDULO GERENTE — VER FUNCIONÁRIOS
+════════════════════════════════════════ */
+let gerFuncVisible = false;
+
+function toggleGerFunc() {
+  gerFuncVisible = !gerFuncVisible;
+  $('gerFuncCard').style.display = gerFuncVisible ? 'block' : 'none';
+  $('btnVerFunc').textContent = gerFuncVisible ? '✕ Fechar Funcionários' : '👥 Ver Funcionários';
+  if(gerFuncVisible) renderGerFuncList();
+}
+
+async function renderGerFuncList() {
+  const el = $('gerFuncList');
+  el.innerHTML = '<span class="loading-spinner"></span>';
+  try {
+    const snap = await db.collection('funcionarios').where('ativo','==',true).orderBy('nome').get();
+    if(!snap.size) { el.innerHTML = '<div class="empty-state"><p>Nenhum funcionário cadastrado</p></div>'; return; }
+    el.innerHTML = snap.docs.map(d => {
+      const f = d.data(), s = setor(f.cargo);
+      return `<div class="diaria-row">
+        <div class="diaria-name">${f.nome}
+          <small>${f.pix||'Sem Pix'} · R$ ${f.diariaPadrao||0}/dia</small>
+        </div>
+        ${badge(f.cargo)}
+        <span style="font-size:10px;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:2px 8px">${f.tipo==='frequente'?'Frequente':'Fixo'}</span>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = `<div class="empty-state"><p>${e.message}</p></div>`; }
+}
+
+/* ════════════════════════════════════════
+   MÓDULO ESCALA SEMANAL
+════════════════════════════════════════ */
+
+const DIAS_SEMANA = ['Segunda','Terça','Quarta','Quinta','Sexta','Sábado','Domingo'];
+const DIAS_CURTO  = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+const ESCALA_COLLECTION = 'escala_semanal';
+
+// Estado da escala
+let escalaFuncs   = []; // [{id?, nome, cargo, pix?, diaria?, dias:{Segunda:true,...}}]
+let escalaDocId   = null;
+
+/* ── Carregar do Firebase ── */
+async function escalaCarregar() {
+  try {
+    // Pega a escala mais recente
+    const snap = await db.collection(ESCALA_COLLECTION)
+      .orderBy('criadoEm','desc').limit(1).get();
+    if(!snap.empty) {
+      const d = snap.docs[0];
+      escalaDocId = d.id;
+      escalaFuncs = d.data().funcionarios || [];
+    } else {
+      escalaFuncs = [];
+      escalaDocId = null;
+    }
+  } catch(e) {
+    escalaFuncs = [];
+  }
+  await escalaCarregarSelect();
+  escalaRender();
+}
+
+async function escalaCarregarSelect() {
+  try {
+    const snap = await db.collection('funcionarios').where('ativo','==',true).orderBy('nome').get();
+    const sel = $('escFuncSel');
+    sel.innerHTML = '<option value="">— selecione do cadastro —</option>';
+    snap.docs.forEach(d => {
+      const f = d.data();
+      const opt = document.createElement('option');
+      opt.value = d.id;
+      opt.textContent = `${f.nome} (${f.cargo})`;
+      opt.dataset.nome  = f.nome;
+      opt.dataset.cargo = f.cargo;
+      opt.dataset.pix   = f.pix || '';
+      opt.dataset.diaria = f.diariaPadrao || 0;
+      sel.appendChild(opt);
+    });
+  } catch(_) {}
+}
+
+/* ── Salvar no Firebase ── */
+async function escalaSalvar() {
+  try {
+    const payload = {
+      funcionarios: escalaFuncs,
+      atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      atualizadoPor: currentUser.uid
+    };
+    if(escalaDocId) {
+      await db.collection(ESCALA_COLLECTION).doc(escalaDocId).update(payload);
+    } else {
+      payload.criadoEm = firebase.firestore.FieldValue.serverTimestamp();
+      payload.criadoPor = currentUser.uid;
+      const ref = await db.collection(ESCALA_COLLECTION).add(payload);
+      escalaDocId = ref.id;
+    }
+  } catch(e) {
+    console.error('Erro ao salvar escala:', e);
+  }
+}
+
+/* ── Adicionar funcionário à escala ── */
+async function escalaAddFunc() {
+  const sel = $('escFuncSel');
+  const nomeManual = $('escFuncNome').value.trim();
+  const cargo = $('escFuncCargo').value;
+
+  let nome, firebaseId, pix = '', diaria = DIARIA_PADRAO[cargo] || 0;
+
+  if(sel.value) {
+    // Selecionado do cadastro
+    const opt = sel.selectedOptions[0];
+    nome      = opt.dataset.nome;
+    firebaseId = sel.value;
+    pix       = opt.dataset.pix;
+    diaria    = parseFloat(opt.dataset.diaria) || DIARIA_PADRAO[cargo] || 0;
+    // Cargo do cadastro, mas permite override
+    // manter o que o usuário selecionou no select de cargo
+  } else if(nomeManual) {
+    nome = nomeManual;
+    firebaseId = null;
+  } else {
+    alert('Selecione um funcionário do cadastro ou digite o nome.'); return;
+  }
+
+  // Verificar duplicata
+  if(escalaFuncs.find(f => f.nome === nome)) {
+    alert(`${nome} já está na escala.`); return;
+  }
+
+  const dias = {};
+  DIAS_SEMANA.forEach(d => dias[d] = false);
+
+  escalaFuncs.push({ nome, cargo, pix, diaria, firebaseId, dias });
+
+  $('escFuncSel').value = '';
+  $('escFuncNome').value = '';
+
+  escalaRender();
+  escalaSalvar();
+}
+
+/* ── Toggle dia na escala ── */
+function escalaTogleDia(idx, dia) {
+  escalaFuncs[idx].dias[dia] = !escalaFuncs[idx].dias[dia];
+  escalaRender();
+  escalaSalvar();
+}
+
+/* ── Remover funcionário da escala ── */
+function escalaRemoverFunc(idx) {
+  escalaFuncs.splice(idx, 1);
+  escalaRender();
+  escalaSalvar();
+}
+
+/* ── Limpar semana ── */
+function escalaLimpar() {
+  if(!confirm('Limpar toda a escala da semana?')) return;
+  escalaFuncs = [];
+  escalaDocId = null;
+  escalaRender();
+  escalaSalvar();
+}
+
+/* ── Render da grade ── */
+function escalaRender() {
+  const head = $('escalaHead');
+  const body = $('escalaBody');
+  const empty = $('escalaEmpty');
+  const resumoCard = $('escalaResumoCard');
+
+  if(!escalaFuncs.length) {
+    head.innerHTML = '';
+    body.innerHTML = '';
+    empty.style.display = 'block';
+    resumoCard.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  resumoCard.style.display = 'block';
+
+  // Cabeçalho
+  head.innerHTML = `<tr>
+    <th style="text-align:left;min-width:160px;font-size:12px">Funcionário</th>
+    ${DIAS_CURTO.map((d,i) => `<th style="font-size:11px;min-width:46px">${d}</th>`).join('')}
+    <th style="font-size:11px">Dias</th>
+    <th style="font-size:11px"></th>
+  </tr>`;
+
+  // Linhas
+  body.innerHTML = escalaFuncs.map((f,idx) => {
+    const s = setor(f.cargo);
+    const total = DIAS_SEMANA.filter(d => f.dias[d]).length;
+    const cells = DIAS_SEMANA.map(d => {
+      const on = f.dias[d];
+      return `<td><div onclick="escalaTogleDia(${idx},'${d}')" style="
+        width:34px;height:34px;border-radius:8px;cursor:pointer;border:1.5px solid ${on?'#7fd4b5':'var(--border)'};
+        background:${on?'var(--success-lt)':'var(--surface2)'};
+        color:${on?'var(--success)':'var(--muted)'};
+        display:inline-flex;align-items:center;justify-content:center;
+        font-size:${on?'14px':'16px'};font-weight:700;user-select:none;transition:all .15s">
+        ${on?'✓':'+'}
+      </div></td>`;
+    }).join('');
+    return `<tr>
+      <td style="text-align:left;padding:8px 10px">
+        <div style="font-size:13px;font-weight:600">${f.nome}</div>
+        <div style="margin-top:2px">${badge(f.cargo)}</div>
+      </td>
+      ${cells}
+      <td style="font-weight:700;color:var(--accent);font-size:15px">${total}</td>
+      <td><button onclick="escalaRemoverFunc(${idx})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:4px" title="Remover">×</button></td>
+    </tr>`;
+  }).join('');
+
+  // Resumo por dia
+  const resumo = $('escalaResumo');
+  const totalMarcados = escalaFuncs.reduce((a,f) => a + DIAS_SEMANA.filter(d=>f.dias[d]).length, 0);
+  resumo.innerHTML = `
+    <div style="background:var(--accent-lt);border-radius:8px;padding:10px 14px;flex:1;min-width:100px">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Funcionários</div>
+      <div style="font-size:22px;font-weight:800;color:var(--accent)">${escalaFuncs.length}</div>
+    </div>
+    <div style="background:var(--success-lt);border-radius:8px;padding:10px 14px;flex:1;min-width:100px">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Dias marcados</div>
+      <div style="font-size:22px;font-weight:800;color:var(--success)">${totalMarcados}</div>
+    </div>
+    ${DIAS_CURTO.map((dc,i) => {
+      const d = DIAS_SEMANA[i];
+      const qt = escalaFuncs.filter(f => f.dias[d]).length;
+      return `<div style="background:var(--surface2);border-radius:8px;padding:10px 14px;min-width:60px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">${dc}</div>
+        <div style="font-size:20px;font-weight:800;color:var(--text2)">${qt}</div>
+      </div>`;
+    }).join('')}`;
+}
+
+/* ── Abrir modal publicar ── */
+function abrirPublicarEscala() {
+  if(!escalaFuncs.length) { alert('Adicione funcionários na escala primeiro.'); return; }
+
+  // Sugerir próxima segunda-feira
+  const hoje = new Date();
+  const dow = hoje.getDay(); // 0=dom, 1=seg...
+  const diasParaSeg = dow === 1 ? 0 : (dow === 0 ? 1 : 8 - dow);
+  const proxSeg = new Date(hoje);
+  proxSeg.setDate(hoje.getDate() + diasParaSeg);
+  $('escalaDataInicio').value = proxSeg.toISOString().split('T')[0];
+
+  atualizarPreviewPublicacao();
+  abrirModal('modalPublicarEscala');
+}
+
+function atualizarPreviewPublicacao() {
+  const dataInicio = $('escalaDataInicio').value;
+  if(!dataInicio) { $('escalaPublicarPreview').textContent = ''; return; }
+
+  const inicio = new Date(dataInicio + 'T12:00:00');
+  const datas = DIAS_SEMANA.map((d,i) => {
+    const dt = new Date(inicio);
+    dt.setDate(inicio.getDate() + i);
+    return `${d}: ${dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}`;
+  });
+
+  const funcsComDias = escalaFuncs.filter(f => DIAS_SEMANA.some(d => f.dias[d]));
+  $('escalaPublicarPreview').innerHTML = `
+    <div style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Mapeamento de datas</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${datas.map(d => `<span style="font-size:12px;background:var(--accent-lt);color:var(--accent-dk);padding:3px 10px;border-radius:20px;font-weight:600">${d}</span>`).join('')}
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--muted)">
+      ${funcsComDias.length} funcionário(s) serão publicados em ${DIAS_SEMANA.filter(d => escalaFuncs.some(f => f.dias[d])).length} dia(s)
+    </div>`;
+}
+
+// Attach date change listener when modal opens (called from abrirPublicarEscala)
+// The abrirPublicarEscala function sets the value and calls atualizarPreviewPublicacao directly
+
+/* ── Publicar escala no Firebase ── */
+async function confirmarPublicarEscala() {
+  const dataInicio = $('escalaDataInicio').value;
+  if(!dataInicio) { showAlert('escalaPublicarAlert','Selecione a data de início.','error'); return; }
+
+  const btn = document.querySelector('#modalPublicarEscala .btn-primary');
+  btn.disabled = true;
+  btn.textContent = '⏳ Publicando...';
+
+  try {
+    const inicio = new Date(dataInicio + 'T12:00:00');
+
+    // Mapear cada dia da semana para uma data real
+    const dataMap = {}; // {Segunda: '2025-04-16', ...}
+    DIAS_SEMANA.forEach((d, i) => {
+      const dt = new Date(inicio);
+      dt.setDate(inicio.getDate() + i);
+      dataMap[d] = dt.toISOString().split('T')[0];
+    });
+
+    // Para cada dia que tem pelo menos um funcionário
+    const diasUsados = DIAS_SEMANA.filter(d => escalaFuncs.some(f => f.dias[d]));
+
+    // Buscar cadastro do Firebase para completar dados
+    const cadSnap = await db.collection('funcionarios').get();
+    const cadMap = {};
+    cadSnap.docs.forEach(d => cadMap[d.id] = { id: d.id, ...d.data() });
+
+    // Para cada funcionário da escala sem firebaseId, criar no Firebase
+    for(const f of escalaFuncs) {
+      if(!f.firebaseId) {
+        // Verificar se já existe pelo nome
+        const existe = cadSnap.docs.find(d => d.data().nome === f.nome);
+        if(existe) {
+          f.firebaseId = existe.id;
+        } else {
+          // Criar novo funcionário
+          const novoId = 'EMP' + String(Date.now()).slice(-6);
+          await db.collection('funcionarios').doc(novoId).set({
+            id: novoId, nome: f.nome, cargo: f.cargo,
+            pix: f.pix || '', diariaPadrao: f.diaria || DIARIA_PADRAO[f.cargo] || 0,
+            tipo: 'fixo', ativo: true,
+            criadoPor: currentUser.uid,
+            criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          f.firebaseId = novoId;
+          await logAuditoria('FUNCIONARIO_CRIADO_VIA_ESCALA', `funcionarios/${novoId}`, {}, { nome: f.nome });
+        }
+      }
+    }
+
+    // Para cada dia, criar/atualizar presencas_diarias
+    let criados = 0, atualizados = 0;
+    for(const diaSem of diasUsados) {
+      const dateStr = dataMap[diaSem];
+      const funcsNoDia = escalaFuncs.filter(f => f.dias[diaSem]);
+
+      // Buscar doc existente
+      const docRef = db.collection('presencas_diarias').doc(dateStr);
+      const snap = await docRef.get();
+
+      // Montar mapa de funcionários para este dia
+      const fm = {};
+      funcsNoDia.forEach(f => {
+        fm[f.firebaseId] = {
+          nome: f.nome,
+          cargo: f.cargo,
+          pix: f.pix || '',
+          diariaPadrao: f.diaria || DIARIA_PADRAO[f.cargo] || 0,
+          presente: true,
+          atrasado: false,
+          consumo: 0,
+          auxCount: 0,
+          origem: 'escala'
+        };
+      });
+
+      if(!snap.exists) {
+        // Criar novo
+        await docRef.set({
+          data: dateStr,
+          status: 'em_aberto',
+          obs: '',
+          funcionarios: fm,
+          registradoPor: currentUser.uid,
+          registradoEm: firebase.firestore.FieldValue.serverTimestamp(),
+          atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+          statusHistorico: [{
+            de: null, para: 'em_aberto',
+            por: currentUser.uid,
+            em: new Date().toISOString(),
+            motivo: 'Criado via publicação de escala'
+          }],
+          origemEscala: escalaDocId
+        });
+        criados++;
+      } else {
+        const existente = snap.data();
+        // Só atualizar se ainda está em_aberto
+        if(existente.status === 'em_aberto' || existente.status === null) {
+          // Merge: manter funcionários já editados, adicionar novos da escala
+          const fmExistente = existente.funcionarios || {};
+          Object.entries(fm).forEach(([id, dados]) => {
+            if(!fmExistente[id]) fmExistente[id] = dados; // só adiciona, não sobrescreve
+          });
+          await docRef.update({
+            funcionarios: fmExistente,
+            atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+            origemEscala: escalaDocId
+          });
+          atualizados++;
+        }
+      }
+    }
+
+    await logAuditoria('ESCALA_PUBLICADA', `escala_semanal/${escalaDocId}`, {}, {
+      semana: dataInicio,
+      diasCriados: criados,
+      diasAtualizados: atualizados
+    });
+
+    showAlert('escalaPublicarAlert',
+      `✅ Publicado! ${criados} dia(s) criado(s), ${atualizados} atualizado(s).`,
+      'success', 0
+    );
+
+    setTimeout(() => { fecharModal('modalPublicarEscala'); }, 2500);
+
+  } catch(e) {
+    showAlert('escalaPublicarAlert', '❌ Erro: ' + e.message, 'error', 0);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✅ Publicar';
+  }
+}
+
+</script>
+</body>
+</html>
