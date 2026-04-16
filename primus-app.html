@@ -595,16 +595,24 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
         <!-- Avulsos sem cadastro -->
         <div id="escalaAvulsosWrap" style="display:none;margin-bottom:14px">
           <div style="background:var(--accent-lt);border:1.5px solid #EDCBA0;border-radius:8px;padding:12px 14px">
-            <div style="font-size:13px;font-weight:700;color:var(--accent-dk);margin-bottom:8px">⚠️ Nomes não cadastrados</div>
+            <div style="font-size:13px;font-weight:700;color:var(--accent-dk);margin-bottom:8px">&#9888;&#65039; Nomes nao cadastrados</div>
             <div id="escalaAvulsosList" style="font-size:13px;color:var(--text2);margin-bottom:10px"></div>
             <div style="font-size:12px;color:var(--muted);margin-bottom:8px">O que fazer com esses nomes?</div>
-            <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <div style="display:flex;flex-direction:column;gap:8px">
               <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-                <input type="radio" name="avulsosOpcao" value="extra" checked> Publicar como extra (sem cadastro fixo)
+                <input type="radio" name="avulsosOpcao" value="extra" checked onchange="escalaToggleFormCadastro()"> Publicar como <strong>extra</strong> (sem cadastro fixo)
               </label>
               <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
-                <input type="radio" name="avulsosOpcao" value="cancelar"> Cancelar e resolver antes
+                <input type="radio" name="avulsosOpcao" value="cadastrar" onchange="escalaToggleFormCadastro()"> <strong>Cadastrar agora</strong> como funcionarios fixos e publicar
               </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+                <input type="radio" name="avulsosOpcao" value="cancelar" onchange="escalaToggleFormCadastro()"> Cancelar e resolver antes
+              </label>
+            </div>
+            <!-- Form de cadastro rapido -->
+            <div id="escalaFormCadastroRapido" style="display:none;margin-top:12px;border-top:1.5px solid #EDCBA0;padding-top:12px">
+              <div style="font-size:12px;font-weight:700;color:var(--accent-dk);margin-bottom:10px;text-transform:uppercase;letter-spacing:.5px">Dados para cadastro</div>
+              <div id="escalaFormCadastroLista"></div>
             </div>
           </div>
         </div>
@@ -1801,7 +1809,8 @@ async function renderGerFuncList() {
   const el = $('gerFuncList');
   el.innerHTML = '<span class="loading-spinner"></span>';
   try {
-    const snap = await db.collection('funcionarios').where('ativo','==',true).orderBy('nome').get();
+    const snapRaw = await db.collection('funcionarios').where('ativo','==',true).get();
+    const snap = { size: snapRaw.size, docs: snapRaw.docs.sort((a,b)=>a.data().nome.localeCompare(b.data().nome,'pt-BR')) };
     if(!snap.size) { el.innerHTML = '<div class="empty-state"><p>Nenhum funcionário cadastrado</p></div>'; return; }
     el.innerHTML = snap.docs.map(d => {
       const f = d.data(), s = setor(f.cargo);
@@ -1863,25 +1872,31 @@ async function escalaCarregar() {
 
 async function escalaCarregarCadastro() {
   try {
-    const snap = await db.collection('funcionarios').where('ativo','==',true).orderBy('nome').get();
+    // Sem orderBy para evitar exigência de índice composto no Firestore
+    const snap = await db.collection('funcionarios').where('ativo','==',true).get();
     escalaCadMap = {};
     const sel = $('escFuncSel');
     sel.innerHTML = '<option value="">— selecione do cadastro —</option>';
-    snap.docs.forEach(d => {
-      const f = d.data(); escalaCadMap[d.id] = { id: d.id, ...f };
+
+    // Ordenar por nome no JS
+    const docs = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+    docs.forEach(f => {
+      escalaCadMap[f.id] = f;
       const opt = document.createElement('option');
-      opt.value = d.id;
+      opt.value = f.id;
       opt.textContent = `${f.nome} (${f.cargo})`;
-      opt.dataset.nome  = f.nome;
-      opt.dataset.cargo = f.cargo;
-      opt.dataset.pix   = f.pix || '';
+      opt.dataset.nome   = f.nome;
+      opt.dataset.cargo  = f.cargo;
+      opt.dataset.pix    = f.pix || '';
       opt.dataset.diaria = f.diariaPadrao || 0;
       sel.appendChild(opt);
     });
   } catch(e) {
-    if(e.message && e.message.includes('index')) {
-      showAlert('gerAlert','⚠️ Não foi possível carregar os funcionários. Verifique o índice do banco.','error',0);
-    }
+    console.error('Erro ao carregar funcionários:', e.message);
+    showAlert('gerAlert','⚠️ Não foi possível carregar os funcionários cadastrados.','error', 8000);
   }
 }
 
@@ -2263,10 +2278,22 @@ async function confirmarPublicarEscala() {
 
   const { dataInicio, dataMap, diasUsados, avulsos } = ctx;
 
-  // Checar opção avulsos
+  // Checar opcao avulsos
   if(avulsos.length) {
     const opcao = document.querySelector('input[name="avulsosOpcao"]:checked')?.value;
     if(opcao === 'cancelar') { fecharModal('modalEscalaConfirmar'); return; }
+    if(opcao === 'cadastrar') {
+      // Cadastrar todos os avulsos primeiro
+      showAlert('escalaPublicarAlert','⏳ Cadastrando funcionários...','success',0);
+      try {
+        await escalaCadastrarAvulsos(avulsos);
+        // Avulsos agora têm firebaseId — reprocessar ctx sem avulsos
+        window._escalaPublicarCtx.avulsos = [];
+      } catch(e) {
+        showAlert('escalaPublicarAlert','❌ Erro ao cadastrar: '+e.message,'error',0);
+        btn.disabled=false; btn.textContent='✅ Confirmar Publicação'; return;
+      }
+    }
   }
 
   const btn = $('btnConfirmarPublicar');
@@ -2373,6 +2400,90 @@ async function confirmarPublicarEscala() {
   } finally {
     btn.disabled = false; btn.textContent = '✅ Confirmar Publicação';
   }
+}
+
+
+/* ── Cadastro rápido de avulsos no modal ── */
+function escalaToggleFormCadastro() {
+  const opcao = document.querySelector('input[name="avulsosOpcao"]:checked')?.value;
+  const formWrap = $('escalaFormCadastroRapido');
+  const lista    = $('escalaFormCadastroLista');
+  if(!formWrap || !lista) return;
+
+  if(opcao !== 'cadastrar') { formWrap.style.display = 'none'; return; }
+
+  formWrap.style.display = 'block';
+  const ctx = window._escalaPublicarCtx;
+  if(!ctx?.avulsos?.length) { formWrap.style.display = 'none'; return; }
+
+  const CARGOS = ['Gerente','Garcom','Cumim','Cozinheiro','Bar','Aux. Bar',
+    'Caixa','Recepcionista','Monitora','Aux. Cozinha','Limpeza','Seguranca'];
+
+  lista.innerHTML = ctx.avulsos.map((f, i) => `
+    <div style="background:#fff;border:1.5px solid #EDCBA0;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">${f.nome}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Cargo</div>
+          <select id="cad_cargo_${i}" class="form-select" style="font-size:13px">
+            ${CARGOS.map(c => `<option value="${c}" ${c===f.cargo?'selected':''}>${c}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Tipo</div>
+          <select id="cad_tipo_${i}" class="form-select" style="font-size:13px">
+            <option value="fixo">Fixo</option>
+            <option value="frequente">Frequente</option>
+          </select>
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Diaria padrao (R$)</div>
+          <input type="number" id="cad_diaria_${i}" class="form-input" style="font-size:13px"
+            value="${f.diaria || DIARIA_PADRAO[f.cargo] || 0}" step="0.01">
+        </div>
+        <div>
+          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Chave Pix</div>
+          <input type="text" id="cad_pix_${i}" class="form-input" style="font-size:13px"
+            placeholder="CPF, celular ou e-mail" value="${f.pix||''}">
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+/* ── Cadastrar avulsos antes de publicar ── */
+async function escalaCadastrarAvulsos(avulsos) {
+  const ctx = window._escalaPublicarCtx;
+  const criados = [];
+  for(let i = 0; i < avulsos.length; i++) {
+    const f = avulsos[i];
+    const cargo  = $(`cad_cargo_${i}`)?.value  || f.cargo;
+    const tipo   = $(`cad_tipo_${i}`)?.value   || 'fixo';
+    const diaria = parseFloat($(`cad_diaria_${i}`)?.value) || DIARIA_PADRAO[cargo] || 0;
+    const pix    = $(`cad_pix_${i}`)?.value?.trim() || '';
+
+    // Gerar ID único
+    const novoId = 'EMP' + Date.now().toString().slice(-6) + String(i);
+    await db.collection('funcionarios').doc(novoId).set({
+      id: novoId, nome: f.nome, cargo, tipo, pix, diariaPadrao: diaria,
+      ativo: true, criadoPor: currentUser.uid,
+      criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    await logAuditoria('FUNCIONARIO_CRIADO_VIA_ESCALA', `funcionarios/${novoId}`, {}, { nome: f.nome });
+
+    // Atualizar referência na escala
+    const escIdx = escalaFuncs.findIndex(ef => ef.nome === f.nome && ef.avulso);
+    if(escIdx >= 0) {
+      escalaFuncs[escIdx].firebaseId = novoId;
+      escalaFuncs[escIdx].avulso = false;
+      escalaFuncs[escIdx].cargo = cargo;
+      escalaFuncs[escIdx].diaria = diaria;
+      escalaFuncs[escIdx].pix = pix;
+    }
+    criados.push({ ...f, firebaseId: novoId, cargo, diaria, pix });
+  }
+  // Recarregar o select
+  await escalaCarregarCadastro();
+  return criados;
 }
 
 </script>
