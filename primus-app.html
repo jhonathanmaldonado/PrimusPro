@@ -1,0 +1,1911 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Peixaria Primus — Gestão</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F7F4EF;--surface:#FFFFFF;--surface2:#F0EDE6;--border:#E2DDD5;--border2:#CCC7BC;
+  --accent:#C8782A;--accent-lt:#F5E6D3;--accent-dk:#A05E1E;--gold:#D4A03A;
+  --danger:#C0392B;--danger-lt:#FDECEA;--success:#276749;--success-lt:#E8F5EE;
+  --text:#1A1714;--text2:#4A4540;--muted:#8A837A;
+  --shadow:0 1px 4px rgba(0,0,0,.07),0 4px 16px rgba(0,0,0,.04);
+  --shadow-md:0 4px 20px rgba(0,0,0,.11);--radius:10px;--radius-sm:6px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-serif;min-height:100vh;font-size:15px;line-height:1.5;}
+::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:var(--bg);}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
+/* LOGIN */
+#loginScreen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+.login-wrap{width:100%;max-width:380px;}
+.login-brand{text-align:center;margin-bottom:32px;}
+.login-brand-eyebrow{font-size:12px;font-weight:600;letter-spacing:4px;text-transform:uppercase;color:var(--muted);}
+.login-brand-title{font-size:36px;font-weight:800;color:var(--accent);letter-spacing:-1.5px;margin-top:4px;}
+.login-brand-sub{font-size:11px;color:var(--muted);margin-top:6px;letter-spacing:1.5px;text-transform:uppercase;}
+.login-card{background:var(--surface);border-radius:16px;padding:32px 28px;box-shadow:var(--shadow-md);border:1.5px solid var(--border);}
+.login-field{display:flex;flex-direction:column;gap:6px;margin-bottom:16px;}
+.login-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;}
+.login-input{background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-family:inherit;padding:11px 14px;width:100%;transition:border-color .15s;}
+.login-input:focus{outline:none;border-color:var(--accent);background:#fff;}
+.login-btn{width:100%;padding:13px;border-radius:var(--radius-sm);border:none;cursor:pointer;font-size:15px;font-family:inherit;font-weight:700;background:var(--accent);color:#fff;margin-top:6px;transition:all .15s;letter-spacing:.2px;}
+.login-btn:hover{background:var(--accent-dk);transform:translateY(-1px);box-shadow:0 4px 12px rgba(200,120,42,.3);}
+.login-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none;}
+.login-error{color:var(--danger);font-size:13px;margin-top:10px;display:none;padding:10px 12px;background:var(--danger-lt);border-radius:var(--radius-sm);font-weight:500;}
+.login-error.show{display:block;}
+/* APP */
+#appScreen{display:none;}
+.header{background:var(--surface);border-bottom:1.5px solid var(--border);padding:0 20px;display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:100;box-shadow:0 1px 6px rgba(0,0,0,.05);}
+.logo{display:flex;align-items:center;gap:10px;}
+.logo-icon{width:34px;height:34px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;}
+.logo-text .logo-name{font-size:16px;font-weight:800;color:var(--text);letter-spacing:-.3px;line-height:1;}
+.logo-text .logo-sub{font-size:10px;color:var(--muted);font-weight:500;letter-spacing:1px;text-transform:uppercase;margin-top:1px;}
+.header-right{display:flex;align-items:center;gap:10px;}
+.user-info{text-align:right;}
+.user-name{font-size:13px;font-weight:600;color:var(--text2);}
+.perfil-badge{font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px;display:inline-block;}
+.perfil-gerente{background:#E3F0FB;color:#1A6FA8;}
+.perfil-financeiro{background:var(--accent-lt);color:var(--accent-dk);}
+.perfil-diretoria{background:#EEE8F8;color:#6B3FA8;}
+.perfil-admin{background:var(--success-lt);color:var(--success);}
+.btn-logout{background:transparent;border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--muted);font-size:11px;padding:5px 12px;cursor:pointer;font-family:inherit;font-weight:600;transition:all .15s;}
+.btn-logout:hover{border-color:var(--danger);color:var(--danger);}
+/* TABS */
+.tabs{display:flex;background:var(--surface);border-bottom:1.5px solid var(--border);padding:0 16px;gap:2px;overflow-x:auto;scrollbar-width:none;}
+.tabs::-webkit-scrollbar{display:none;}
+.tab{padding:13px 14px;cursor:pointer;font-size:13px;font-weight:500;color:var(--muted);border-bottom:2.5px solid transparent;transition:all .2s;white-space:nowrap;flex-shrink:0;}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent);font-weight:700;}
+.tab:hover:not(.active){color:var(--text2);}
+.tab.hidden{display:none;}
+/* LAYOUT */
+.main{padding:20px;max-width:900px;margin:0 auto;}
+.section{display:none;}.section.active{display:block;}
+.section-title{font-size:22px;font-weight:800;color:var(--text);letter-spacing:-.5px;}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;flex-wrap:wrap;gap:10px;}
+/* CARDS */
+.card{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:14px;box-shadow:var(--shadow);}
+.card-title{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:14px;}
+/* BUTTONS */
+.btn{padding:9px 18px;border-radius:var(--radius-sm);border:none;cursor:pointer;font-size:13px;font-family:inherit;font-weight:600;transition:all .15s;white-space:nowrap;}
+.btn-primary{background:var(--accent);color:#fff;}.btn-primary:hover{background:var(--accent-dk);}
+.btn-secondary{background:var(--surface2);color:var(--text2);border:1.5px solid var(--border);}.btn-secondary:hover{border-color:var(--accent);color:var(--accent);}
+.btn-success{background:var(--success);color:#fff;}.btn-success:hover{background:#1e5238;}
+.btn-danger{background:transparent;color:var(--danger);border:1.5px solid var(--danger);}.btn-danger:hover{background:var(--danger-lt);}
+.btn-sm{padding:5px 12px;font-size:12px;}.btn-block{width:100%;margin-top:8px;}.btn:disabled{opacity:.4;cursor:not-allowed;}
+/* STATUS */
+.status-pill{display:inline-flex;align-items:center;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;text-transform:uppercase;letter-spacing:.5px;}
+.status-em_aberto{background:#E3F0FB;color:#1A6FA8;border:1px solid #B8D9F0;}
+.status-aguardando_fechamento{background:var(--accent-lt);color:var(--accent-dk);border:1px solid #EDCBA0;}
+.status-fechado{background:var(--success-lt);color:var(--success);border:1px solid #B8DFC9;}
+.status-reaberto{background:var(--danger-lt);color:var(--danger);border:1px solid #F5C0BA;}
+/* CALENDAR */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;text-align:center;}
+.cal-sem{font-size:11px;color:var(--muted);font-weight:700;padding:4px 0;}
+.cal-day{border-radius:var(--radius-sm);padding:8px 2px;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s;user-select:none;border:1.5px solid transparent;}
+.cal-day:hover{filter:brightness(.94);}
+.cal-day.hoje{border-color:var(--accent)!important;font-weight:800;}
+.cal-day.selecionado{outline:2.5px solid var(--accent);outline-offset:1px;}
+/* BADGES */
+.badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;text-transform:uppercase;white-space:nowrap;}
+.c-garcom{color:#A05E1E;background:var(--accent-lt);}
+.c-bar{color:#1A6FA8;background:#E3F0FB;}
+.c-cozinha{color:#C0392B;background:#FDECEA;}
+.c-cumim{color:#6B3FA8;background:#EEE8F8;}
+.c-gerente{color:var(--success);background:var(--success-lt);}
+.c-outros{color:var(--muted);background:var(--surface2);}
+.tag-atrasado{font-size:10px;padding:2px 8px;border-radius:20px;background:var(--accent-lt);color:var(--accent-dk);font-weight:700;}
+/* EMP ROWS */
+.emp-list{display:flex;flex-direction:column;gap:6px;}
+.emp-row{background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:10px 12px;display:grid;grid-template-columns:24px 1fr auto auto auto;gap:8px;align-items:center;}
+.emp-row.presente{border-color:#B8DFC9;background:#FAFFFE;}
+.emp-row.ausente{opacity:.45;background:var(--surface2);}
+.check-box{width:22px;height:22px;border:2px solid var(--border2);border-radius:5px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;user-select:none;}
+.check-box.on{background:var(--success);border-color:var(--success);}
+.check-box.on::after{content:'✓';font-size:13px;color:#fff;font-weight:800;}
+.emp-name{font-size:14px;font-weight:500;line-height:1.3;min-width:0;}
+.emp-name small{display:block;font-size:11px;color:var(--muted);margin-top:1px;}
+.late-btn{font-size:11px;padding:4px 9px;border-radius:20px;border:1.5px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;transition:all .15s;font-family:inherit;white-space:nowrap;font-weight:600;}
+.late-btn.on{background:var(--accent-lt);border-color:var(--accent);color:var(--accent-dk);}
+.late-btn:disabled{opacity:.4;cursor:not-allowed;}
+.cons-input{width:64px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:5px 7px;color:var(--text);font-size:12px;font-family:inherit;text-align:right;}
+.cons-input:focus{outline:none;border-color:var(--accent);background:#fff;}
+.cons-input:disabled{opacity:.4;}
+.grupo-header{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;font-weight:700;margin-bottom:7px;padding-bottom:6px;border-bottom:1.5px solid var(--border);}
+.grupo-section{margin-bottom:16px;}
+/* FORMS */
+.field-label{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;margin-bottom:6px;}
+.form-input,.form-select{background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--radius-sm);color:var(--text);font-size:14px;font-family:inherit;padding:10px 12px;width:100%;transition:border-color .15s;}
+.form-input:focus,.form-select:focus{outline:none;border-color:var(--accent);background:#fff;}
+.form-group{display:flex;flex-direction:column;gap:6px;margin-bottom:12px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+@media(max-width:520px){.grid2{grid-template-columns:1fr;}}
+.cad-form{display:flex;flex-direction:column;gap:12px;}
+/* FINANCEIRO */
+.money-wrap{position:relative;}
+.money-wrap span{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:14px;font-weight:600;}
+.money-input{width:100%;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:12px 12px 12px 30px;color:var(--text);font-size:20px;font-weight:800;}
+.money-input:focus{outline:none;border-color:var(--accent);background:#fff;}
+.gorjeta-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+@media(max-width:520px){.gorjeta-grid{grid-template-columns:1fr;}}
+.gorjeta-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+.chip{font-size:11px;padding:4px 10px;border-radius:20px;border:1.5px solid var(--border);color:var(--text2);background:var(--surface2);}
+.chip strong{color:var(--accent-dk);}
+.diaria-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1.5px solid var(--border);}
+.diaria-row:last-child{border-bottom:none;}
+.diaria-name{flex:1;font-size:14px;font-weight:500;}
+.diaria-name small{display:block;font-size:11px;color:var(--muted);}
+.diaria-input{width:90px;background:var(--surface2);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:7px 10px;color:var(--text);font-size:14px;font-weight:700;text-align:right;font-family:inherit;}
+.diaria-input:focus{outline:none;border-color:var(--accent);background:#fff;}
+.diaria-input:disabled{opacity:.5;}
+/* TABELAS */
+.result-table{width:100%;border-collapse:collapse;}
+.result-table th{text-align:left;font-size:11px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:8px 10px;border-bottom:2px solid var(--border);}
+.result-table td{padding:9px 10px;border-bottom:1.5px solid var(--border);font-size:13px;}
+.result-table tbody tr:hover{background:var(--surface2);}
+.right{text-align:right;}
+.val-pos{color:var(--success);font-weight:700;}.val-neg{color:var(--danger);}
+.total-row td{font-weight:800;font-size:14px;border-top:2px solid var(--border)!important;color:var(--accent-dk);background:var(--accent-lt)!important;}
+/* HISTÓRICO */
+.hist-item{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);margin-bottom:8px;overflow:hidden;box-shadow:var(--shadow);}
+.hist-header{padding:12px 16px;display:flex;align-items:center;justify-content:space-between;cursor:pointer;transition:background .15s;}
+.hist-header:hover{background:var(--surface2);}
+.hist-date{font-size:14px;font-weight:700;color:var(--text);}
+.hist-meta{display:flex;gap:14px;align-items:center;font-size:12px;color:var(--muted);}
+.hist-meta .val{color:var(--success);font-weight:800;font-size:14px;}
+.hist-body{display:none;padding:0 16px 14px;border-top:1.5px solid var(--border);}
+.hist-body.open{display:block;}
+/* RESUMO/PGTO/USERS */
+.resumo-card,.pgto-card,.user-card{background:var(--surface);border:1.5px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;box-shadow:var(--shadow);}
+.resumo-avatar,.user-avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;flex-shrink:0;}
+.resumo-info,.user-info-card{flex:1;}
+.resumo-name,.user-nome{font-weight:700;font-size:14px;color:var(--text);}
+.resumo-sub,.user-email{font-size:11px;color:var(--muted);margin-top:3px;}
+.resumo-total,.pgto-total{font-weight:800;font-size:18px;color:var(--success);}
+.pgto-card{display:block;}
+.pgto-name{font-weight:700;font-size:15px;color:var(--text);}
+.pgto-pix{font-size:12px;color:var(--muted);margin-top:2px;font-style:italic;}
+.pgto-detail{font-size:12px;color:var(--muted);margin-top:4px;}
+.user-actions{display:flex;gap:6px;flex-wrap:wrap;}
+/* MISC */
+.alert{padding:10px 14px;border-radius:var(--radius-sm);font-size:13px;margin-bottom:12px;display:none;font-weight:500;}
+.alert.success{background:var(--success-lt);border:1.5px solid #B8DFC9;color:var(--success);display:block;}
+.alert.error{background:var(--danger-lt);border:1.5px solid #F5C0BA;color:var(--danger);display:block;}
+.divider{height:1.5px;background:var(--border);margin:14px 0;}
+.info-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:13px;border-bottom:1.5px solid var(--border);}
+.info-row:last-child{border-bottom:none;}.info-row .lbl{color:var(--muted);}
+.empty-state{text-align:center;padding:48px 20px;color:var(--muted);}
+.empty-state .icon{font-size:40px;margin-bottom:12px;}.empty-state p{font-size:14px;line-height:1.6;}
+.obs-box{background:var(--accent-lt);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:10px 14px;font-size:13px;margin-bottom:12px;color:var(--text2);}
+textarea{width:100%;min-height:70px;resize:vertical;font-size:13px;line-height:1.5;background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;padding:10px 12px;transition:border-color .15s;}
+textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea:disabled{opacity:.5;}
+.summary-bar{display:flex;gap:16px;flex-wrap:wrap;background:var(--accent-lt);border:1.5px solid #EDCBA0;border-radius:8px;padding:10px 16px;margin-bottom:14px;font-size:13px;}
+.summary-bar span{color:var(--muted);}.summary-bar strong{color:var(--accent-dk);font-weight:800;}
+.bloqueado-banner{border-radius:8px;padding:11px 14px;font-size:13px;margin-bottom:14px;line-height:1.5;font-weight:500;}
+.bloqueado-banner.warn{background:var(--accent-lt);border:1.5px solid #EDCBA0;color:var(--accent-dk);}
+.bloqueado-banner.lock{background:var(--danger-lt);border:1.5px solid #F5C0BA;color:var(--danger);}
+.sync-indicator{font-size:11px;font-weight:600;}
+.sync-indicator.saving{color:var(--accent-dk);}.sync-indicator.saved{color:var(--success);}
+.loading-spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--border2);border-top-color:var(--accent);border-radius:50%;animation:spin .6s linear infinite;vertical-align:middle;margin-right:6px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(26,23,20,.55);backdrop-filter:blur(3px);z-index:200;align-items:center;justify-content:center;padding:16px;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:var(--surface);border:1.5px solid var(--border);border-radius:14px;padding:24px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow-md);}
+.modal-title{font-size:16px;font-weight:800;color:var(--text);margin-bottom:12px;letter-spacing:-.3px;}
+.modal-sub{font-size:13px;color:var(--muted);margin-bottom:14px;}
+.qr-section{display:none;margin-top:14px;padding-top:12px;border-top:1px solid var(--border);flex-direction:row;align-items:flex-start;gap:16px;}
+.qr-section.visible{display:flex;}
+.qr-info{font-size:11px;color:var(--muted);}
+.qr-info strong{display:block;font-size:13px;color:var(--text2);margin-bottom:4px;font-weight:700;}
+.import-zone{border:2px dashed var(--border2);border-radius:12px;padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;background:var(--surface2);margin-bottom:14px;}
+.import-zone:hover{border-color:var(--accent);background:var(--accent-lt);}
+.scan-result{background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:14px;display:none;}
+.scan-result.visible{display:block;}.scan-result.ok{border-color:#B8DFC9;}
+@media print{.no-print{display:none!important;}body{background:#fff!important;color:#000!important;}.header,.tabs{display:none!important;}.main{padding:0!important;max-width:100%!important;}.card{border:1px solid #ddd!important;box-shadow:none!important;}.emp-row{border:1px solid #ddd!important;}}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="loginScreen">
+  <div class="login-wrap">
+    <div class="login-brand">
+      <div class="login-brand-eyebrow">Peixaria</div>
+      <div class="login-brand-title">Primus</div>
+      <div class="login-brand-sub">Sistema de Gestão</div>
+    </div>
+    <div class="login-card">
+      <div class="login-field"><div class="login-label">E-mail</div><input type="email" id="loginEmail" class="login-input" placeholder="seu@email.com" autocomplete="username"></div>
+      <div class="login-field"><div class="login-label">Senha</div><input type="password" id="loginPass" class="login-input" placeholder="••••••••" autocomplete="current-password"></div>
+      <button class="login-btn" id="loginBtn" onclick="doLogin()">Entrar</button>
+      <div class="login-error" id="loginError"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EXTRA -->
+<div class="modal-overlay" id="modalExtra"><div class="modal-box">
+  <div class="modal-title">➕ Funcionário Extra do Dia</div>
+  <div class="form-group"><div class="field-label">Nome completo</div><input type="text" id="extNome" class="form-input" placeholder="Nome"></div>
+  <div class="form-group"><div class="field-label">Função no dia</div><select id="extCargo" class="form-select" onchange="preencherDiariaExtra()"><option>Gerente</option><option>Garçom</option><option>Cumim</option><option>Cozinheiro</option>
+        <option>Bar</option><option>Aux. Bar</option><option>Caixa</option><option>Recepcionista</option>
+        <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div>
+  <div class="form-group"><div class="field-label">Chave Pix</div><input type="text" id="extPix" class="form-input" placeholder="CPF, celular, e-mail ou conta Itaú"></div>
+  <div class="form-group"><div class="field-label">Diária (R$) <span id="extHint" style="color:var(--muted);font-weight:400;text-transform:none;font-size:11px"></span></div><input type="number" id="extDiaria" class="form-input" step="0.01"></div>
+  <div id="segAuxWrap" style="display:none" class="form-group">
+    <div class="field-label">Auxiliares de Segurança (R$120 cada)</div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <button type="button" onclick="ajustarAuxExtra(-1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-size:20px;width:40px;height:40px;cursor:pointer;font-weight:700">−</button>
+      <span id="auxExtCount" style="font-size:24px;font-weight:800;min-width:28px;text-align:center">2</span>
+      <button type="button" onclick="ajustarAuxExtra(1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-size:20px;width:40px;height:40px;cursor:pointer;font-weight:700">+</button>
+      <span id="auxExtTotal" style="font-size:13px;color:var(--muted);font-weight:600"></span>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:6px">
+    <button class="btn btn-primary" style="flex:1" onclick="confirmarExtra()">✅ Adicionar</button>
+    <button class="btn btn-secondary" onclick="fecharModal('modalExtra')">Cancelar</button>
+  </div>
+</div></div>
+
+<!-- MODAL CARGO -->
+<div class="modal-overlay" id="modalCargo"><div class="modal-box">
+  <div class="modal-title">🔄 Função de Hoje</div>
+  <div class="modal-sub" id="modalCargoNome"></div>
+  <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Muda só para este dia. O cadastro permanente não é alterado.</p>
+  <div class="form-group"><div class="field-label">Função no dia</div><select id="modalCargoSel" class="form-select"><option>Gerente</option><option>Garçom</option><option>Cumim</option><option>Cozinheiro</option>
+        <option>Bar</option><option>Aux. Bar</option><option>Caixa</option><option>Recepcionista</option>
+        <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-primary" style="flex:1" onclick="confirmarCargo()">✅ Confirmar</button>
+    <button class="btn btn-secondary" onclick="fecharModal('modalCargo')">Cancelar</button>
+  </div>
+</div></div>
+
+<!-- MODAL REABRIR -->
+<div class="modal-overlay" id="modalReabrir"><div class="modal-box">
+  <div class="modal-title">🔴 Reabrir Dia</div>
+  <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Informe o motivo. Ficará registrado no histórico permanente.</p>
+  <textarea id="reabrirMotivo" style="margin-bottom:12px" placeholder="Ex: Erro no valor da gorjeta..."></textarea>
+  <div style="display:flex;gap:8px">
+    <button class="btn btn-danger" style="flex:1" onclick="confirmarReabrir()">Confirmar Reabertura</button>
+    <button class="btn btn-secondary" onclick="fecharModal('modalReabrir')">Cancelar</button>
+  </div>
+</div></div>
+
+<!-- MODAL EDITAR FUNCIONÁRIO -->
+<div class="modal-overlay" id="modalEditFunc"><div class="modal-box">
+  <div class="modal-title">✏️ Editar Funcionário</div>
+  <input type="hidden" id="editFuncId">
+  <div class="cad-form">
+    <div class="grid2"><div><div class="field-label">Nome</div><input type="text" id="editNome" class="form-input"></div><div><div class="field-label">Cargo</div><select id="editCargo" class="form-select"><option>Gerente</option><option>Garçom</option><option>Cumim</option><option>Cozinheiro</option>
+        <option>Bar</option><option>Aux. Bar</option><option>Caixa</option><option>Recepcionista</option>
+        <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div></div>
+    <div class="grid2"><div><div class="field-label">Tipo</div><select id="editTipo" class="form-select"><option value="fixo">Fixo (registrado)</option><option value="frequente">Frequente (vai sempre)</option></select></div><div><div class="field-label">Diária Padrão (R$)</div><input type="number" id="editDiaria" class="form-input" step="0.01"></div></div>
+    <div><div class="field-label">Chave Pix</div><input type="text" id="editPix" class="form-input"></div>
+    <div id="editFuncAlert" class="alert"></div>
+    <div style="display:flex;gap:8px;margin-top:4px"><button class="btn btn-primary" style="flex:1" onclick="salvarEdicaoFunc()">✅ Salvar</button><button class="btn btn-secondary" onclick="fecharModal('modalEditFunc')">Cancelar</button></div>
+  </div>
+</div></div>
+
+<!-- MODAL NOVO USUÁRIO -->
+<div class="modal-overlay" id="modalNovoUsuario"><div class="modal-box">
+  <div class="modal-title">👤 Novo Usuário</div>
+  <div class="form-group"><div class="field-label">Nome completo</div><input type="text" id="nuNome" class="form-input" placeholder="Nome"></div>
+  <div class="form-group"><div class="field-label">E-mail</div><input type="email" id="nuEmail" class="form-input" placeholder="email@exemplo.com"></div>
+  <div class="form-group"><div class="field-label">Senha</div><input type="password" id="nuSenha" class="form-input" placeholder="Mínimo 8 caracteres"></div>
+  <div class="form-group"><div class="field-label">Perfil de Acesso</div>
+    <select id="nuPerfil" class="form-select"><option value="gerente">Gerente — só Presença</option><option value="financeiro">Financeiro — Fechamento e Pagamentos</option><option value="diretoria">Diretoria — tudo + Reabrir dias</option><option value="admin">Admin — acesso total</option></select>
+  </div>
+  <div id="nuAlert" class="alert"></div>
+  <div style="display:flex;gap:8px;margin-top:4px"><button class="btn btn-primary" style="flex:1" onclick="criarUsuario()">✅ Criar Usuário</button><button class="btn btn-secondary" onclick="fecharModal('modalNovoUsuario')">Cancelar</button></div>
+</div></div>
+
+<!-- APP -->
+<div id="appScreen">
+  <div class="header">
+    <div class="logo">
+      <div class="logo-icon">🐟</div>
+      <div class="logo-text"><div class="logo-name">Primus</div><div class="logo-sub">Peixaria · Gestão</div></div>
+    </div>
+    <div class="header-right">
+      <div class="user-info"><div class="user-name" id="userLabel"></div><div><span id="perfilBadge" class="perfil-badge"></span></div></div>
+      <button class="btn-logout" onclick="doLogout()">Sair</button>
+    </div>
+  </div>
+
+  <div class="tabs" id="tabsBar">
+    <div class="tab hidden" data-tab="presenca"   onclick="showTab('presenca',this)">📋 Presença</div>
+    <div class="tab hidden" data-tab="calendario" onclick="showTab('calendario',this)">📅 Calendário</div>
+    <div class="tab hidden" data-tab="fechamento" onclick="showTab('fechamento',this)">💰 Fechamento</div>
+    <div class="tab hidden" data-tab="pagamentos" onclick="showTab('pagamentos',this)">💳 Pagamentos</div>
+    <div class="tab hidden" data-tab="historico"  onclick="showTab('historico',this)">📋 Histórico</div>
+    <div class="tab hidden" data-tab="resumo"     onclick="showTab('resumo',this)">📊 Resumo</div>
+    <div class="tab hidden" data-tab="cadastro"   onclick="showTab('cadastro',this)">👥 Funcionários</div>
+    <div class="tab hidden" data-tab="usuarios"   onclick="showTab('usuarios',this)">🔑 Usuários</div>
+    <div class="tab hidden" data-tab="qrfallback" onclick="showTab('qrfallback',this)">📥 QR Fallback</div>
+  </div>
+
+  <div class="main">
+    <!-- PRESENÇA -->
+    <div class="section" id="sec-presenca">
+      <div class="card no-print">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>Selecione o Dia</span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button onclick="mudarMesGer(-1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;color:var(--text2);cursor:pointer;font-size:16px;padding:3px 12px;font-weight:700">‹</button>
+            <span id="gerCalLabel" style="font-size:13px;font-weight:700;min-width:130px;text-align:center"></span>
+            <button onclick="mudarMesGer(1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;color:var(--text2);cursor:pointer;font-size:16px;padding:3px 12px;font-weight:700">›</button>
+          </div>
+        </div>
+        <div class="cal-grid" id="gerCalGrid"></div>
+        <div style="display:flex;gap:14px;margin-top:10px;font-size:11px;flex-wrap:wrap;font-weight:600">
+          <span style="color:#1A6FA8">🔵 Em aberto</span><span style="color:var(--accent-dk)">🟡 Aguardando</span><span style="color:var(--success)">🟢 Fechado</span>
+        </div>
+      </div>
+      <div id="gerContent" style="display:none">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px" class="no-print">
+          <div id="gerStatusPill"></div><div class="sync-indicator" id="syncIndicator"></div>
+        </div>
+        <div id="gerBanner" class="bloqueado-banner" style="display:none"></div>
+        <div class="summary-bar no-print">
+          <div><span>Data: </span><strong id="gerSumDate">—</strong></div>
+          <div><span>Presentes: </span><strong id="gerPres">0</strong></div>
+          <div><span>Ausentes: </span><strong id="gerAus">0</strong></div>
+          <div><span>Atrasados: </span><strong id="gerAtras">0</strong></div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+            <span>Funcionários</span>
+            <div style="display:flex;gap:4px" class="no-print">
+              <button onclick="setFiltro('todos')" id="ftTodos" class="btn btn-primary btn-sm">Todos</button>
+              <button onclick="setFiltro('fixos')" id="ftFixos" class="btn btn-secondary btn-sm">Fixos</button>
+              <button onclick="setFiltro('frequentes')" id="ftFreq" class="btn btn-secondary btn-sm">Frequentes</button>
+            </div>
+          </div>
+          <div style="font-size:12px;color:var(--muted);margin-bottom:12px;font-weight:500" id="gerEmpCount"></div>
+          <div id="grpFixos" class="grupo-section"><div class="grupo-header">🏷️ Fixos</div><div class="emp-list" id="listFixos"></div></div>
+          <div id="grpFreq" class="grupo-section"><div class="grupo-header">🔄 Frequentes</div><div class="emp-list" id="listFreq"></div><div id="emptyFreq" style="font-size:13px;color:var(--muted);padding:8px 0;display:none">Nenhum frequente cadastrado</div></div>
+          <div id="grpExtras" class="grupo-section"><div class="grupo-header">➕ Extras do Dia</div><div class="emp-list" id="listExtras"></div></div>
+          <div id="btnAddExtra" style="margin-top:10px;display:none" class="no-print">
+            <button class="btn btn-secondary btn-block" style="border-style:dashed" onclick="abrirModal('modalExtra');preencherDiariaExtra()">➕ Adicionar Extra do Dia</button>
+          </div>
+        </div>
+        <div class="card"><div class="card-title">Observações do Dia</div><textarea id="gerObs" placeholder="Ocorrências, avisos, informações para o Jhonathan..."></textarea></div>
+        <div id="gerAlert" class="alert"></div>
+        <div id="gerAcoes" class="no-print"></div>
+        <div style="margin-top:10px" class="no-print" id="gerQrWrap">
+          <button class="btn btn-secondary btn-block" onclick="toggleGerQR()" style="font-size:12px">📄 Gerar QR Code (contingência offline)</button>
+          <div class="qr-section" id="gerQrSection"><div id="gerQrCanvas"></div><div class="qr-info"><strong>QR Code de Contingência</strong>Use só sem internet.<br><span id="gerQrSize"></span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CALENDÁRIO -->
+    <div class="section" id="sec-calendario">
+      <div class="section-header">
+        <div class="section-title">Calendário</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button onclick="mudarMesFin(-1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;color:var(--text2);cursor:pointer;padding:5px 14px;font-size:16px;font-weight:700">‹</button>
+          <span id="finCalLabel" style="font-size:14px;font-weight:700;min-width:155px;text-align:center"></span>
+          <button onclick="mudarMesFin(1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;color:var(--text2);cursor:pointer;padding:5px 14px;font-size:16px;font-weight:700">›</button>
+          <button class="btn btn-secondary btn-sm" onclick="carregarCalFin()">🔄</button>
+        </div>
+      </div>
+      <div style="display:flex;gap:14px;margin-bottom:14px;font-size:12px;flex-wrap:wrap;font-weight:600">
+        <span style="color:var(--muted)">⬜ Sem registro</span><span style="color:#1A6FA8">🔵 Em Aberto</span><span style="color:var(--accent-dk)">🟡 Aguardando</span><span style="color:var(--success)">🟢 Fechado</span><span style="color:var(--danger)">🔴 Reaberto</span>
+      </div>
+      <div class="cal-grid" id="finCalGrid"></div>
+    </div>
+
+    <!-- FECHAMENTO -->
+    <div class="section" id="sec-fechamento">
+      <div class="section-header"><div class="section-title">Fechamento do Dia</div><div id="fechStatusPill"></div></div>
+      <div id="fechAlert" class="alert"></div>
+      <div id="fechContent" style="display:none">
+        <div id="fechObsBox"></div>
+        <div class="card">
+          <div class="card-title">Taxa de Serviço (Gorjeta)</div>
+          <div class="gorjeta-grid">
+            <div><div class="field-label">Total da Gorjeta</div><div class="money-wrap"><span>R$</span><input type="number" class="money-input" id="gorjetaTotal" placeholder="0,00" step="0.01" oninput="calcGorjeta()"></div></div>
+            <div><div class="field-label">Divisão por Setor</div><div class="gorjeta-chips" id="gorjetaChips"></div></div>
+          </div>
+        </div>
+        <div class="card"><div class="card-title">Diárias</div><div id="diariasList"></div></div>
+        <div class="card">
+          <div class="card-title">Resumo do Dia</div>
+          <table class="result-table">
+            <thead><tr><th>Funcionário</th><th>Cargo</th><th class="right">Diária</th><th class="right">Gorjeta</th><th class="right">Consumo</th><th class="right">Total</th></tr></thead>
+            <tbody id="resultBody"></tbody>
+          </table>
+        </div>
+        <div id="fechAlert2" class="alert"></div>
+        <div id="fechAcoes"></div>
+      </div>
+      <div id="fechEmpty" class="empty-state"><div class="icon">📅</div><p>Selecione um dia no <strong>Calendário</strong></p></div>
+    </div>
+
+    <!-- PAGAMENTOS -->
+    <div class="section" id="sec-pagamentos">
+      <div class="section-header"><div class="section-title">Pagamentos</div></div>
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
+        <div><div class="field-label">Período</div><select id="pgtoTipo" class="form-select" style="max-width:200px" onchange="onPgtoTipo()"><option value="semana">Esta Semana (Qua–Dom)</option><option value="semana_ant">Semana Anterior</option><option value="mes">Este Mês</option><option value="custom">Personalizado</option></select></div>
+        <div id="pgtoCustom" style="display:none;gap:8px;flex-wrap:wrap"><div><div class="field-label">De</div><input type="date" id="pgtoDe" class="form-input" style="max-width:150px"></div><div><div class="field-label">Até</div><input type="date" id="pgtoAte" class="form-input" style="max-width:150px"></div><div style="align-self:flex-end"><button class="btn btn-primary btn-sm" onclick="renderPagamentos()">Buscar</button></div></div>
+        <button class="btn btn-secondary btn-sm" onclick="renderPagamentos()" style="align-self:flex-end">Atualizar</button>
+        <button class="btn btn-secondary btn-sm" onclick="window.print()" style="align-self:flex-end">🖨️ Imprimir</button>
+      </div>
+      <div id="pgtoAlert" class="alert"></div><div id="pgtoContent"></div>
+    </div>
+
+    <!-- HISTÓRICO -->
+    <div class="section" id="sec-historico">
+      <div class="section-header"><div class="section-title">Histórico</div><button class="btn btn-secondary btn-sm" onclick="renderHistorico()">🔄</button></div>
+      <div id="historicoList"></div>
+    </div>
+
+    <!-- RESUMO -->
+    <div class="section" id="sec-resumo">
+      <div class="section-header"><div class="section-title">Resumo Mensal</div></div>
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <select id="resumoMes" class="form-select" style="max-width:210px" onchange="renderResumo()"><option value="">Todos os meses</option></select>
+        <button class="btn btn-secondary btn-sm" onclick="window.print()">🖨️ Imprimir</button>
+      </div>
+      <div id="resumoContent"></div>
+    </div>
+
+    <!-- FUNCIONÁRIOS -->
+    <div class="section" id="sec-cadastro">
+      <div class="section-header"><div class="section-title">Funcionários</div></div>
+      <div class="card">
+        <div class="card-title">Novo Funcionário</div>
+        <div class="cad-form">
+          <div class="grid2"><div><div class="field-label">ID Fixo</div><input type="text" id="cadId" class="form-input" placeholder="EMP016"></div><div><div class="field-label">Nome</div><input type="text" id="cadNome" class="form-input" placeholder="Nome completo"></div></div>
+          <div class="grid2"><div><div class="field-label">Cargo</div><select id="cadCargo" class="form-select"><option>Gerente</option><option>Garçom</option><option>Cumim</option><option>Cozinheiro</option>
+        <option>Bar</option><option>Aux. Bar</option><option>Caixa</option><option>Recepcionista</option>
+        <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div><div><div class="field-label">Tipo</div><select id="cadTipo" class="form-select"><option value="fixo">Fixo (registrado)</option><option value="frequente">Frequente (vai sempre)</option></select></div></div>
+          <div class="grid2"><div><div class="field-label">Diária Padrão (R$)</div><input type="number" id="cadDiaria" class="form-input" step="0.01"></div><div><div class="field-label">Chave Pix</div><input type="text" id="cadPix" class="form-input" placeholder="CPF, celular ou e-mail"></div></div>
+          <div id="cadAlert" class="alert"></div>
+          <button class="btn btn-primary" onclick="addFunc()">➕ Adicionar</button>
+        </div>
+      </div>
+      <div class="card"><div class="card-title">Funcionários Cadastrados</div><div id="cadList"></div></div>
+    </div>
+
+    <!-- USUÁRIOS (admin) -->
+    <div class="section" id="sec-usuarios">
+      <div class="section-header">
+        <div class="section-title">Usuários do Sistema</div>
+        <button class="btn btn-primary" onclick="abrirModal('modalNovoUsuario')">➕ Novo Usuário</button>
+      </div>
+      <div class="card" style="background:var(--accent-lt);border-color:#EDCBA0;margin-bottom:16px">
+        <div style="font-size:13px;color:var(--accent-dk);line-height:1.6"><strong>ℹ️ Atenção:</strong> Ao criar um usuário ele acessa o sistema imediatamente. O perfil determina o que pode ver e fazer. Guarde as senhas com segurança.</div>
+      </div>
+      <div id="usuariosAlert" class="alert"></div>
+      <div id="usuariosList"></div>
+    </div>
+
+    <!-- QR FALLBACK -->
+    <div class="section" id="sec-qrfallback">
+      <div class="section-header"><div class="section-title">Importar QR Code</div></div>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.6">Use apenas quando o gerente enviou PDF sem internet. O fluxo normal é via nuvem.</p>
+      <div class="import-zone" onclick="document.getElementById('qrFileInput').click()" ondragover="event.preventDefault()" ondrop="onQRDrop(event)">
+        <div style="font-size:38px;margin-bottom:10px">📄</div>
+        <div style="font-weight:700;font-size:15px;margin-bottom:4px">Clique ou arraste o PDF / imagem</div>
+        <div style="font-size:13px;color:var(--muted)">O sistema lê o QR Code automaticamente</div>
+      </div>
+      <input type="file" id="qrFileInput" style="display:none" accept="image/*,application/pdf" onchange="handleQRFile(this.files[0])">
+      <div id="qrImportAlert" class="alert"></div>
+      <div class="scan-result" id="qrScanResult">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;flex-wrap:wrap"><div style="font-size:17px;font-weight:800" id="qrScanDate"></div><div id="qrScanBadge" style="font-size:12px;padding:4px 10px;border-radius:20px;background:var(--success-lt);color:var(--success);font-weight:700"></div></div>
+        <div id="qrObsBox"></div><div class="emp-list" id="qrEmpList"></div>
+        <div class="divider"></div>
+        <button class="btn btn-success btn-block" onclick="importarQR()">✅ Confirmar Importação</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ══ FIREBASE CONFIG ══ */
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyDEo7pB-dLtSHFGjqvYf8Bt8n7VSu5HdrY",
+  authDomain:        "projeto-primus-9b643.firebaseapp.com",
+  projectId:         "projeto-primus-9b643",
+  storageBucket:     "projeto-primus-9b643.firebasestorage.app",
+  messagingSenderId: "547842320766",
+  appId:             "1:547842320766:web:a87b857ce7c2d434cdab2f"
+};
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth = firebase.auth();
+const db   = firebase.firestore();
+
+/* ══ CONSTANTES ══ */
+const CARGOS = [
+  'Gerente','Garçom','Cumim','Cozinheiro','Bar','Aux. Bar',
+  'Caixa','Recepcionista','Monitora','Aux. Cozinha','Limpeza','Segurança'
+];
+
+const CARGO_SETOR = {
+  'Garçom':'garcom','Bar':'bar','Cozinheiro':'cozinha','Cumim':'cumim',
+  'Gerente':'gerente','Limpeza':'outros','Recepcionista':'outros','Monitora':'outros',
+  'Aux. Cozinha':'cozinha','Caixa':'outros','Segurança':'outros',
+  'Aux. Bar':'bar','Parquinho':'outros','Professor':'outros',
+};
+
+// Diária padrão por cargo (0 = sem diária fixa)
+const DIARIA_PADRAO = {
+  'Gerente':    0,
+  'Garçom':     80,
+  'Cumim':      100,
+  'Cozinheiro': 0,
+  'Bar':        0,
+  'Aux. Bar':   80,
+  'Caixa':      150,
+  'Recepcionista': 120,
+  'Monitora':   120,
+  'Aux. Cozinha': 140,
+  'Limpeza':    120,
+  'Segurança':  200,
+};
+
+const STATUS_LABEL = {
+  em_aberto:'🔵 Em Aberto', aguardando_fechamento:'🟡 Aguardando Fechamento',
+  fechado:'🟢 Fechado', reaberto:'🔴 Reaberto',
+};
+
+/* ══ ESTADO ══ */
+let currentUser = null, currentPerfil = null, currentDate = '';
+let funcionarios = [], dayStatus = null, dayDocExists = false, saveTimer = null;
+let calAno = new Date().getFullYear(), calMes = new Date().getMonth();
+let diasStatus = {}, modalCargoIdx = -1;
+
+/* ══ AUTH ══ */
+auth.onAuthStateChanged(async user => {
+  if (!user) { showLogin(); return; }
+  try {
+    const snap = await db.collection('usuarios').doc(user.uid).get();
+    if (!snap.exists || !snap.data().ativo) { await auth.signOut(); showLogin(); return; }
+    const data = snap.data();
+    if (!['gerente','admin'].includes(data.perfil)) {
+      await auth.signOut(); showLogin('Acesso restrito ao módulo gerente.'); return;
+    }
+    currentUser = user; currentPerfil = data.perfil;
+    document.getElementById('userLabel').textContent = data.nome || user.email;
+    showApp();
+  } catch(e) { await auth.signOut(); showLogin('Erro: ' + e.message); }
+});
+
+function showLogin(msg='') {
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('appScreen').style.display = 'none';
+  if (msg) { const el=document.getElementById('loginError'); el.textContent=msg; el.classList.add('show'); }
+}
+function showApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appScreen').style.display = 'block';
+  document.getElementById('obsInput').addEventListener('input', () => autoSave());
+  carregarStatusMes();
+}
+async function doLogin() {
+  const email=document.getElementById('loginEmail').value.trim();
+  const pass=document.getElementById('loginPass').value;
+  const btn=document.getElementById('loginBtn');
+  document.getElementById('loginError').classList.remove('show');
+  btn.disabled=true; btn.innerHTML='<span class="loading-spinner"></span>Entrando...';
+  try { await auth.signInWithEmailAndPassword(email, pass); }
+  catch(e) {
+    document.getElementById('loginError').textContent = e.code==='auth/invalid-credential'?'E-mail ou senha incorretos.':e.message;
+    document.getElementById('loginError').classList.add('show');
+    btn.disabled=false; btn.textContent='Entrar';
+  }
+}
+async function doLogout() { await auth.signOut(); }
+document.addEventListener('keydown', e => {
+  if (e.key==='Enter' && document.getElementById('loginScreen').style.display!=='none') doLogin();
+});
+
+/* ══ UTILS ══ */
+function todayStr() { return new Date().toISOString().split('T')[0]; }
+function fmtDate(d) {
+  const [y,m,day]=d.split('-');
+  const n=['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
+  return `${n[new Date(+y,+m-1,+day).getDay()]}, ${day}/${m}/${y}`;
+}
+function setor(cargo) { return CARGO_SETOR[cargo]||'outros'; }
+function showAlert(id,msg,type,dur=5000) {
+  const el=document.getElementById(id); el.textContent=msg; el.className='alert '+type;
+  if(dur) setTimeout(()=>el.className='alert',dur);
+}
+function setSyncStatus(st) {
+  const el=document.getElementById('syncIndicator');
+  if(st==='saving'){el.className='sync-indicator saving';el.textContent='⏳ Salvando...';}
+  else if(st==='saved'){el.className='sync-indicator saved';el.textContent='✅ Salvo na nuvem';}
+  else{el.className='sync-indicator';el.textContent='';}
+}
+
+/* ══ CALENDÁRIO ══ */
+async function carregarStatusMes() {
+  const anoMes = `${calAno}-${String(calMes+1).padStart(2,'0')}`;
+  try {
+    const snap = await db.collection('presencas_diarias')
+      .where('data','>=',anoMes+'-01').where('data','<=',anoMes+'-31').get();
+    diasStatus = {};
+    snap.docs.forEach(d => { diasStatus[d.id] = d.data().status||'em_aberto'; });
+  } catch(_) { diasStatus = {}; }
+  renderCalendario();
+}
+
+function mudarMes(delta) {
+  calMes += delta;
+  if(calMes<0){calMes=11;calAno--;} if(calMes>11){calMes=0;calAno++;}
+  carregarStatusMes();
+}
+
+function renderCalendario() {
+  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  document.getElementById('calMesLabel').textContent = `${meses[calMes]} ${calAno}`;
+  const grid = document.getElementById('calGrid');
+  const hoje = todayStr();
+  const primeiroDia = new Date(calAno, calMes, 1).getDay();
+  const totalDias   = new Date(calAno, calMes+1, 0).getDate();
+  const diasSem = ['D','S','T','Q','Q','S','S'];
+  let html = diasSem.map(d=>`<div class="cal-sem">${d}</div>`).join('');
+  for(let i=0;i<primeiroDia;i++) html+='<div></div>';
+  for(let d=1;d<=totalDias;d++) {
+    const ds = `${calAno}-${String(calMes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const st = diasStatus[ds];
+    const isHoje = ds===hoje, isSel = ds===currentDate;
+    let bg='transparent',color='var(--muted)';
+    if(st==='em_aberto')             {bg='rgba(79,195,247,.2)';color='#4fc3f7';}
+    else if(st==='aguardando_fechamento'){bg='rgba(232,160,69,.2)';color='var(--accent)';}
+    else if(st==='fechado')          {bg='rgba(63,185,80,.2)';color='var(--success)';}
+    else if(st==='reaberto')         {bg='rgba(248,81,73,.2)';color='var(--danger)';}
+    html+=`<div class="cal-day${isHoje?' hoje':''}${isSel?' selecionado':''}"
+      style="background:${bg};color:${color}"
+      onclick="selecionarDia('${ds}')"
+      title="${ds}${st?' — '+STATUS_LABEL[st]:''}">
+      ${d}</div>`;
+  }
+  grid.innerHTML = html;
+}
+
+async function selecionarDia(dateStr) {
+  currentDate = dateStr;
+  renderCalendario(); // atualiza highlight
+  await carregarDia(dateStr);
+}
+
+/* ══ CARREGAR DIA ══ */
+async function carregarDia(dateStr) {
+  document.getElementById('mainContent').style.display = 'none';
+  setSyncStatus('');
+  try {
+    const fSnap = await db.collection('funcionarios').where('ativo','==',true).get();
+    const funcsCadastrados = fSnap.docs.map(d=>({id:d.id,...d.data()}))
+      .sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
+
+    const daySnap = await db.collection('presencas_diarias').doc(dateStr).get();
+    if(daySnap.exists) {
+      const dayData = daySnap.data();
+      dayStatus = dayData.status; dayDocExists = true;
+      funcionarios = funcsCadastrados.map(f => {
+        const p=(dayData.funcionarios||{})[f.id]||{};
+        // cargo do dia pode ser diferente do cadastro permanente
+        return {id:f.id, nome:f.nome, cargo:p.cargo||f.cargo, cargoPadrao:f.cargo,
+          isExtra:false, isFrequente: f.tipo==='frequente',
+          presente:p.presente!==undefined?p.presente:true,
+          atrasado:p.atrasado||false, consumo:p.consumo||0,
+          auxCount:p.auxCount||0,
+          pix:f.pix||'', diariaPadrao:f.diariaPadrao||DIARIA_PADRAO[f.cargo]||0};
+      });
+      // Extras do dia
+      Object.entries(dayData.funcionarios||{}).forEach(([id,p])=>{
+        if(id.startsWith('EXTRA_')) funcionarios.push({
+          id, nome:p.nome||id, cargo:p.cargo||'Garçom', pix:p.pix||'',
+          diariaPadrao:p.diariaPadrao||DIARIA_PADRAO[p.cargo]||0,
+          isExtra:true, isFrequente:false,
+          presente:p.presente!==false, atrasado:p.atrasado||false,
+          consumo:p.consumo||0, auxCount:p.auxCount||0
+        });
+      });
+      document.getElementById('obsInput').value = dayData.obs||'';
+    } else {
+      dayStatus=null; dayDocExists=false;
+      funcionarios = funcsCadastrados.map(f=>({
+        id:f.id, nome:f.nome, cargo:f.cargo, cargoPadrao:f.cargo,
+        isExtra:false, isFrequente: f.tipo==='frequente',
+        presente:true, atrasado:false, consumo:0, auxCount:0,
+        pix:f.pix||'', diariaPadrao:f.diariaPadrao||DIARIA_PADRAO[f.cargo]||0
+      }));
+      document.getElementById('obsInput').value = '';
+    }
+    document.getElementById('sumDate').textContent = fmtDate(dateStr);
+    document.getElementById('printMeta').innerHTML =
+      `<strong>${fmtDate(dateStr)}</strong><br>Gerado às ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`;
+    renderStatusUI(); renderList();
+    document.getElementById('mainContent').style.display = 'block';
+    document.getElementById('qrSection').classList.remove('visible');
+  } catch(e) { showAlert('mainAlert','❌ Erro ao carregar: '+e.message,'error',0); }
+}
+
+/* ══ STATUS UI ══ */
+function renderStatusUI() {
+  const pillEl = document.getElementById('statusPill');
+  pillEl.innerHTML = dayStatus
+    ? `<span class="status-pill status-${dayStatus}">${STATUS_LABEL[dayStatus]||dayStatus}</span>`
+    : '<span class="status-pill status-em_aberto">🔵 Novo dia</span>';
+
+  const podeEditar = !dayStatus || dayStatus==='em_aberto';
+  const soPodeObs  = dayStatus==='aguardando_fechamento';
+  const bloqueado  = dayStatus==='fechado';
+  const banner = document.getElementById('bloqueadoBanner');
+  if(bloqueado) {
+    banner.textContent='🔒 Dia fechado. Apenas Diretoria ou Admin pode reabrir.';
+    banner.style.display='block';
+  } else if(soPodeObs) {
+    banner.textContent='📤 Enviado para o financeiro. Presença e consumo bloqueados. Somente observações podem ser editadas. Para corrigir presença ou consumo, solicite reabertura ao financeiro/diretoria.';
+    banner.style.display='block';
+  } else { banner.style.display='none'; }
+
+  document.getElementById('addExtraBtn').style.display = podeEditar?'block':'none';
+  document.getElementById('obsInput').disabled = bloqueado;
+
+  const acoesDiv = document.getElementById('acoesDiv');
+  const qrWrap   = document.getElementById('qrWrap');
+  if(bloqueado) { acoesDiv.innerHTML=''; qrWrap.style.display='none'; }
+  else if(soPodeObs) {
+    acoesDiv.innerHTML=`<button class="btn btn-secondary btn-block" onclick="salvarPresenca(true)">💾 Salvar Observações</button>`;
+    qrWrap.style.display='block';
+  } else {
+    acoesDiv.innerHTML=`
+      <button class="btn btn-primary btn-block" onclick="salvarPresenca(false)">💾 Salvar Presença</button>
+      <button class="btn btn-success btn-block" onclick="enviarParaFinanceiro()" style="margin-top:8px">📤 Enviar para o Financeiro</button>`;
+    qrWrap.style.display='block';
+  }
+}
+
+/* ══ FILTRO ══ */
+let filtroAtual = 'todos';
+function setFiltro(f) {
+  filtroAtual = f;
+  ['todos','fixos','frequentes'].forEach(x => {
+    const btn = document.getElementById('filtro'+x.charAt(0).toUpperCase()+x.slice(1));
+    btn.className = x===f ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
+  });
+  renderList();
+}
+
+/* ══ RENDER LIST ══ */
+function renderList() {
+  const podeEditar = !dayStatus || dayStatus==='em_aberto';
+  const fixos     = funcionarios.filter(f => !f.isExtra && !f.isFrequente);
+  const frequentes = funcionarios.filter(f => f.isFrequente);
+  const extras     = funcionarios.filter(f => f.isExtra);
+
+  const renderGrupo = (lista, grupoOffset) => lista.map((f, i) => {
+    const idx = funcionarios.indexOf(f);
+    const st = setor(f.cargo);
+    const cargoChanged = !f.isExtra && !f.isFrequente && f.cargo !== f.cargoPadrao;
+    const isSeguranca  = f.cargo === 'Segurança';
+    return `
+      <div class="emp-row ${f.presente?'presente':'ausente'}">
+        <div class="check-box ${f.presente?'on':''}" onclick="${podeEditar?`togglePresente(${idx})`:''}" style="${!podeEditar?'cursor:default':''}"></div>
+        <div class="emp-name">
+          ${f.nome}
+          ${f.isFrequente?'<span style="font-size:10px;color:#4fc3f7;margin-left:4px">[frequente]</span>':''}
+          ${f.isExtra?'<span style="font-size:10px;color:var(--muted);margin-left:4px">[extra]</span>':''}
+          <small>
+            ${f.cargo}
+            ${cargoChanged?`<span style="color:var(--accent);font-size:10px"> ✏️(padrão: ${f.cargoPadrao})</span>`:''}
+            ${podeEditar&&!f.isExtra?`<span onclick="abrirModalCargo(${idx})" style="color:var(--accent);cursor:pointer;margin-left:6px;font-size:10px">🔄</span>`:''}
+            ${isSeguranca&&f.auxCount>0?`<span style="font-size:10px;color:var(--muted);margin-left:4px">+${f.auxCount} aux.</span>`:''}
+          </small>
+        </div>
+        <span class="badge c-${st}">${f.cargo}</span>
+        ${isSeguranca&&podeEditar?`
+          <div style="display:flex;align-items:center;gap:4px">
+            <button onclick="ajustarAuxIdx(${idx},-1)" style="background:var(--surface);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:13px;width:24px;height:24px;cursor:pointer;line-height:1">−</button>
+            <span style="font-size:12px;min-width:18px;text-align:center;color:var(--muted)">${f.auxCount||0}aux</span>
+            <button onclick="ajustarAuxIdx(${idx},1)" style="background:var(--surface);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:13px;width:24px;height:24px;cursor:pointer;line-height:1">+</button>
+          </div>
+        `:`
+          <button class="late-btn ${f.atrasado?'on':''}"
+            onclick="${podeEditar?`toggleAtrasado(${idx})`:''}"
+            ${!podeEditar?'disabled':''}>
+            ${f.atrasado?'⏰ Atrasado':'No Horário'}
+          </button>
+        `}
+        <input class="cons-input" type="number" placeholder="R$" step="0.01"
+          value="${f.consumo||''}" onchange="setConsumo(${idx},this.value)"
+          ${!podeEditar?'disabled':''} title="Consumo">
+      </div>`;
+  }).join('');
+
+  // Aplicar filtro de visibilidade dos grupos
+  const showFixos    = filtroAtual==='todos'||filtroAtual==='fixos';
+  const showFreq     = filtroAtual==='todos'||filtroAtual==='frequentes';
+  const showExtras   = filtroAtual==='todos';
+
+  document.getElementById('grupoFixos').style.display     = showFixos?'block':'none';
+  document.getElementById('grupoFrequentes').style.display = showFreq?'block':'none';
+  document.getElementById('grupoExtras').style.display    = showExtras?'block':'none';
+
+  document.getElementById('empListFixos').innerHTML      = renderGrupo(fixos);
+  document.getElementById('empListFrequentes').innerHTML = frequentes.length ? renderGrupo(frequentes) : '';
+  document.getElementById('emptyFrequentes').style.display = frequentes.length?'none':'block';
+  document.getElementById('empListExtras').innerHTML     = renderGrupo(extras);
+
+  updateSummary();
+  const total = funcionarios.filter(f=>f.presente).length;
+  const total2 = funcionarios.length;
+  document.getElementById('empCount').textContent =
+    `${total} presentes de ${total2} (${fixos.length} fixos · ${frequentes.length} frequentes · ${extras.length} extras do dia)`;
+}
+
+function togglePresente(i) {
+  funcionarios[i].presente = !funcionarios[i].presente;
+  if(!funcionarios[i].presente) funcionarios[i].atrasado=false;
+  renderList(); autoSave();
+}
+function toggleAtrasado(i) { funcionarios[i].atrasado=!funcionarios[i].atrasado; renderList(); autoSave(); }
+function setConsumo(i,val) { funcionarios[i].consumo=parseFloat(val)||0; updateSummary(); autoSave(); }
+function updateSummary() {
+  document.getElementById('sumPresentes').textContent = funcionarios.filter(f=>f.presente).length;
+  document.getElementById('sumAusentes').textContent  = funcionarios.filter(f=>!f.presente).length;
+  document.getElementById('sumAtrasados').textContent = funcionarios.filter(f=>f.atrasado).length;
+}
+
+/* ══ MODAL EXTRA ══ */
+let auxCountExtra = 2;
+
+function abrirModalExtra() {
+  auxCountExtra = 2;
+  document.getElementById('modalExtra').classList.add('open');
+  document.getElementById('extNome').value='';
+  document.getElementById('extPix').value='';
+  document.getElementById('extDiaria').value='';
+  preencherDiariaExtra();
+}
+function fecharModalExtra() { document.getElementById('modalExtra').classList.remove('open'); }
+
+function preencherDiariaExtra() {
+  const cargo = document.getElementById('extCargo').value;
+  const diaria = DIARIA_PADRAO[cargo] || 0;
+  const input = document.getElementById('extDiaria');
+  const hint  = document.getElementById('extDiariaHint');
+  const segWrap = document.getElementById('segurancaWrap');
+
+  if(cargo === 'Segurança') {
+    segWrap.style.display='block';
+    atualizarTotalSegExtra();
+  } else {
+    segWrap.style.display='none';
+  }
+
+  if(diaria > 0) {
+    input.value = diaria;
+    hint.textContent = `(padrão: R$ ${diaria})`;
+  } else if(cargo === 'Gerente') {
+    input.value = '';
+    hint.textContent = '(Gerente não recebe diária)';
+  } else {
+    input.value = '';
+    hint.textContent = '';
+  }
+}
+
+function ajustarAux(delta) {
+  auxCountExtra = Math.max(0, Math.min(4, auxCountExtra + delta));
+  document.getElementById('auxCount').textContent = auxCountExtra;
+  atualizarTotalSegExtra();
+}
+
+function atualizarTotalSegExtra() {
+  const total = 200 + (auxCountExtra * 120);
+  document.getElementById('auxTotal').textContent = `Total: R$ ${total} (R$200 + ${auxCountExtra}×R$120)`;
+  document.getElementById('extDiaria').value = total;
+}
+
+function confirmarExtra() {
+  const nome   = document.getElementById('extNome').value.trim();
+  const cargo  = document.getElementById('extCargo').value;
+  const pix    = document.getElementById('extPix').value.trim();
+  const diaria = parseFloat(document.getElementById('extDiaria').value)||0;
+  if(!nome){alert('Informe o nome.');return;}
+  const id = 'EXTRA_' + Date.now();
+  funcionarios.push({
+    id, nome, cargo, pix, diariaPadrao: diaria,
+    isExtra:true, isFrequente:false, presente:true, atrasado:false, consumo:0,
+    auxCount: cargo==='Segurança' ? auxCountExtra : 0
+  });
+  fecharModalExtra();renderList();autoSave();
+}
+
+/* ══ SEGURANÇA AUX (em linha na lista) ══ */
+function ajustarAuxIdx(idx, delta) {
+  const f = funcionarios[idx];
+  f.auxCount = Math.max(0, Math.min(4, (f.auxCount||0) + delta));
+  // Atualiza diária automaticamente
+  f.diariaPadrao = 200 + (f.auxCount * 120);
+  renderList(); autoSave();
+}
+
+/* ══ MODAL CARGO ══ */
+function abrirModalCargo(i) {
+  modalCargoIdx=i;
+  document.getElementById('modalCargoNome').textContent=funcionarios[i].nome;
+  document.getElementById('modalCargoSelect').value=funcionarios[i].cargo;
+  document.getElementById('modalCargo').classList.add('open');
+}
+function fecharModalCargo() { document.getElementById('modalCargo').classList.remove('open'); }
+function confirmarCargo() {
+  if(modalCargoIdx<0)return;
+  funcionarios[modalCargoIdx].cargo=document.getElementById('modalCargoSelect').value;
+  fecharModalCargo(); renderList(); autoSave();
+}
+
+/* ══ AUTO-SAVE ══ */
+function autoSave() {
+  clearTimeout(saveTimer); setSyncStatus('saving');
+  saveTimer=setTimeout(()=>salvarPresenca(false,true),1500);
+}
+
+/* ══ SALVAR ══ */
+async function salvarPresenca(apenasObs=false, silencioso=false) {
+  if(!currentDate||!currentUser) return;
+  if(dayStatus==='fechado') return;
+  setSyncStatus('saving');
+  try {
+    const obs=document.getElementById('obsInput').value.trim();
+    const payload = {obs, atualizadoPor:currentUser.uid, atualizadoEm:firebase.firestore.FieldValue.serverTimestamp()};
+    if(!apenasObs) {
+      const funcMap={};
+      funcionarios.forEach(f=>{
+        funcMap[f.id]={nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,
+          presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0,auxCount:f.auxCount||0};
+      });
+      payload.funcionarios=funcMap;
+    }
+    if(!dayDocExists) {
+      payload.data=currentDate; payload.status='em_aberto';
+      payload.registradoPor=currentUser.uid;
+      payload.registradoEm=firebase.firestore.FieldValue.serverTimestamp();
+      payload.statusHistorico=[{de:null,para:'em_aberto',por:currentUser.uid,em:new Date().toISOString(),motivo:''}];
+      if(!payload.funcionarios){const fm={};funcionarios.forEach(f=>{fm[f.id]={nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0};});payload.funcionarios=fm;}
+      await db.collection('presencas_diarias').doc(currentDate).set(payload);
+      dayDocExists=true; dayStatus='em_aberto';
+      diasStatus[currentDate]='em_aberto';
+      renderCalendario(); renderStatusUI();
+    } else {
+      await db.collection('presencas_diarias').doc(currentDate).update(payload);
+    }
+    await auditoria('PRESENCA_SALVA',`presencas_diarias/${currentDate}`,{},{obs,status:dayStatus});
+    setSyncStatus('saved');
+    if(!silencioso) showAlert('mainAlert','✅ Salvo na nuvem!','success');
+  } catch(e) { setSyncStatus(''); showAlert('mainAlert','❌ Erro: '+e.message,'error',0); }
+}
+
+/* ══ ENVIAR PARA FINANCEIRO ══ */
+async function enviarParaFinanceiro() {
+  if(!currentDate||!currentUser) return;
+  if(!confirm('Enviar para o financeiro? Presença e consumo ficam bloqueados para edição.')) return;
+  try {
+    await salvarPresenca(false,true);
+    const novoStatus='aguardando_fechamento';
+    const entrada={de:dayStatus||'em_aberto',para:novoStatus,por:currentUser.uid,em:new Date().toISOString(),motivo:''};
+    await db.collection('presencas_diarias').doc(currentDate).update({
+      status:novoStatus, atualizadoPor:currentUser.uid,
+      atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      statusHistorico:firebase.firestore.FieldValue.arrayUnion(entrada),
+    });
+    dayStatus=novoStatus;
+    diasStatus[currentDate]=novoStatus;
+    await auditoria('STATUS_ALTERADO',`presencas_diarias/${currentDate}`,{status:entrada.de},{status:novoStatus});
+    renderCalendario(); renderStatusUI(); renderList();
+    showAlert('mainAlert','✅ Enviado para o financeiro!','success');
+  } catch(e) { showAlert('mainAlert','❌ Erro: '+e.message,'error',0); }
+}
+
+/* ══ QR ══ */
+function toggleQR() {
+  const sec=document.getElementById('qrSection');
+  if(sec.classList.contains('visible')){sec.classList.remove('visible');return;}
+  const obs=document.getElementById('obsInput').value.trim();
+  const payload={v:2,date:currentDate,ts:Date.now(),obs,
+    presenca:funcionarios.map(f=>({id:f.id,nome:f.nome,cargo:f.cargo,pix:f.pix||'',
+      diariaPadrao:f.diariaPadrao||0,presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0}))};
+  const b64=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  if(b64.length>2800){showAlert('mainAlert','⚠️ Dados grandes para QR. Reduza observações.','error');return;}
+  document.getElementById('qrCanvas').innerHTML='';
+  new QRCode(document.getElementById('qrCanvas'),{text:b64,width:160,height:160,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+  document.getElementById('qrSize').textContent=`${b64.length} chars`;
+  sec.classList.add('visible');
+  setTimeout(()=>window.print(),400);
+}
+
+/* ══ AUDITORIA ══ */
+async function auditoria(acao,entidade,antes,depois) {
+  try { await db.collection('auditoria').add({ts:firebase.firestore.FieldValue.serverTimestamp(),
+    usuarioId:currentUser.uid,usuarioNome:document.getElementById('userLabel').textContent,
+    perfil:currentPerfil,acao,entidade,camposAlterados:Object.keys(depois),valorAntes:antes,valorDepois:depois});
+  } catch(_){}
+}
+
+/* ══ REROUTING tabs/ativarTab from gerente to unified ══ */
+function showTab(tab,el){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('sec-'+tab).classList.add('active');el.classList.add('active');
+  if(tab==='historico')renderHistorico();
+  if(tab==='resumo')renderResumoInit();
+  if(tab==='cadastro')renderCadList();
+  if(tab==='pagamentos')renderPagamentos();
+  if(tab==='calendario')carregarCalFin();
+  if(tab==='usuarios')renderUsuarios();
+}
+function ativarTab(tab){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('sec-'+tab)?.classList.add('active');
+  document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
+}
+function configurarAbas(){
+  const isGer=currentPerfil==='gerente';
+  const isFin=['financeiro','diretoria','admin'].includes(currentPerfil);
+  const isDir=['diretoria','admin'].includes(currentPerfil);
+  const isAdm=currentPerfil==='admin';
+  const tabs={presenca:isGer,calendario:isFin,fechamento:isFin,pagamentos:isFin,historico:isFin,resumo:isFin,cadastro:isDir,usuarios:isAdm,qrfallback:true};
+  Object.entries(tabs).forEach(([tab,vis])=>document.querySelector(`[data-tab="${tab}"]`)?.classList.toggle('hidden',!vis));
+}
+function showApp(){
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('appScreen').style.display='block';
+  document.getElementById('gerObs').addEventListener('input',()=>gerAutoSave());
+  if(currentPerfil==='gerente'){ativarTab('presenca');gerCarregarMes();}
+  else{ativarTab('calendario');carregarCalFin();}
+}
+
+/* ══ FIREBASE ══ */
+const FIREBASE_CONFIG = {
+  apiKey:            "AIzaSyDEo7pB-dLtSHFGjqvYf8Bt8n7VSu5HdrY",
+  authDomain:        "projeto-primus-9b643.firebaseapp.com",
+  projectId:         "projeto-primus-9b643",
+  storageBucket:     "projeto-primus-9b643.firebasestorage.app",
+  messagingSenderId: "547842320766",
+  appId:             "1:547842320766:web:a87b857ce7c2d434cdab2f"
+};
+firebase.initializeApp(FIREBASE_CONFIG);
+const auth = firebase.auth();
+const db   = firebase.firestore();
+
+/* ══ CONSTANTES ══ */
+const CARGO_SETOR = {
+  'Garçom':'garcom','Bar':'bar','Cozinheiro':'cozinha','Cumim':'cumim',
+  'Gerente':'gerente','Limpeza':'outros','Recepcionista':'outros','Monitora':'outros',
+  'Aux. Cozinha':'cozinha','Caixa':'outros','Professor':'outros','Parquinho':'outros',
+  'Aux. Bar':'bar','Segurança':'outros',
+};
+const STATUS_LABEL = {
+  em_aberto:'🔵 Em Aberto', aguardando_fechamento:'🟡 Aguardando Fechamento',
+  fechado:'🟢 Fechado', reaberto:'🔴 Reaberto',
+};
+const COLORS = ['#e8a045','#4fc3f7','#3fb950','#f85149','#a371f7','#79c0ff','#d29922','#56d364'];
+
+/* ══ ESTADO ══ */
+let currentUser=null, currentPerfil=null;
+let finDate=null, finPresentes=[], finGorjetaMap={}, gorjetaRegras={}, finDayStatus=null;
+let pendingQR=null;
+let diasCalAno=new Date().getFullYear(), diasCalMes=new Date().getMonth();
+let diasStatusMap={};
+
+/* ══ AUTH ══ */
+auth.onAuthStateChanged(async user => {
+  if(!user){showLogin();return;}
+  try {
+    const snap=await db.collection('usuarios').doc(user.uid).get();
+    if(!snap.exists||!snap.data().ativo){await auth.signOut();showLogin();return;}
+    const data=snap.data();
+    if(!['financeiro','diretoria','admin'].includes(data.perfil)){
+      await auth.signOut();showLogin('Acesso restrito ao módulo financeiro/gestão.');return;
+    }
+    currentUser=user;currentPerfil=data.perfil;
+    document.getElementById('userLabel').textContent=`${data.nome||user.email} (${data.perfil})`;
+    await carregarGorjetaConfig();
+    configurarAbas();
+    showApp();
+  } catch(e){await auth.signOut();showLogin('Erro: '+e.message);}
+});
+
+function showLogin(msg=''){
+  document.getElementById('loginScreen').style.display='flex';
+  document.getElementById('appScreen').style.display='none';
+  if(msg){const el=document.getElementById('loginError');el.textContent=msg;el.classList.add('show');}
+}
+function showApp(){
+  document.getElementById('loginScreen').style.display='none';
+  document.getElementById('appScreen').style.display='block';
+  carregarDias();
+}
+async function doLogin(){
+  const email=document.getElementById('loginEmail').value.trim();
+  const pass=document.getElementById('loginPass').value;
+  const btn=document.getElementById('loginBtn');
+  document.getElementById('loginError').classList.remove('show');
+  btn.disabled=true;btn.innerHTML='<span class="loading-spinner"></span>Entrando...';
+  try{await auth.signInWithEmailAndPassword(email,pass);}
+  catch(e){
+    document.getElementById('loginError').textContent=e.code==='auth/invalid-credential'?'E-mail ou senha incorretos.':e.message;
+    document.getElementById('loginError').classList.add('show');btn.disabled=false;btn.textContent='Entrar';
+  }
+}
+async function doLogout(){await auth.signOut();}
+document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('loginScreen').style.display!=='none')doLogin();});
+
+function configurarAbas(){
+  const podeAdmin=['diretoria','admin'].includes(currentPerfil);
+  document.querySelector('[data-tab="cadastro"]').classList.toggle('hidden',!podeAdmin);
+}
+
+/* ══ UTILS ══ */
+const fmt=v=>'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+function fmtDate(d){
+  if(!d)return'—';
+  const[y,m,day]=d.split('-');
+  const n=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  return `${n[new Date(+y,+m-1,+day).getDay()]}, ${day}/${m}/${y}`;
+}
+function badge(cargo){const s=CARGO_SETOR[cargo]||'outros';return `<span class="badge c-${s}">${cargo}</span>`;}
+function showAlert(id,msg,type,dur=5000){
+  const el=document.getElementById(id);el.textContent=msg;el.className='alert '+type;
+  if(dur)setTimeout(()=>el.className='alert',dur);
+}
+function hideAlert(id){document.getElementById(id).className='alert';}
+
+function showTab(tab,el){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('sec-'+tab).classList.add('active');
+  el.classList.add('active');
+  if(tab==='historico')renderHistorico();
+  if(tab==='resumo')renderResumoInit();
+  if(tab==='cadastro')renderCadList();
+  if(tab==='pagamentos')renderPagamentos();
+  if(tab==='dias')carregarDias();
+}
+
+/* ══ GORJETA CONFIG ══ */
+async function carregarGorjetaConfig(){
+  try{
+    const snap=await db.collection('configuracoes').doc('gorjeta').get();
+    gorjetaRegras=snap.exists?(snap.data().regras||{}):{};
+  }catch(_){gorjetaRegras={};}
+}
+function pctGorjeta(cargo){return gorjetaRegras[cargo]?.percentual??0;}
+
+/* ══ CALENDÁRIO ══ */
+async function carregarDias(){
+  const anoMes=`${diasCalAno}-${String(diasCalMes+1).padStart(2,'0')}`;
+  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  document.getElementById('diasMesLabel').textContent=`${meses[diasCalMes]} ${diasCalAno}`;
+  try{
+    const snap=await db.collection('presencas_diarias')
+      .where('data','>=',anoMes+'-01').where('data','<=',anoMes+'-31').get();
+    diasStatusMap={};
+    snap.docs.forEach(d=>{diasStatusMap[d.id]=d.data().status||'em_aberto';});
+  }catch(_){diasStatusMap={};}
+  renderCalDias();
+}
+
+function mudarMesDias(delta){
+  diasCalMes+=delta;
+  if(diasCalMes<0){diasCalMes=11;diasCalAno--;}
+  if(diasCalMes>11){diasCalMes=0;diasCalAno++;}
+  carregarDias();
+}
+
+function renderCalDias(){
+  const grid=document.getElementById('diasCalGrid');
+  const hoje=new Date().toISOString().split('T')[0];
+  const primeiroDia=new Date(diasCalAno,diasCalMes,1).getDay();
+  const totalDias=new Date(diasCalAno,diasCalMes+1,0).getDate();
+  const diasSem=['D','S','T','Q','Q','S','S'];
+  let html=diasSem.map(d=>`<div class="cal-sem">${d}</div>`).join('');
+  for(let i=0;i<primeiroDia;i++)html+='<div></div>';
+  for(let d=1;d<=totalDias;d++){
+    const ds=`${diasCalAno}-${String(diasCalMes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const st=diasStatusMap[ds];
+    const isHoje=ds===hoje,isSel=ds===finDate;
+    let bg='rgba(255,255,255,.04)',color='var(--muted)';
+    if(st==='em_aberto'){bg='rgba(79,195,247,.2)';color='#4fc3f7';}
+    else if(st==='aguardando_fechamento'){bg='rgba(232,160,69,.2)';color='var(--accent)';}
+    else if(st==='fechado'){bg='rgba(63,185,80,.2)';color='var(--success)';}
+    else if(st==='reaberto'){bg='rgba(248,81,73,.2)';color='var(--danger)';}
+    html+=`<div class="cal-day${isHoje?' hoje':''}${isSel?' selecionado':''}"
+      style="background:${bg};color:${color}"
+      onclick="selecionarDiaCalendario('${ds}')"
+      title="${fmtDate(ds)}${st?' — '+STATUS_LABEL[st]:''}">
+      ${d}</div>`;
+  }
+  grid.innerHTML=html;
+}
+
+async function selecionarDiaCalendario(dateStr){
+  finDate=dateStr;
+  renderCalDias();
+  // Ir para aba financeiro
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('sec-financeiro').classList.add('active');
+  document.querySelector('[data-tab="financeiro"]').classList.add('active');
+  await loadFin(dateStr);
+}
+
+/* ══ FINANCEIRO ══ */
+async function loadFin(date){
+  finDate=date;
+  document.getElementById('finContent').style.display='none';
+  document.getElementById('finEmpty').style.display='block';
+  hideAlert('finAlert');
+  try{
+    const daySnap=await db.collection('presencas_diarias').doc(date).get();
+    if(!daySnap.exists){showAlert('finAlert','Dia não encontrado.','error',0);return;}
+    const dayData=daySnap.data();
+    finDayStatus=dayData.status;
+    if(currentPerfil==='financeiro'&&finDayStatus==='em_aberto'){
+      showAlert('finAlert','Este dia ainda está em aberto. Aguarde o gerente enviar.','error',0);return;
+    }
+    document.getElementById('finObsBox').innerHTML=dayData.obs?`<div class="obs-box" style="margin-bottom:14px">📝 ${dayData.obs}</div>`:'';
+    document.getElementById('finStatusPill').innerHTML=`<span class="status-pill status-${finDayStatus}">${STATUS_LABEL[finDayStatus]||finDayStatus}</span>`;
+    const fSnap=await db.collection('funcionarios').get();
+    const cadastro={};fSnap.docs.forEach(d=>cadastro[d.id]=d.data());
+    finPresentes=Object.entries(dayData.funcionarios||{})
+      .filter(([,p])=>p.presente!==false)
+      .map(([id,p])=>({
+        id,nome:p.nome,cargo:p.cargo,consumo:p.consumo||0,atrasado:p.atrasado||false,
+        pix:p.pix||cadastro[id]?.pix||'',
+        diariaPadrao:cadastro[id]?.diariaPadrao||p.diariaPadrao||0,
+      }));
+    document.getElementById('gorjetaTotal').value='';
+    const bloqueado=finDayStatus==='fechado';
+    document.getElementById('diariasList').innerHTML=finPresentes.map(f=>`
+      <div class="diaria-row">
+        <div class="diaria-name">${f.nome}<small>${f.cargo}</small></div>
+        ${badge(f.cargo)}
+        <input type="number" class="diaria-input" id="diaria-${f.id}"
+          value="${f.diariaPadrao||''}" step="0.01" oninput="calcResultado()"
+          ${bloqueado?'disabled':''}>
+      </div>`).join('');
+    document.getElementById('finContent').style.display='block';
+    document.getElementById('finEmpty').style.display='none';
+    await carregarDiariasSalvas(date);
+    calcGorjeta();
+    renderFinAcoes(bloqueado);
+  }catch(e){showAlert('finAlert','❌ Erro: '+e.message,'error',0);}
+}
+
+async function carregarDiariasSalvas(date){
+  try{
+    const snaps=await Promise.all(finPresentes.map(f=>db.collection('fechamento_funcionario').doc(`${date}_${f.id}`).get()));
+    let gorjetaTotal=0;
+    snaps.forEach((snap,i)=>{
+      if(snap.exists){
+        const el=document.getElementById(`diaria-${finPresentes[i].id}`);
+        if(el)el.value=snap.data().diaria??'';
+        gorjetaTotal=snap.data().baseGorjeta||gorjetaTotal;
+      }
+    });
+    if(gorjetaTotal){document.getElementById('gorjetaTotal').value=gorjetaTotal;}
+    calcGorjeta();
+  }catch(_){}
+}
+
+function calcGorjeta(){
+  const total=parseFloat(document.getElementById('gorjetaTotal').value)||0;
+  const groups={};
+  finPresentes.forEach(f=>{if(!groups[f.cargo])groups[f.cargo]=[];groups[f.cargo].push(f);});
+  finGorjetaMap={};
+  Object.entries(groups).forEach(([cargo,members])=>{
+    const pct=pctGorjeta(cargo);
+    const pp=members.length?(total*pct)/members.length:0;
+    members.forEach(f=>finGorjetaMap[f.id]=pp);
+  });
+  const seen={};finPresentes.forEach(f=>seen[f.cargo]=(seen[f.cargo]||0)+1);
+  document.getElementById('gorjetaChips').innerHTML=Object.entries(seen).map(([cargo,cnt])=>{
+    const pct=pctGorjeta(cargo);if(!pct)return'';
+    return `<div class="chip"><strong>${cargo}</strong> ${(pct*100).toFixed(0)}% → ${fmt(total*pct)} ÷ ${cnt}</div>`;
+  }).filter(Boolean).join('');
+  calcResultado();
+}
+
+function calcResultado(){
+  let totalDia=0;
+  document.getElementById('resultBody').innerHTML=finPresentes.map(f=>{
+    const diaria=parseFloat(document.getElementById(`diaria-${f.id}`)?.value||0)||0;
+    const gorjeta=finGorjetaMap[f.id]||0;
+    const consumo=f.consumo||0;
+    const total=diaria+gorjeta-consumo;
+    totalDia+=total;
+    const s=CARGO_SETOR[f.cargo]||'outros';
+    return `<tr>
+      <td>${f.nome}${f.atrasado?' <span class="tag-atrasado">⏰</span>':''}</td>
+      <td><span class="badge c-${s}">${f.cargo}</span></td>
+      <td class="right">${fmt(diaria)}</td>
+      <td class="right">${fmt(gorjeta)}</td>
+      <td class="right val-neg">${consumo>0?'- '+fmt(consumo):'—'}</td>
+      <td class="right val-pos">${fmt(total)}</td>
+    </tr>`;
+  }).join('')+`<tr class="total-row"><td colspan="5">Total do Dia</td><td class="right">${fmt(totalDia)}</td></tr>`;
+}
+
+function renderFinAcoes(bloqueado){
+  const el=document.getElementById('finAcoes');
+  const podeFin=['financeiro','admin'].includes(currentPerfil);
+  const podeDir=['diretoria','admin'].includes(currentPerfil);
+  if(bloqueado){
+    el.innerHTML=podeDir
+      ?`<button class="btn btn-danger btn-block" onclick="abrirModalReabrir()">🔴 Reabrir Dia</button>`
+      :`<div class="empty-state" style="padding:16px"><p style="color:var(--muted)">Dia fechado. Somente Diretoria pode reabrir.</p></div>`;
+  } else if(['aguardando_fechamento','reaberto'].includes(finDayStatus)&&podeFin){
+    el.innerHTML=`
+      <button class="btn btn-primary btn-block" onclick="salvarFechamento(false)">💾 Salvar Fechamento</button>
+      <button class="btn btn-success btn-block" onclick="salvarFechamento(true)" style="margin-top:8px">✅ Fechar o Dia</button>`;
+  } else {el.innerHTML='';}
+}
+
+async function salvarFechamento(fechar=false){
+  if(!finDate)return;if(finDayStatus==='fechado')return;
+  try{
+    const gorjetaTotal=parseFloat(document.getElementById('gorjetaTotal').value)||0;
+    const gorjetaDist=Object.values(finGorjetaMap).reduce((a,b)=>a+b,0);
+    let totalDiarias=0,totalConsumos=0,totalLiq=0;
+    const regrasSnap=await db.collection('configuracoes').doc('gorjeta').get();
+    const regrasSnapshot=regrasSnap.exists?regrasSnap.data().regras:{};
+    const batch=db.batch();
+    finPresentes.forEach(f=>{
+      const diaria=parseFloat(document.getElementById(`diaria-${f.id}`)?.value||0)||0;
+      const gorjeta=finGorjetaMap[f.id]||0;
+      const consumo=f.consumo||0;
+      const liq=diaria+gorjeta-consumo;
+      totalDiarias+=diaria;totalConsumos+=consumo;totalLiq+=liq;
+      batch.set(db.collection('fechamento_funcionario').doc(`${finDate}_${f.id}`),{
+        data:finDate,funcId:f.id,nomeSnapshot:f.nome,cargoSnapshot:f.cargo,
+        presente:true,atrasado:f.atrasado,consumo,diaria,gorjeta,
+        baseGorjeta:gorjetaTotal,percentualCargo:pctGorjeta(f.cargo),
+        regrasGorjetaSnapshot:regrasSnapshot,totalLiquido:liq,
+        pix:f.pix||'',
+        criadoPor:currentUser.uid,criadoEm:firebase.firestore.FieldValue.serverTimestamp(),versao:1,
+      },{merge:true});
+    });
+    batch.set(db.collection('fechamento_diario').doc(finDate),{
+      data:finDate,gorjetaTotal,gorjetaDistribuida:gorjetaDist,
+      gorjetaCasa:gorjetaTotal-gorjetaDist,gorjetaPerFunc:finGorjetaMap,
+      regrasGorjetaSnapshot:regrasSnapshot,totalFuncionarios:finPresentes.length,
+      totalDiarias,totalConsumos,totalLiquidoDia:totalLiq,
+      fechadoPor:currentUser.uid,fechadoEm:firebase.firestore.FieldValue.serverTimestamp(),versao:1,
+    },{merge:true});
+    if(fechar){
+      const entrada={de:finDayStatus,para:'fechado',por:currentUser.uid,em:new Date().toISOString(),motivo:''};
+      batch.update(db.collection('presencas_diarias').doc(finDate),{
+        status:'fechado',atualizadoPor:currentUser.uid,
+        atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+        statusHistorico:firebase.firestore.FieldValue.arrayUnion(entrada),
+      });
+    }
+    await batch.commit();
+    await auditoria(fechar?'DIA_FECHADO':'FECHAMENTO_CRIADO',`presencas_diarias/${finDate}`,{},{gorjetaTotal,fechar});
+    if(fechar){
+      finDayStatus='fechado';diasStatusMap[finDate]='fechado';
+      document.getElementById('finStatusPill').innerHTML=`<span class="status-pill status-fechado">${STATUS_LABEL['fechado']}</span>`;
+      renderFinAcoes(true);renderCalDias();
+      showAlert('finAlert2','✅ Dia fechado com sucesso!','success');
+    } else {showAlert('finAlert2','✅ Fechamento salvo!','success');}
+  }catch(e){showAlert('finAlert2','❌ Erro: '+e.message,'error',0);}
+}
+
+function abrirModalReabrir(){document.getElementById('reabrirModal').classList.add('open');}
+function fecharModal(){document.getElementById('reabrirModal').classList.remove('open');}
+async function confirmarReabrir(){
+  const motivo=document.getElementById('reabrirMotivo').value.trim();
+  if(!motivo){alert('Informe o motivo.');return;}
+  try{
+    const entrada={de:'fechado',para:'reaberto',por:currentUser.uid,em:new Date().toISOString(),motivo};
+    await db.collection('presencas_diarias').doc(finDate).update({
+      status:'reaberto',atualizadoPor:currentUser.uid,
+      atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      statusHistorico:firebase.firestore.FieldValue.arrayUnion(entrada),
+    });
+    await auditoria('DIA_REABERTO',`presencas_diarias/${finDate}`,{status:'fechado'},{status:'reaberto',motivo});
+    finDayStatus='reaberto';diasStatusMap[finDate]='reaberto';
+    document.getElementById('finStatusPill').innerHTML=`<span class="status-pill status-reaberto">${STATUS_LABEL['reaberto']}</span>`;
+    fecharModal();renderFinAcoes(false);renderCalDias();
+    finPresentes.forEach(f=>{const el=document.getElementById(`diaria-${f.id}`);if(el)el.disabled=false;});
+    document.getElementById('gorjetaTotal').disabled=false;
+    showAlert('finAlert','✅ Dia reaberto. Corrija e feche novamente.','success');
+  }catch(e){showAlert('finAlert','❌ Erro: '+e.message,'error',0);}
+}
+
+/* ══ PAGAMENTOS ══ */
+function getPeriodo(){
+  const tipo=document.getElementById('pgtoTipo').value;
+  const hoje=new Date();
+  let de,ate;
+  if(tipo==='semana'){
+    const diaSem=hoje.getDay(); // 0=dom
+    const domingo=new Date(hoje);
+    domingo.setDate(hoje.getDate()-diaSem);
+    const sabado=new Date(domingo);sabado.setDate(domingo.getDate()+6);
+    de=domingo.toISOString().split('T')[0];
+    ate=sabado.toISOString().split('T')[0];
+  } else if(tipo==='semana_ant'){
+    const diaSem=hoje.getDay();
+    const domingoAnt=new Date(hoje);domingoAnt.setDate(hoje.getDate()-diaSem-7);
+    const sabadoAnt=new Date(domingoAnt);sabadoAnt.setDate(domingoAnt.getDate()+6);
+    de=domingoAnt.toISOString().split('T')[0];
+    ate=sabadoAnt.toISOString().split('T')[0];
+  } else if(tipo==='mes'){
+    de=`${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}-01`;
+    ate=`${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}-31`;
+  } else {
+    de=document.getElementById('pgtoDe').value;
+    ate=document.getElementById('pgtoAte').value;
+  }
+  return {de,ate};
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  document.getElementById('pgtoTipo').addEventListener('change',()=>{
+    const isCustom=document.getElementById('pgtoTipo').value==='custom';
+    const el=document.getElementById('pgtoCustomDates');
+    el.style.display=isCustom?'flex':'none';
+  });
+});
+
+async function renderPagamentos(){
+  const{de,ate}=getPeriodo();
+  if(!de||!ate){showAlert('pgtoAlert','Selecione o período.','error');return;}
+  const cont=document.getElementById('pgtoContent');
+  cont.innerHTML='<div class="empty-state"><span class="loading-spinner"></span> Buscando...</div>';
+  try{
+    const snap=await db.collection('fechamento_funcionario')
+      .where('data','>=',de).where('data','<=',ate).get();
+    const totals={};
+    snap.docs.forEach(d=>{
+      const r=d.data();if(!r.presente)return;
+      if(!totals[r.funcId])totals[r.funcId]={
+        nome:r.nomeSnapshot,cargo:r.cargoSnapshot,pix:r.pix||'',
+        dias:[],gorjeta:0,diarias:0,consumo:0,total:0
+      };
+      totals[r.funcId].dias.push(r.data);
+      totals[r.funcId].gorjeta+=r.gorjeta||0;
+      totals[r.funcId].diarias+=r.diaria||0;
+      totals[r.funcId].consumo+=r.consumo||0;
+      totals[r.funcId].total+=r.totalLiquido||0;
+    });
+    const sorted=Object.values(totals).sort((a,b)=>b.total-a.total);
+    if(!sorted.length){
+      cont.innerHTML='<div class="empty-state"><div class="icon">💳</div><p>Nenhum fechamento encontrado no período</p></div>';
+      return;
+    }
+    const tipo=document.getElementById('pgtoTipo').value;
+    const periodoLabel=tipo==='semana'?'Esta Semana':tipo==='semana_ant'?'Semana Anterior':tipo==='mes'?'Este Mês':`${de} a ${ate}`;
+    const totalGeral=sorted.reduce((a,t)=>a+t.total,0);
+    cont.innerHTML=`
+      <div class="card" style="background:rgba(232,160,69,.08);border-color:var(--accent)">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div><div style="font-family:'Syne',sans-serif;font-weight:800;font-size:16px">📋 ${periodoLabel}</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:2px">${de} até ${ate} · ${sorted.length} funcionários</div></div>
+          <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:22px;color:var(--accent)">${fmt(totalGeral)}</div>
+        </div>
+      </div>
+      ${sorted.map(t=>{
+        const s=CARGO_SETOR[t.cargo]||'outros';
+        const metodoPgto=t.pix.includes('Itaú')||t.pix.includes('salário')?'🏦 Conta Salário Itaú':t.pix?'📱 Pix: '+t.pix:'❓ Sem chave cadastrada';
+        return `<div class="pgto-card">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+            <div>
+              <div class="pgto-name">${t.nome} <span class="badge c-${s}">${t.cargo}</span></div>
+              <div class="pgto-pix">${metodoPgto}</div>
+              <div class="pgto-detail">
+                ${t.dias.length} dia(s) trabalhado(s) · Diárias: ${fmt(t.diarias)} · Gorjeta: ${fmt(t.gorjeta)}
+                ${t.consumo>0?` · <span style="color:var(--danger)">Consumo: -${fmt(t.consumo)}</span>`:''}
+              </div>
+              <div style="font-size:11px;color:var(--muted);margin-top:4px">Dias: ${t.dias.sort().map(d=>d.split('-').reverse().join('/')).join(', ')}</div>
+            </div>
+            <div class="pgto-total">${fmt(t.total)}</div>
+          </div>
+        </div>`;
+      }).join('')}`;
+  }catch(e){cont.innerHTML=`<div class="empty-state"><p>Erro: ${e.message}</p></div>`;}
+}
+
+function imprimirPagamentos(){
+  window.print();
+}
+
+/* ══ HISTÓRICO ══ */
+async function renderHistorico(){
+  const el=document.getElementById('historicoList');
+  el.innerHTML='<div class="empty-state"><span class="loading-spinner"></span> Carregando...</div>';
+  try{
+    const snap=await db.collection('presencas_diarias').orderBy('data','desc').limit(60).get();
+    if(!snap.size){el.innerHTML='<div class="empty-state"><div class="icon">📋</div><p>Nenhum dia ainda</p></div>';return;}
+    const fechSnaps=await Promise.all(snap.docs.map(d=>db.collection('fechamento_diario').doc(d.id).get()));
+    const fechMap={};fechSnaps.forEach(s=>{if(s.exists)fechMap[s.id]=s.data();});
+    el.innerHTML=snap.docs.map(d=>{
+      const day=d.data(),fech=fechMap[d.id];
+      const funcsMap=day.funcionarios||{};
+      const presentes=Object.entries(funcsMap).filter(([,f])=>f.presente!==false);
+      return `<div class="hist-item">
+        <div class="hist-header" onclick="this.nextElementSibling.classList.toggle('open')">
+          <div>
+            <div class="hist-date">${fmtDate(d.id)}</div>
+            <div style="margin-top:4px"><span class="status-pill status-${day.status||'em_aberto'}">${STATUS_LABEL[day.status]||day.status}</span></div>
+          </div>
+          <div class="hist-meta">
+            <span>${presentes.length} presentes</span>
+            ${fech?`<span class="val">${fmt(fech.totalLiquidoDia)}</span>`:'<span style="color:var(--accent)">Pendente</span>'}
+            <span>▾</span>
+          </div>
+        </div>
+        <div class="hist-body">
+          ${day.obs?`<div class="obs-box" style="margin-bottom:10px">📝 ${day.obs}</div>`:''}
+          ${presentes.map(([id,p])=>{
+            const s=CARGO_SETOR[p.cargo]||'outros';
+            const g=fech?.gorjetaPerFunc?.[id]||0;
+            const di=fech?((fech[`diaria_${id}`]||0)):0;
+            return `<div class="info-row">
+              <span class="lbl">${p.nome||id} <span class="badge c-${s}">${p.cargo}</span>
+                ${p.atrasado?'<span class="tag-atrasado">⏰</span>':''}</span>
+              <span>${fech?fmt(di+g-(p.consumo||0)):'—'}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){el.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`;}
+}
+
+/* ══ RESUMO MENSAL ══ */
+async function renderResumoInit(){
+  const snap=await db.collection('presencas_diarias').orderBy('data','desc').limit(120).get();
+  const meses=new Set(snap.docs.map(d=>d.id.substring(0,7)));
+  const sel=document.getElementById('resumoMes');
+  const cur=sel.value;
+  sel.innerHTML='<option value="">Todos</option>'+[...meses].sort().reverse().map(m=>{
+    const[y,mo]=m.split('-');
+    return `<option value="${m}" ${m===cur?'selected':''}>${new Date(+y,+mo-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</option>`;
+  }).join('');
+  renderResumo();
+}
+
+async function renderResumo(){
+  const mes=document.getElementById('resumoMes').value;
+  const cont=document.getElementById('resumoContent');
+  cont.innerHTML='<div class="empty-state"><span class="loading-spinner"></span></div>';
+  try{
+    let q=db.collection('fechamento_funcionario');
+    if(mes)q=q.where('data','>=',mes+'-01').where('data','<=',mes+'-31');
+    const snap=await q.get();
+    const totals={};
+    snap.docs.forEach(d=>{
+      const r=d.data();if(!r.presente)return;
+      if(!totals[r.funcId])totals[r.funcId]={nome:r.nomeSnapshot,cargo:r.cargoSnapshot,pix:r.pix||'',dias:0,gorjeta:0,diarias:0,consumo:0,total:0};
+      totals[r.funcId].dias++;
+      totals[r.funcId].gorjeta+=r.gorjeta||0;
+      totals[r.funcId].diarias+=r.diaria||0;
+      totals[r.funcId].consumo+=r.consumo||0;
+      totals[r.funcId].total+=r.totalLiquido||0;
+    });
+    const sorted=Object.values(totals).sort((a,b)=>b.total-a.total);
+    if(!sorted.length){cont.innerHTML='<div class="empty-state"><div class="icon">📊</div><p>Nenhum fechamento no período</p></div>';return;}
+    const totalGeral=sorted.reduce((a,t)=>a+t.total,0);
+    cont.innerHTML=`
+      <div class="card" style="background:rgba(232,160,69,.08);border-color:var(--accent);margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+          <div><div style="font-family:'Syne',sans-serif;font-weight:800;font-size:16px">Total do Período</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:2px">${sorted.length} funcionários</div></div>
+          <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:24px;color:var(--accent)">${fmt(totalGeral)}</div>
+        </div>
+      </div>
+      ${sorted.map((t,i)=>{
+        const color=COLORS[i%COLORS.length];
+        const initials=t.nome.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+        const s=CARGO_SETOR[t.cargo]||'outros';
+        const pct=totalGeral>0?((t.total/totalGeral)*100).toFixed(1):0;
+        return `<div class="resumo-card">
+          <div class="resumo-avatar" style="background:${color}22;color:${color}">${initials}</div>
+          <div class="resumo-info">
+            <div class="resumo-name">${t.nome} <span class="badge c-${s}">${t.cargo}</span></div>
+            <div class="resumo-sub">
+              ${t.dias} dia(s) · Gorjeta ${fmt(t.gorjeta)} · Diárias ${fmt(t.diarias)}
+              ${t.consumo>0?` · <span style="color:var(--danger)">-${fmt(t.consumo)}</span>`:''}
+              · <span style="color:${color}">${pct}% do total</span>
+            </div>
+            ${t.pix?`<div style="font-size:11px;color:var(--muted);margin-top:2px;font-style:italic">${t.pix}</div>`:''}
+          </div>
+          <div class="resumo-total">${fmt(t.total)}</div>
+        </div>`;
+      }).join('')}`;
+  }catch(e){cont.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`;}
+}
+
+function imprimirResumo(){window.print();}
+
+/* ══ CADASTRO ══ */
+async function addFunc(){
+  const id=document.getElementById('cadId').value.trim().toUpperCase();
+  const nome=document.getElementById('cadNome').value.trim();
+  if(!id||!nome){showAlert('cadAlert','Informe ID e nome.','error');return;}
+  if(!id.match(/^EMP\d{3,}$/)){showAlert('cadAlert','ID deve ser EMP016, EMP017...','error');return;}
+  try{
+    await db.collection('funcionarios').doc(id).set({
+      id,nome,cargo:document.getElementById('cadCargo').value,
+      tipo:document.getElementById('cadTipo').value,
+      pix:document.getElementById('cadPix').value.trim(),
+      diariaPadrao:parseFloat(document.getElementById('cadDiaria').value)||0,
+      ativo:true,criadoPor:currentUser.uid,criadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+    });
+    await auditoria('FUNCIONARIO_CRIADO',`funcionarios/${id}`,{},{nome});
+    showAlert('cadAlert',`✅ ${nome} adicionado!`,'success');
+    document.getElementById('cadNome').value='';document.getElementById('cadPix').value='';
+    document.getElementById('cadDiaria').value='';document.getElementById('cadId').value='';
+    renderCadList();
+  }catch(e){showAlert('cadAlert','❌ '+e.message,'error');}
+}
+
+async function renderCadList(){
+  const el=document.getElementById('cadList');
+  el.innerHTML='<span class="loading-spinner"></span>';
+  try{
+    const snap=await db.collection('funcionarios').orderBy('nome').get();
+    if(!snap.size){el.innerHTML='<div class="empty-state"><p>Nenhum cadastrado</p></div>';return;}
+    const podeEdit=['diretoria','admin'].includes(currentPerfil);
+    el.innerHTML=snap.docs.map(d=>{
+      const f=d.data();const s=CARGO_SETOR[f.cargo]||'outros';
+      const tipoLabel = f.tipo==='frequente'
+        ? '<span style="font-size:10px;color:#4fc3f7;border:1px solid #4fc3f7;border-radius:10px;padding:1px 6px">Frequente</span>'
+        : '<span style="font-size:10px;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:1px 6px">Fixo</span>';
+      return `<div class="diaria-row" style="${!f.ativo?'opacity:.4':''}">
+        <div class="diaria-name">${f.nome}${!f.ativo?' <span style="color:var(--danger);font-size:11px">[inativo]</span>':''} ${tipoLabel}
+          <small>${f.pix||'Sem Pix'} · R$ ${f.diariaPadrao||0}/dia</small></div>
+        <span class="badge c-${s}">${f.cargo}</span>
+        ${podeEdit?`
+          <button class="btn btn-secondary btn-sm" onclick="abrirEditFunc('${d.id}')">✏️</button>
+          ${f.ativo?`<button class="btn btn-danger btn-sm" onclick="desativarFunc('${d.id}')">Desativar</button>`:''}
+        `:''}
+      </div>`;
+    }).join('');
+  }catch(e){el.innerHTML='<div class="empty-state"><p>'+e.message+'</p></div>';}
+}
+
+async function abrirEditFunc(id){
+  const snap=await db.collection('funcionarios').doc(id).get();
+  if(!snap.exists)return;
+  const f=snap.data();
+  document.getElementById('editFuncId').value=id;
+  document.getElementById('editNome').value=f.nome||'';
+  document.getElementById('editCargo').value=f.cargo||'Garçom';
+  document.getElementById('editPix').value=f.pix||'';
+  document.getElementById('editDiaria').value=f.diariaPadrao||'';
+  document.getElementById('editFuncModal').classList.add('open');
+}
+function fecharEditFunc(){document.getElementById('editFuncModal').classList.remove('open');}
+
+async function salvarEdicaoFunc(){
+  const id=document.getElementById('editFuncId').value;
+  if(!id)return;
+  try{
+    const dados={
+      nome:document.getElementById('editNome').value.trim(),
+      cargo:document.getElementById('editCargo').value,
+      pix:document.getElementById('editPix').value.trim(),
+      diariaPadrao:parseFloat(document.getElementById('editDiaria').value)||0,
+    };
+    await db.collection('funcionarios').doc(id).update(dados);
+    await auditoria('FUNCIONARIO_ATUALIZADO',`funcionarios/${id}`,{},{...dados});
+    showAlert('editFuncAlert','✅ Salvo!','success');
+    setTimeout(()=>{fecharEditFunc();renderCadList();},1000);
+  }catch(e){showAlert('editFuncAlert','❌ '+e.message,'error');}
+}
+
+async function desativarFunc(id){
+  const snap=await db.collection('funcionarios').doc(id).get();
+  if(!confirm(`Desativar ${snap.data()?.nome}?`))return;
+  await db.collection('funcionarios').doc(id).update({ativo:false});
+  await auditoria('FUNCIONARIO_DESATIVADO',`funcionarios/${id}`,{ativo:true},{ativo:false});
+  renderCadList();
+}
+
+/* ══ QR FALLBACK ══ */
+function onDragOver(e){e.preventDefault();document.querySelector('.import-zone')?.classList.add('drag');}
+function onDragLeave(){document.querySelector('.import-zone')?.classList.remove('drag');}
+function onDrop(e){e.preventDefault();document.querySelector('.import-zone')?.classList.remove('drag');if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);}
+
+function handleFile(file){
+  if(!file)return;
+  document.getElementById('scanResult').classList.remove('visible','ok');
+  pendingQR=null;
+  if(file.type.startsWith('image/'))readImageQR(file);
+  else if(file.type==='application/pdf')renderPDFandScan(file);
+  else showAlert('importAlert','Arquivo não suportado.','error');
+}
+
+function readImageQR(file){
+  const reader=new FileReader();
+  reader.onload=e=>{
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement('canvas');c.width=img.width;c.height=img.height;
+      const ctx=c.getContext('2d');ctx.drawImage(img,0,0);
+      const code=jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height);
+      code?parseQR(code.data):showAlert('importAlert','QR Code não encontrado.','error');
+    };img.src=e.target.result;
+  };reader.readAsDataURL(file);
+}
+
+async function renderPDFandScan(file){
+  showAlert('importAlert','⏳ Lendo PDF...','success');
+  try{
+    if(!window.pdfjsLib){
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    const pdf=await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+    let found=false;
+    for(let p=1;p<=pdf.numPages&&!found;p++){
+      const page=await pdf.getPage(p);const vp=page.getViewport({scale:3});
+      const c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;
+      const ctx=c.getContext('2d');await page.render({canvasContext:ctx,viewport:vp}).promise;
+      const code=jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height);
+      if(code){parseQR(code.data);found=true;}
+    }
+    if(!found)showAlert('importAlert','QR Code não encontrado no PDF.','error');
+  }catch(e){showAlert('importAlert','❌ '+e.message,'error');}
+}
+
+function loadScript(src){
+  return new Promise((res,rej)=>{
+    if(document.querySelector(`script[src="${src}"]`)){res();return;}
+    const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;
+    document.head.appendChild(s);
+  });
+}
+
+function parseQR(raw){
+  try{
+    const data=JSON.parse(decodeURIComponent(escape(atob(raw))));
+    if(!data.date||!data.presenca)throw new Error('Formato inválido');
+    pendingQR=data;
+    document.getElementById('scanDate').textContent=fmtDate(data.date);
+    document.getElementById('scanBadge').textContent=`${data.presenca.filter(f=>f.presente).length} presentes`;
+    document.getElementById('obsBox').innerHTML=data.obs?`<div class="obs-box">📝 ${data.obs}</div>`:'';
+    document.getElementById('scanEmpList').innerHTML=data.presenca.map(f=>`
+      <div class="emp-row ${f.presente?'presente':'ausente'}">
+        <div class="emp-name">${f.nome}<small>${f.cargo}</small></div>
+        ${badge(f.cargo)}
+        <div style="display:flex;gap:6px">
+          ${f.atrasado?'<span class="tag-atrasado">⏰</span>':''}
+          ${!f.presente?'<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:rgba(248,81,73,.15);color:var(--danger);font-weight:600">Ausente</span>':''}
+        </div>
+      </div>`).join('');
+    document.getElementById('scanResult').classList.add('visible','ok');
+    showAlert('importAlert',`✅ QR do dia ${fmtDate(data.date)} lido!`,'success');
+  }catch(e){showAlert('importAlert','❌ QR Code inválido.','error');}
+}
+
+async function importarQR(){
+  if(!pendingQR)return;
+  try{
+    const date=pendingQR.date;
+    const funcMap={};
+    pendingQR.presenca.forEach(f=>{
+      funcMap[f.id]={nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,
+        presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0};
+    });
+    const snap=await db.collection('presencas_diarias').doc(date).get();
+    const entrada={de:snap.exists?snap.data().status:null,para:'aguardando_fechamento',
+      por:currentUser.uid,em:new Date().toISOString(),motivo:'Importado via QR Code offline'};
+    await db.collection('presencas_diarias').doc(date).set({
+      data:date,status:'aguardando_fechamento',obs:pendingQR.obs||'',funcionarios:funcMap,
+      registradoPor:currentUser.uid,registradoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      atualizadoPor:currentUser.uid,atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      statusHistorico:firebase.firestore.FieldValue.arrayUnion(entrada),
+    },{merge:true});
+    showAlert('importAlert',`✅ Dia ${fmtDate(date)} importado!`,'success');
+    pendingQR=null;carregarDias();
+  }catch(e){showAlert('importAlert','❌ '+e.message,'error');}
+}
+
+/* ══ AUDITORIA ══ */
+async function auditoria(acao,entidade,antes,depois){
+  try{await db.collection('auditoria').add({
+    ts:firebase.firestore.FieldValue.serverTimestamp(),
+    usuarioId:currentUser.uid,usuarioNome:document.getElementById('userLabel').textContent,
+    perfil:currentPerfil,acao,entidade,camposAlterados:Object.keys(depois),
+    valorAntes:antes,valorDepois:depois,
+  });}catch(_){}
+}
+
+
+/* ══ USUÁRIOS (ADMIN) ══ */
+async function renderUsuarios(){
+  const el=document.getElementById('usuariosList');el.innerHTML='<div class="empty-state"><span class="loading-spinner"></span></div>';
+  try{
+    const snap=await db.collection('usuarios').get();
+    if(!snap.size){el.innerHTML='<div class="empty-state"><p>Nenhum usuário</p></div>';return;}
+    const labels={gerente:'Gerente',financeiro:'Financeiro',diretoria:'Diretoria',admin:'Admin'};
+    const cores={gerente:'#1A6FA8',financeiro:'#A05E1E',diretoria:'#6B3FA8',admin:'#276749'};
+    el.innerHTML=snap.docs.map(d=>{
+      const u=d.data();const init=(u.nome||u.email||'?')[0].toUpperCase();const cor=cores[u.perfil]||'#8A837A';
+      return`<div class="user-card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div class="user-avatar" style="background:${cor}18;color:${cor}">${init}</div>
+        <div class="user-info-card" style="flex:1">
+          <div class="user-nome">${u.nome||'(sem nome)'}</div>
+          <div class="user-email">${u.email||d.id}</div>
+        </div>
+        <span class="perfil-badge perfil-${u.perfil}">${labels[u.perfil]||u.perfil}</span>
+        <div class="user-actions">
+          ${u.ativo!==false
+            ?`<button class="btn btn-secondary btn-sm" onclick="trocarPerfil('${d.id}','${u.perfil}')">✏️ Perfil</button>
+              <button class="btn btn-danger btn-sm" onclick="desativarUsuario('${d.id}','${u.nome||u.email}')">Desativar</button>`
+            :'<span style="font-size:12px;color:var(--danger);font-weight:700">Inativo</span>'}
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){el.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`;}
+}
+
+async function criarUsuario(){
+  const nome=document.getElementById('nuNome').value.trim();
+  const email=document.getElementById('nuEmail').value.trim();
+  const senha=document.getElementById('nuSenha').value;
+  const perfil=document.getElementById('nuPerfil').value;
+  if(!nome||!email||!senha){showAlert('nuAlert','Preencha todos os campos.','error');return;}
+  if(senha.length<8){showAlert('nuAlert','Senha deve ter mínimo 8 caracteres.','error');return;}
+  try{
+    showAlert('nuAlert','⏳ Criando usuário...','success');
+    const apiKey='AIzaSyDEo7pB-dLtSHFGjqvYf8Bt8n7VSu5HdrY';
+    const res=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:senha,returnSecureToken:true})});
+    const data=await res.json();
+    if(!res.ok)throw new Error(data.error?.message||'Erro ao criar conta');
+    const uid=data.localId;
+    await db.collection('usuarios').doc(uid).set({uid,nome,email,perfil,ativo:true,criadoPor:currentUser.uid,criadoEm:firebase.firestore.FieldValue.serverTimestamp()});
+    await logAuditoria('USUARIO_CRIADO',`usuarios/${uid}`,{},{nome,email,perfil});
+    showAlert('nuAlert',`✅ ${nome} criado com sucesso!`,'success');
+    ['nuNome','nuEmail','nuSenha'].forEach(x=>document.getElementById(x).value='');
+    setTimeout(()=>{fecharModal('modalNovoUsuario');renderUsuarios();},1200);
+  }catch(e){showAlert('nuAlert','❌ '+e.message,'error');}
+}
+
+async function trocarPerfil(uid,atual){
+  const perfis=['gerente','financeiro','diretoria','admin'];
+  const novo=prompt(`Perfil atual: ${atual}\nDigite o novo perfil:\n${perfis.join(', ')}`);
+  if(!novo||!perfis.includes(novo.toLowerCase().trim()))return;
+  await db.collection('usuarios').doc(uid).update({perfil:novo.toLowerCase().trim()});
+  await logAuditoria('USUARIO_PERFIL_ALTERADO',`usuarios/${uid}`,{perfil:atual},{perfil:novo});
+  showAlert('usuariosAlert','✅ Perfil atualizado!','success');renderUsuarios();
+}
+
+async function desativarUsuario(uid,nome){
+  if(!confirm(`Desativar ${nome}? O usuário não conseguirá mais logar.`))return;
+  await db.collection('usuarios').doc(uid).update({ativo:false});
+  await logAuditoria('USUARIO_DESATIVADO',`usuarios/${uid}`,{ativo:true},{ativo:false});
+  renderUsuarios();
+}
+
+
+/* ══ QR FALLBACK ══ */
+function onQRDrop(e){e.preventDefault();if(e.dataTransfer.files[0])handleQRFile(e.dataTransfer.files[0]);}
+function handleQRFile(file){if(!file)return;document.getElementById('qrScanResult').classList.remove('visible','ok');pendingQR=null;if(file.type.startsWith('image/'))readQRImg(file);else if(file.type==='application/pdf')readQRPDF(file);else showAlert('qrImportAlert','Arquivo não suportado.','error');}
+function readQRImg(file){const r=new FileReader();r.onload=e=>{const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const ctx=c.getContext('2d');ctx.drawImage(img,0,0);const code=jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height);code?parseQRData(code.data):showAlert('qrImportAlert','QR não encontrado.','error');};img.src=e.target.result;};r.readAsDataURL(file);}
+async function readQRPDF(file){showAlert('qrImportAlert','⏳ Lendo PDF...','success');try{if(!window.pdfjsLib){await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}const pdf=await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;let found=false;for(let p=1;p<=pdf.numPages&&!found;p++){const page=await pdf.getPage(p);const vp=page.getViewport({scale:3});const c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;const ctx=c.getContext('2d');await page.render({canvasContext:ctx,viewport:vp}).promise;const code=jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height);if(code){parseQRData(code.data);found=true;}}if(!found)showAlert('qrImportAlert','QR não encontrado.','error');}catch(e){showAlert('qrImportAlert','❌ '+e.message,'error');}}
+function loadScript(src){return new Promise((res,rej)=>{if(document.querySelector(`script[src="${src}"]`)){res();return;}const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
+function parseQRData(raw){try{const data=JSON.parse(decodeURIComponent(escape(atob(raw))));if(!data.date||!data.presenca)throw new Error('Inválido');pendingQR=data;document.getElementById('qrScanDate').textContent=fmtDate(data.date);document.getElementById('qrScanBadge').textContent=`${data.presenca.filter(f=>f.presente).length} presentes`;document.getElementById('qrObsBox').innerHTML=data.obs?`<div class="obs-box">📝 ${data.obs}</div>`:'';document.getElementById('qrEmpList').innerHTML=data.presenca.map(f=>`<div class="emp-row ${f.presente?'presente':'ausente'}"><div class="emp-name">${f.nome}<small>${f.cargo}</small></div><span class="badge c-${setor(f.cargo)}">${f.cargo}</span><div>${f.atrasado?'<span class="tag-atrasado">⏰</span>':''}</div></div>`).join('');document.getElementById('qrScanResult').classList.add('visible','ok');showAlert('qrImportAlert',`✅ QR do dia ${fmtDate(data.date)} lido!`,'success');}catch(e){showAlert('qrImportAlert','❌ QR inválido.','error');}}
+async function importarQR(){if(!pendingQR)return;try{const date=pendingQR.date;const fm={};pendingQR.presenca.forEach(f=>{fm[f.id]={nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0};});const snap=await db.collection('presencas_diarias').doc(date).get();const e={de:snap.exists?snap.data().status:null,para:'aguardando_fechamento',por:currentUser.uid,em:new Date().toISOString(),motivo:'Importado via QR Code offline'};await db.collection('presencas_diarias').doc(date).set({data:date,status:'aguardando_fechamento',obs:pendingQR.obs||'',funcionarios:fm,registradoPor:currentUser.uid,registradoEm:firebase.firestore.FieldValue.serverTimestamp(),atualizadoPor:currentUser.uid,atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),statusHistorico:firebase.firestore.FieldValue.arrayUnion(e)},{merge:true});showAlert('qrImportAlert',`✅ Dia ${fmtDate(date)} importado!`,'success');pendingQR=null;carregarCalFin();}catch(e){showAlert('qrImportAlert','❌ '+e.message,'error');}}
+</script>
+</body>
+</html>
