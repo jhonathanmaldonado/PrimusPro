@@ -473,7 +473,7 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
     <!-- FUNCIONÁRIOS -->
     <div class="section" id="sec-cadastro">
       <div class="section-header"><div class="section-title">Funcionários</div></div>
-      <div class="card">
+      <div class="card" id="cadNovoCard">
         <div class="card-title">Novo Funcionário</div>
         <div class="cad-form">
           <div class="grid2"><div><div class="field-label">ID Fixo</div><input type="text" id="cadId" class="form-input" placeholder="EMP016"></div><div><div class="field-label">Nome</div><input type="text" id="cadNome" class="form-input" placeholder="Nome completo"></div></div>
@@ -820,7 +820,7 @@ function configurarAbas() {
   const isAdm = currentPerfil === 'admin';
   const mapa  = {
     presenca:isGer, escala:isGer, calendario:isFin, fechamento:isFin, pagamentos:isFin,
-    historico:isFin, resumo:isFin, cadastro:isDir, usuarios:isAdm, qrfallback:true
+    historico:isFin, resumo:isFin, cadastro:isGer||isDir, usuarios:isAdm, qrfallback:true
   };
   Object.entries(mapa).forEach(([tab,vis]) =>
     document.querySelector(`[data-tab="${tab}"]`)?.classList.toggle('hidden',!vis)
@@ -1576,10 +1576,14 @@ async function addFunc() {
 async function renderCadList() {
   const el = $('cadList');
   el.innerHTML='<span class="loading-spinner"></span>';
+  // Mostrar ou esconder form de cadastro baseado no perfil
+  const podeEditar = ['gerente','diretoria','admin'].includes(currentPerfil);
+  const cardNovo = $('cadNovoCard');
+  if(cardNovo) cardNovo.style.display = 'block'; // todos os perfis com acesso à aba veem o form
   try {
     const snap = await db.collection('funcionarios').orderBy('nome').get();
     if(!snap.size) { el.innerHTML='<div class="empty-state"><p>Nenhum cadastrado</p></div>'; return; }
-    const podeEdit = ['diretoria','admin'].includes(currentPerfil);
+    const podeEdit = ['gerente','diretoria','admin'].includes(currentPerfil);
     el.innerHTML = snap.docs.map(d => {
       const f=d.data(), s=setor(f.cargo);
       const tBadge = f.tipo==='frequente'
@@ -2095,6 +2099,12 @@ function escalaGerarPDF() {
   });
 
   const hoje = new Date().toLocaleDateString('pt-BR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  // Calcular primeiro dia da semana atual (segunda-feira)
+  const agora = new Date();
+  const dowAgora = agora.getDay();
+  const diasParaSeg = dowAgora === 0 ? -6 : 1 - dowAgora;
+  const seg = new Date(agora); seg.setDate(agora.getDate() + diasParaSeg);
+  const primeirodia = seg.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
   const totalMarcados = escalaFuncs.reduce((a,f)=>a+DIAS_SEMANA.filter(d=>f.dias[d]).length,0);
   const porDia = DIAS_SEMANA.map(d=>({dia:d,qt:escalaFuncs.filter(f=>f.dias[d]).length}));
 
@@ -2150,7 +2160,7 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1916;padding:20px 2
 </style></head><body>
 <div class="hdr">
   <div><div class="logo-txt">Primus</div><div class="logo-sub">Peixaria · Gestão</div></div>
-  <div class="hdr-r"><div class="hdr-titulo">Escala Semanal</div><div class="hdr-data">${hoje}</div></div>
+  <div class="hdr-r"><div class="hdr-titulo">Escala Primus — ${primeirodia}</div><div class="hdr-data">Gerado em ${hoje}</div></div>
 </div>
 <div class="resumo">
   <div class="ri"><div class="rl">Colaboradores</div><div class="rv">${escalaFuncs.length}</div></div>
