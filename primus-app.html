@@ -509,7 +509,6 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
           <button class="btn btn-secondary btn-sm no-print" onclick="escalaSalvarManual()">💾 Salvar</button>
           <button class="btn btn-secondary btn-sm no-print" onclick="escalaPrevisualizarPublicacao()">👁️ Pré-visualizar</button>
           <button class="btn btn-primary no-print" onclick="abrirPublicarEscala()">📤 Publicar no Sistema</button>
-          <button class="btn btn-danger btn-sm no-print" onclick="escalaLimpar()">🗑️ Limpar</button>
         </div>
       </div>
 
@@ -520,40 +519,13 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
         </div>
       </div>
 
-      <!-- FORM ADICIONAR -->
-      <div class="card no-print">
-        <div class="card-title">Adicionar à Escala</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
-          <div style="flex:1;min-width:160px">
-            <div class="field-label">Funcionário cadastrado</div>
-            <select id="escFuncSel" class="form-select" onchange="escalaOnSelectChange()">
-              <option value="">— selecione —</option>
-            </select>
-          </div>
-          <div style="min-width:160px">
-            <div class="field-label">Ou nome avulso</div>
-            <input type="text" id="escFuncNome" class="form-input" placeholder="Nome (não cadastrado)">
-          </div>
-          <div>
-            <div class="field-label">Função</div>
-            <select id="escFuncCargo" class="form-select" style="max-width:150px">
-              <option>Gerente</option><option>Garçom</option><option>Cumim</option>
-              <option>Cozinheiro</option><option>Bar</option><option>Aux. Bar</option>
-              <option>Caixa</option><option>Recepcionista</option><option>Monitora</option>
-              <option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option>
-            </select>
-          </div>
-          <button class="btn btn-primary" onclick="escalaAddFunc()">+ Adicionar</button>
-        </div>
-      </div>
-
       <!-- GRADE DA ESCALA -->
       <div class="card">
         <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
-          <span>Grade da Semana</span>
+          <span>Grade da Semana — marque os dias de cada funcionário</span>
           <span id="escalaCountBadge" style="font-size:12px;color:var(--muted);font-weight:600"></span>
         </div>
-        <div id="escalaEmpty" class="empty-state"><div class="icon">📅</div><p>Adicione funcionários para montar a escala</p></div>
+        <div id="escalaLoading" class="empty-state"><span class="loading-spinner"></span></div>
         <div style="overflow-x:auto;display:none" id="escalaTableWrap">
           <table style="width:100%;border-collapse:collapse;min-width:680px" id="escalaTable">
             <thead id="escalaHead"></thead>
@@ -1828,93 +1800,78 @@ async function renderGerFuncList() {
 
 
 
+
 /* ════════════════════════════════════════
-   MÓDULO ESCALA SEMANAL — v2 (spec completo)
+   MÓDULO ESCALA SEMANAL — v3
+   Todos os funcionários na grade, marca os dias
 ════════════════════════════════════════ */
 
 const DIAS_SEMANA = ['Segunda','Terça','Quarta','Quinta','Sexta','Sábado','Domingo'];
 const DIAS_CURTO  = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
 const ESCALA_COL  = 'escala_semanal';
 
-// Estado
-let escalaFuncs   = []; // [{firebaseId, nome, cargo, pix, diaria, avulso, dias:{...}}]
-let escalaDocId   = null;
-let escalaCadMap  = {}; // {id: dadosFirebase}
-let escalaDataInicioAtual = null; // data início da última publicação
+// Estado: { [funcId]: { nome, cargo, pix, diaria, dias: {Segunda:bool,...} } }
+let escalaDias = {};          // marcações por funcionário
+let escalaCadastro = [];      // lista de todos os funcionários ativos
+let escalaDocId = null;
+let escalaDataInicioAtual = null;
 
-/* ── Inicializar ── */
+/* ── Carregar ── */
 async function escalaCarregar() {
-  await escalaCarregarCadastro();
+  $('escalaLoading').style.display = 'flex';
+  $('escalaTableWrap').style.display = 'none';
+  $('escalaResumoCard').style.display = 'none';
+
   try {
-    const snap = await db.collection(ESCALA_COL)
+    // 1. Buscar todos os funcionários ativos
+    const snap = await db.collection('funcionarios').where('ativo','==',true).get();
+    escalaCadastro = snap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .sort((a,b) => {
+        // Ordenar por cargo, depois nome
+        const ordemCargo = ['Gerente','Garçom','Cumim','Cozinheiro','Bar','Aux. Bar',
+          'Caixa','Recepcionista','Monitora','Aux. Cozinha','Limpeza','Segurança'];
+        const ia = ordemCargo.indexOf(a.cargo);
+        const ib = ordemCargo.indexOf(b.cargo);
+        if(ia !== ib) return (ia<0?99:ia) - (ib<0?99:ib);
+        return a.nome.localeCompare(b.nome, 'pt-BR');
+      });
+
+    // 2. Buscar escala salva no Firebase
+    const escSnap = await db.collection(ESCALA_COL)
       .orderBy('criadoEm','desc').limit(1).get();
-    if(!snap.empty) {
-      const d = snap.docs[0]; escalaDocId = d.id;
+
+    if(!escSnap.empty) {
+      const d = escSnap.docs[0];
+      escalaDocId = d.id;
       const data = d.data();
-      escalaFuncs = data.funcionarios || [];
+      // escalaDias vem do Firebase: { [id]: { dias: {...} } }
+      escalaDias = data.marcacoes || {};
       escalaDataInicioAtual = data.ultimaPublicacao?.dataInicio || null;
-      // Mostrar badge se publicada
       if(data.ultimaPublicacao) {
         $('escalaBadgePublicada').style.display = 'block';
         $('escalaBadgeInfo').textContent =
-          `semana de ${data.ultimaPublicacao.dataInicio || '?'} · ${data.ultimaPublicacao.diasCriados||0} dia(s) criado(s)`;
+          `semana de ${data.ultimaPublicacao.dataInicio} · ${data.ultimaPublicacao.diasCriados||0} dia(s) criado(s)`;
       } else {
         $('escalaBadgePublicada').style.display = 'none';
       }
     } else {
-      escalaFuncs = []; escalaDocId = null;
+      escalaDocId = null; escalaDias = {};
       $('escalaBadgePublicada').style.display = 'none';
     }
   } catch(e) {
-    escalaFuncs = []; escalaDocId = null;
+    console.error('escalaCarregar:', e);
+    escalaCadastro = []; escalaDias = {};
   }
+
   escalaRender();
-}
-
-async function escalaCarregarCadastro() {
-  try {
-    // Sem orderBy para evitar exigência de índice composto no Firestore
-    const snap = await db.collection('funcionarios').where('ativo','==',true).get();
-    escalaCadMap = {};
-    const sel = $('escFuncSel');
-    sel.innerHTML = '<option value="">— selecione do cadastro —</option>';
-
-    // Ordenar por nome no JS
-    const docs = snap.docs
-      .map(d => ({ id: d.id, ...d.data() }))
-      .sort((a,b) => a.nome.localeCompare(b.nome, 'pt-BR'));
-
-    docs.forEach(f => {
-      escalaCadMap[f.id] = f;
-      const opt = document.createElement('option');
-      opt.value = f.id;
-      opt.textContent = `${f.nome} (${f.cargo})`;
-      opt.dataset.nome   = f.nome;
-      opt.dataset.cargo  = f.cargo;
-      opt.dataset.pix    = f.pix || '';
-      opt.dataset.diaria = f.diariaPadrao || 0;
-      sel.appendChild(opt);
-    });
-  } catch(e) {
-    console.error('Erro ao carregar funcionários:', e.message);
-    showAlert('gerAlert','⚠️ Não foi possível carregar os funcionários cadastrados.','error', 8000);
-  }
-}
-
-function escalaOnSelectChange() {
-  const sel = $('escFuncSel');
-  if(sel.value) {
-    const opt = sel.selectedOptions[0];
-    $('escFuncCargo').value = opt.dataset.cargo;
-    $('escFuncNome').value = '';
-  }
 }
 
 /* ── Salvar no Firebase ── */
 async function escalaSalvarFirebase(extra = {}) {
   try {
     const payload = {
-      funcionarios: escalaFuncs,
+      marcacoes: escalaDias,
       atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
       atualizadoPor: currentUser.uid,
       ...extra
@@ -1927,7 +1884,7 @@ async function escalaSalvarFirebase(extra = {}) {
       const ref = await db.collection(ESCALA_COL).add(payload);
       escalaDocId = ref.id;
     }
-  } catch(e) { console.error('Escala save error:', e); }
+  } catch(e) { console.error('Escala save:', e); }
 }
 
 async function escalaSalvarManual() {
@@ -1935,181 +1892,190 @@ async function escalaSalvarManual() {
   showAlert('gerAlert','✅ Escala salva!','success');
 }
 
-/* ── Adicionar funcionário ── */
-function escalaAddFunc() {
-  const sel = $('escFuncSel');
-  const nomeAvulso = $('escFuncNome').value.trim();
-  const cargo = $('escFuncCargo').value;
-
-  let nome, firebaseId, pix = '', diaria = DIARIA_PADRAO[cargo] || 0, avulso = false;
-
-  if(sel.value) {
-    const opt = sel.selectedOptions[0];
-    nome = opt.dataset.nome; firebaseId = sel.value;
-    pix  = opt.dataset.pix; diaria = parseFloat(opt.dataset.diaria) || DIARIA_PADRAO[cargo] || 0;
-  } else if(nomeAvulso) {
-    nome = nomeAvulso; firebaseId = null; avulso = true;
-  } else { alert('Selecione um funcionário ou digite um nome.'); return; }
-
-  if(escalaFuncs.find(f => f.nome === nome)) { alert(`${nome} já está na escala.`); return; }
-
-  const dias = {}; DIAS_SEMANA.forEach(d => dias[d] = false);
-  escalaFuncs.push({ nome, cargo, pix, diaria, firebaseId, avulso, dias });
-
-  $('escFuncSel').value = ''; $('escFuncNome').value = '';
-  escalaRender(); escalaSalvarFirebase();
-}
-
-function escalaTogleDia(idx, dia) {
-  escalaFuncs[idx].dias[dia] = !escalaFuncs[idx].dias[dia];
-  escalaRender(); escalaSalvarFirebase();
-}
-
-function escalaRemoverFunc(idx) {
-  escalaFuncs.splice(idx, 1);
-  escalaRender(); escalaSalvarFirebase();
-}
-
-function escalaLimpar() {
-  if(!escalaFuncs.length) return;
-  if(!confirm('Limpar toda a escala?')) return;
-  escalaFuncs = []; escalaDocId = null;
-  $('escalaBadgePublicada').style.display = 'none';
-  escalaRender(); escalaSalvarFirebase();
+/* ── Toggle dia ── */
+function escalaTogleDia(funcId, dia) {
+  if(!escalaDias[funcId]) escalaDias[funcId] = {};
+  escalaDias[funcId][dia] = !escalaDias[funcId][dia];
+  // Atualizar a célula visualmente sem re-render completo
+  const cell = document.getElementById(`cell_${funcId}_${dia}`);
+  if(cell) {
+    const on = escalaDias[funcId][dia];
+    cell.style.background    = on ? 'var(--success-lt)' : 'var(--surface2)';
+    cell.style.borderColor   = on ? '#7fd4b5' : 'var(--border)';
+    cell.style.color         = on ? 'var(--success)' : 'var(--muted)';
+    cell.style.fontSize      = on ? '15px' : '18px';
+    cell.textContent         = on ? '✓' : '+';
+  }
+  atualizarResumoEscala();
+  escalaSalvarFirebase();
 }
 
 /* ── Render da grade ── */
 function escalaRender() {
-  const empty = $('escalaEmpty');
-  const wrap  = $('escalaTableWrap');
-  const resumoCard = $('escalaResumoCard');
-
-  const total = escalaFuncs.reduce((a,f) => a + DIAS_SEMANA.filter(d=>f.dias[d]).length, 0);
-  $('escalaCountBadge').textContent = escalaFuncs.length
-    ? `${escalaFuncs.length} func. · ${total} marcações` : '';
-
-  if(!escalaFuncs.length) {
-    empty.style.display = 'flex'; wrap.style.display = 'none';
-    resumoCard.style.display = 'none'; return;
-  }
-  empty.style.display = 'none'; wrap.style.display = 'block';
-  resumoCard.style.display = 'block';
+  $('escalaLoading').style.display = 'none';
+  $('escalaTableWrap').style.display = 'block';
+  $('escalaResumoCard').style.display = 'block';
 
   // Cabeçalho
   $('escalaHead').innerHTML = `<tr style="background:var(--surface2)">
-    <th style="text-align:left;padding:10px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--border);min-width:160px">Funcionário</th>
-    ${DIAS_CURTO.map(d=>`<th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px;border-bottom:2px solid var(--border);min-width:44px">${d}</th>`).join('')}
-    <th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px;border-bottom:2px solid var(--border)">Total</th>
-    <th style="border-bottom:2px solid var(--border);width:32px"></th>
+    <th style="text-align:left;padding:10px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--border);min-width:180px">Funcionário</th>
+    ${DIAS_CURTO.map(d=>`<th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px 4px;border-bottom:2px solid var(--border);min-width:44px;text-align:center">${d}</th>`).join('')}
+    <th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px;border-bottom:2px solid var(--border);text-align:center">Total</th>
   </tr>`;
 
-  $('escalaBody').innerHTML = escalaFuncs.map((f,idx) => {
-    const s = setor(f.cargo);
-    const tot = DIAS_SEMANA.filter(d=>f.dias[d]).length;
-    const cells = DIAS_SEMANA.map(d => {
-      const on = f.dias[d];
-      return `<td style="padding:5px;border-bottom:1.5px solid var(--border);text-align:center">
-        <div onclick="escalaTogleDia(${idx},'${d}')" style="
-          width:34px;height:34px;border-radius:8px;cursor:pointer;margin:auto;
-          border:1.5px solid ${on?'#7fd4b5':'var(--border)'};
-          background:${on?'var(--success-lt)':'var(--surface2)'};
-          color:${on?'var(--success)':'var(--muted)'};
-          display:flex;align-items:center;justify-content:center;
-          font-size:${on?'15px':'18px'};font-weight:700;user-select:none;transition:all .15s">
-          ${on?'✓':'+'}
-        </div></td>`;
-    }).join('');
-    return `<tr style="${idx%2===0?'':'background:var(--surface2)08'}">
-      <td style="padding:8px 10px;border-bottom:1.5px solid var(--border)">
-        <div style="font-size:13px;font-weight:600">${f.nome}${f.avulso?'<span style="font-size:10px;color:var(--accent-dk);margin-left:5px;font-weight:700">[avulso]</span>':''}</div>
-        <div style="margin-top:3px">${badge(f.cargo)}</div>
-      </td>
-      ${cells}
-      <td style="font-weight:800;color:var(--accent);font-size:16px;text-align:center;border-bottom:1.5px solid var(--border)">${tot||'—'}</td>
-      <td style="border-bottom:1.5px solid var(--border);text-align:center">
-        <button onclick="escalaRemoverFunc(${idx})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:4px" title="Remover">×</button>
+  // Agrupar por cargo
+  const grupos = {};
+  escalaCadastro.forEach(f => {
+    if(!grupos[f.cargo]) grupos[f.cargo] = [];
+    grupos[f.cargo].push(f);
+  });
+
+  let rows = '';
+  Object.entries(grupos).forEach(([cargo, funcs]) => {
+    // Header do grupo
+    rows += `<tr>
+      <td colspan="${DIAS_SEMANA.length + 2}" style="padding:6px 10px;background:var(--surface2);border-bottom:1.5px solid var(--border)">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)">${cargo}</span>
       </td>
     </tr>`;
-  }).join('');
+    // Funcionários do grupo
+    funcs.forEach(f => {
+      const diasFunc = escalaDias[f.id] || {};
+      const tot = DIAS_SEMANA.filter(d => diasFunc[d]).length;
+      const cells = DIAS_SEMANA.map(d => {
+        const on = !!diasFunc[d];
+        return `<td style="padding:4px;border-bottom:1px solid var(--border);text-align:center">
+          <div id="cell_${f.id}_${d}" onclick="escalaTogleDia('${f.id}','${d}')" style="
+            width:32px;height:32px;border-radius:7px;cursor:pointer;margin:auto;
+            border:1.5px solid ${on?'#7fd4b5':'var(--border)'};
+            background:${on?'var(--success-lt)':'var(--surface2)'};
+            color:${on?'var(--success)':'var(--muted)'};
+            display:flex;align-items:center;justify-content:center;
+            font-size:${on?'15px':'16px'};font-weight:700;user-select:none;transition:all .12s">
+            ${on?'✓':'+'}
+          </div>
+        </td>`;
+      }).join('');
+      rows += `<tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:7px 10px;border-bottom:1px solid var(--border)">
+          <div style="font-size:13px;font-weight:600;color:var(--text)">${f.nome}</div>
+        </td>
+        ${cells}
+        <td style="font-weight:800;color:${tot>0?'var(--accent)':'var(--muted)'};font-size:15px;text-align:center;border-bottom:1px solid var(--border)">${tot||'—'}</td>
+      </tr>`;
+    });
+  });
+  $('escalaBody').innerHTML = rows;
+  atualizarResumoEscala();
+}
 
-  // Resumo por dia
+function atualizarResumoEscala() {
+  const escalados = escalaCadastro.filter(f =>
+    DIAS_SEMANA.some(d => escalaDias[f.id]?.[d])
+  );
+  const totalMarcacoes = escalados.reduce((a,f) =>
+    a + DIAS_SEMANA.filter(d => escalaDias[f.id]?.[d]).length, 0);
+
+  $('escalaCountBadge').textContent = escalados.length
+    ? `${escalados.length} escalados · ${totalMarcacoes} marcações` : 'Nenhum dia marcado';
+
   $('escalaResumo').innerHTML = `
     <div style="background:var(--accent-lt);border-radius:8px;padding:10px 14px;flex:1;min-width:90px;text-align:center">
-      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Total func.</div>
-      <div style="font-size:24px;font-weight:800;color:var(--accent)">${escalaFuncs.length}</div>
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Escalados</div>
+      <div style="font-size:24px;font-weight:800;color:var(--accent)">${escalados.length}</div>
     </div>
     <div style="background:var(--success-lt);border-radius:8px;padding:10px 14px;flex:1;min-width:90px;text-align:center">
       <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Marcações</div>
-      <div style="font-size:24px;font-weight:800;color:var(--success)">${total}</div>
+      <div style="font-size:24px;font-weight:800;color:var(--success)">${totalMarcacoes}</div>
     </div>
     ${DIAS_CURTO.map((dc,i) => {
       const d = DIAS_SEMANA[i];
-      const qt = escalaFuncs.filter(f=>f.dias[d]).length;
+      const qt = escalaCadastro.filter(f => escalaDias[f.id]?.[d]).length;
       return `<div style="background:var(--surface2);border-radius:8px;padding:10px 14px;min-width:56px;text-align:center">
         <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">${dc}</div>
-        <div style="font-size:20px;font-weight:800;color:${qt>0?'var(--text)':'var(--border2)'}">${qt||'—'}</div>
+        <div style="font-size:20px;font-weight:800;color:${qt>0?'var(--text)':'var(--border2)'};">${qt||'—'}</div>
       </div>`;
     }).join('')}`;
 }
 
-/* ── Pré-visualização ── */
-function escalaPrevisualizarPublicacao() {
-  if(!escalaFuncs.length) { alert('Adicione funcionários primeiro.'); return; }
-  const conteudo = escalaGerarConteudoPreview();
-  $('escalaPreviewContent').innerHTML = conteudo;
-  abrirModal('modalEscalaPreview');
+/* ── Helpers ── */
+function escalaFuncsEscalados() {
+  // Retorna lista de funcionários com pelo menos 1 dia marcado
+  return escalaCadastro
+    .filter(f => DIAS_SEMANA.some(d => escalaDias[f.id]?.[d]))
+    .map(f => ({
+      ...f,
+      firebaseId: f.id,
+      avulso: false,
+      diaria: f.diariaPadrao || 0,
+      dias: Object.fromEntries(DIAS_SEMANA.map(d => [d, !!(escalaDias[f.id]?.[d])]))
+    }));
 }
 
-function escalaGerarConteudoPreview() {
-  // Agrupar por cargo
+/* ── Limpar ── */
+function escalaLimpar() {
+  if(!Object.keys(escalaDias).length) return;
+  if(!confirm('Limpar todas as marcações da semana?')) return;
+  escalaDias = {};
+  escalaRender();
+  escalaSalvarFirebase();
+}
+
+/* ── Pré-visualização ── */
+function escalaPrevisualizarPublicacao() {
+  const escalados = escalaFuncsEscalados();
+  if(!escalados.length) { alert('Nenhum dia marcado.'); return; }
+
   const porCargo = {};
-  escalaFuncs.forEach(f => {
+  escalados.forEach(f => {
     if(!porCargo[f.cargo]) porCargo[f.cargo] = [];
     porCargo[f.cargo].push(f);
   });
-  return Object.entries(porCargo).map(([cargo, funcs]) => `
-    <div style="margin-bottom:16px">
+
+  $('escalaPreviewContent').innerHTML = Object.entries(porCargo).map(([cargo, funcs]) => `
+    <div style="margin-bottom:14px">
       <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;
-        color:#fff;background:var(--accent);padding:5px 10px;border-radius:6px;margin-bottom:6px">${badge(cargo)} ${cargo}</div>
+        color:#fff;background:var(--accent);padding:4px 10px;border-radius:6px;margin-bottom:6px">${cargo}</div>
       ${funcs.map(f => {
-        const diasMarcados = DIAS_SEMANA.filter(d=>f.dias[d]);
+        const diasMarcados = DIAS_SEMANA.filter(d => f.dias[d]);
         return `<div style="display:flex;align-items:center;gap:8px;padding:5px 6px;border-bottom:1px solid var(--border)">
-          <span style="font-size:13px;font-weight:500;min-width:140px">${f.nome}${f.avulso?'<span style="font-size:10px;color:var(--accent-dk);margin-left:4px">[avulso]</span>':''}</span>
+          <span style="font-size:13px;font-weight:500;min-width:150px">${f.nome}</span>
           <div style="display:flex;gap:4px;flex-wrap:wrap">
-            ${diasMarcados.length
-              ? diasMarcados.map(d=>`<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--success-lt);color:var(--success)">${d.substring(0,3)}</span>`).join('')
-              : '<span style="font-size:12px;color:var(--muted);font-style:italic">Nenhum dia</span>'}
+            ${diasMarcados.map(d=>`<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:20px;background:var(--success-lt);color:var(--success)">${d.substring(0,3)}</span>`).join('')}
           </div>
         </div>`;
       }).join('')}
     </div>`).join('');
+
+  abrirModal('modalEscalaPreview');
 }
 
 /* ── PDF da Escala ── */
 function escalaGerarPDF() {
-  if(!escalaFuncs.length) { alert('Escala vazia.'); return; }
+  const escalados = escalaFuncsEscalados();
+  if(!escalados.length) { alert('Nenhum dia marcado.'); return; }
 
   const porCargo = {};
-  escalaFuncs.forEach(f => {
+  escalados.forEach(f => {
     if(!porCargo[f.cargo]) porCargo[f.cargo] = [];
     porCargo[f.cargo].push(f);
   });
 
   const hoje = new Date().toLocaleDateString('pt-BR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  // Usar data da publicacao se disponivel, senao semana atual
   let primeirodia;
   if(escalaDataInicioAtual) {
     const dt = new Date(escalaDataInicioAtual + 'T12:00:00');
     primeirodia = dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
   } else {
-    const agora = new Date();
-    const dowAgora = agora.getDay();
+    const agora = new Date(); const dowAgora = agora.getDay();
     const diasParaSeg = dowAgora === 0 ? -6 : 1 - dowAgora;
     const seg = new Date(agora); seg.setDate(agora.getDate() + diasParaSeg);
     primeirodia = seg.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
   }
-  const totalMarcados = escalaFuncs.reduce((a,f)=>a+DIAS_SEMANA.filter(d=>f.dias[d]).length,0);
-  const porDia = DIAS_SEMANA.map(d=>({dia:d,qt:escalaFuncs.filter(f=>f.dias[d]).length}));
+
+  const totalMarcacoes = escalados.reduce((a,f)=>a+DIAS_SEMANA.filter(d=>f.dias[d]).length,0);
+  const porDia = DIAS_SEMANA.map(d=>({dia:d,qt:escalados.filter(f=>f.dias[d]).length}));
+  const porDiaHtml = porDia.map(x=>`<div class="di"><div class="dl">${x.dia.substring(0,3)}</div><div class="dv">${x.qt||'—'}</div></div>`).join('');
 
   let secoes = '';
   Object.entries(porCargo).forEach(([cargo, funcs]) => {
@@ -2124,12 +2090,8 @@ function escalaGerarPDF() {
     secoes += `<div class="sec"><div class="st">${cargo}</div>${linhas}</div>`;
   });
 
-  const porDiaHtml = porDia.map(x=>`<div class="di"><div class="dl">${x.dia.substring(0,3)}</div><div class="dv">${x.qt}</div></div>`).join('');
-
-  const LOGO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAUAAAAC+CAYAAABEf9Z3AABTP0lEQVR4nOy9d3gc1b0//p6Z2d5Xq957ty3JkuUqV9xwwQUwxYAJEEoSCOmFhPRye5KbRhJSyf0lJLkpkEYIBAgdY4N7kW3ZVu9t1ffO/P6Y3dXuaqVmWbKMv8/z6LG0Oztz5szMOZ/3Oe9zDgMAwzAMwzAMwzAMwzAMwzAMwzAMwzAMwzAMwzAMwzAMwzAMwzAMwzAMwzAMw3g//w9J0qLFDlEJUgAAAABJRU5ErkJggg==';
-
   const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/>
-<title>Escala Primus</title>
+<title>Escala Primus — ${primeirodia}</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
@@ -2166,9 +2128,9 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1916;padding:20px 2
   <div class="hdr-r"><div class="hdr-titulo">Escala Primus — ${primeirodia}</div><div class="hdr-data">Gerado em ${hoje}</div></div>
 </div>
 <div class="resumo">
-  <div class="ri"><div class="rl">Colaboradores</div><div class="rv">${escalaFuncs.length}</div></div>
+  <div class="ri"><div class="rl">Colaboradores</div><div class="rv">${escalados.length}</div></div>
   <div class="ri"><div class="rl">Cargos</div><div class="rv">${Object.keys(porCargo).length}</div></div>
-  <div class="ri"><div class="rl">Dias marcados</div><div class="rv">${totalMarcados}</div></div>
+  <div class="ri"><div class="rl">Dias marcados</div><div class="rv">${totalMarcacoes}</div></div>
 </div>
 <div class="por-dia">
   <div class="por-dia-label">👥 Por dia</div>
@@ -2188,16 +2150,13 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1916;padding:20px 2
 
 /* ── Abrir modal data início ── */
 function abrirPublicarEscala() {
-  if(!escalaFuncs.length) { alert('Adicione funcionários primeiro.'); return; }
-  const funcsComDias = escalaFuncs.filter(f => DIAS_SEMANA.some(d=>f.dias[d]));
-  if(!funcsComDias.length) { alert('Marque pelo menos um dia para algum funcionário.'); return; }
+  const escalados = escalaFuncsEscalados();
+  if(!escalados.length) { alert('Marque pelo menos um dia para publicar.'); return; }
 
-  // Sugerir segunda da semana atual
   const hoje = new Date(); const dow = hoje.getDay();
   let diasParaSeg = dow === 0 ? 1 : dow === 1 ? 0 : -(dow-1);
   const seg = new Date(hoje); seg.setDate(hoje.getDate() + diasParaSeg);
   $('escalaDataInicioInp').value = seg.toISOString().split('T')[0];
-
   escalaPreviewDatas();
   abrirModal('modalEscalaDataInicio');
 }
@@ -2208,8 +2167,7 @@ function escalaPreviewDatas() {
   const inicio = new Date(val + 'T12:00:00');
   const datas = DIAS_SEMANA.map((d,i) => {
     const dt = new Date(inicio); dt.setDate(inicio.getDate() + i);
-    return `<span style="font-size:12px;background:var(--accent-lt);color:var(--accent-dk);
-      padding:3px 10px;border-radius:20px;font-weight:600">${d.substring(0,3)}: ${dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}</span>`;
+    return `<span style="font-size:12px;background:var(--accent-lt);color:var(--accent-dk);padding:3px 10px;border-radius:20px;font-weight:600">${d.substring(0,3)}: ${dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}</span>`;
   });
   $('escalaPreviewDatas').innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">${datas.join('')}</div>`;
 }
@@ -2226,59 +2184,40 @@ async function escalaAvancarParaResumo() {
     dataMap[d] = dt.toISOString().split('T')[0];
   });
 
-  const funcsComDias = escalaFuncs.filter(f => DIAS_SEMANA.some(d=>f.dias[d]));
-  const avulsos = funcsComDias.filter(f => f.avulso || !f.firebaseId);
-
-  // Verificar status dos dias no Firebase
-  const diasUsados = DIAS_SEMANA.filter(d => escalaFuncs.some(f=>f.dias[d]));
-  let diasBloqueados = 0, diasLivres = 0, totalLancamentos = 0;
+  const escalados = escalaFuncsEscalados();
+  const diasUsados = DIAS_SEMANA.filter(d => escalados.some(f=>f.dias[d]));
+  let diasBloqueados = 0, totalLancamentos = 0;
 
   try {
     const snaps = await Promise.all(diasUsados.map(d =>
       db.collection('presencas_diarias').doc(dataMap[d]).get()
     ));
-    snaps.forEach((s, i) => {
-      const dia = diasUsados[i];
+    snaps.forEach((s,i) => {
       const st = s.exists ? s.data().status : null;
       if(st === 'aguardando_fechamento' || st === 'fechado') diasBloqueados++;
-      else diasLivres++;
-      const funcsNoDia = escalaFuncs.filter(f => f.dias[dia]).length;
-      totalLancamentos += funcsNoDia;
+      totalLancamentos += escalados.filter(f=>f.dias[diasUsados[i]]).length;
     });
-  } catch(e) {
-    console.error(e);
-  }
+  } catch(e) { console.error(e); }
 
   const semanaFmt = `${new Date(dataInicio+'T12:00:00').toLocaleDateString('pt-BR')} a ${
     (() => { const fim = new Date(dataInicio+'T12:00:00'); fim.setDate(fim.getDate()+6); return fim.toLocaleDateString('pt-BR'); })()
   }`;
 
-  // Montar resumo
   $('escalaResumoPublicacao').innerHTML = `
     <div style="background:var(--surface2);border-radius:8px;padding:14px;font-size:13px;line-height:1.9">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px">
         <div><span style="color:var(--muted)">Semana:</span> <strong>${semanaFmt}</strong></div>
-        <div><span style="color:var(--muted)">Funcionários na escala:</span> <strong>${funcsComDias.length}</strong></div>
+        <div><span style="color:var(--muted)">Funcionários escalados:</span> <strong>${escalados.length}</strong></div>
         <div><span style="color:var(--muted)">Dias afetados:</span> <strong>${diasUsados.length}</strong></div>
         <div><span style="color:var(--muted)">Lançamentos:</span> <strong>${totalLancamentos}</strong></div>
-        <div><span style="color:var(--muted)">Nomes não cadastrados:</span> <strong style="color:${avulsos.length?'var(--accent-dk)':'var(--success)'}">${avulsos.length}</strong></div>
         <div><span style="color:var(--muted)">Dias bloqueados:</span> <strong style="color:${diasBloqueados?'var(--danger)':'var(--success)'}">${diasBloqueados}</strong></div>
       </div>
-      ${diasBloqueados ? `<div style="margin-top:8px;font-size:12px;color:var(--danger);font-weight:600">⚠️ ${diasBloqueados} dia(s) já fechado(s) ou aguardando — não serão alterados.</div>` : ''}
+      ${diasBloqueados ? `<div style="margin-top:8px;font-size:12px;color:var(--danger);font-weight:600">⚠️ ${diasBloqueados} dia(s) já fechado(s) — não serão alterados.</div>` : ''}
     </div>`;
 
-  // Avulsos
-  if(avulsos.length) {
-    $('escalaAvulsosWrap').style.display = 'block';
-    $('escalaAvulsosList').innerHTML = avulsos.map(f =>
-      `<div style="padding:3px 0">• <strong>${f.nome}</strong> (${f.cargo})</div>`).join('');
-  } else {
-    $('escalaAvulsosWrap').style.display = 'none';
-  }
+  $('escalaAvulsosWrap').style.display = 'none'; // sem avulsos neste fluxo
 
-  // Guardar contexto
-  window._escalaPublicarCtx = { dataInicio, dataMap, diasUsados, avulsos };
-
+  window._escalaPublicarCtx = { dataInicio, dataMap, diasUsados, escalados };
   fecharModal('modalEscalaDataInicio');
   hideAlert('escalaPublicarAlert');
   abrirModal('modalEscalaConfirmar');
@@ -2288,76 +2227,34 @@ async function escalaAvancarParaResumo() {
 async function confirmarPublicarEscala() {
   const ctx = window._escalaPublicarCtx;
   if(!ctx) return;
-
-  const { dataInicio, dataMap, diasUsados, avulsos } = ctx;
-
-  // Checar opcao avulsos
-  if(avulsos.length) {
-    const opcao = document.querySelector('input[name="avulsosOpcao"]:checked')?.value;
-    if(opcao === 'cancelar') { fecharModal('modalEscalaConfirmar'); return; }
-    if(opcao === 'cadastrar') {
-      // Cadastrar todos os avulsos primeiro
-      showAlert('escalaPublicarAlert','⏳ Cadastrando funcionários...','success',0);
-      try {
-        await escalaCadastrarAvulsos(avulsos);
-        // Avulsos agora têm firebaseId — reprocessar ctx sem avulsos
-        window._escalaPublicarCtx.avulsos = [];
-      } catch(e) {
-        showAlert('escalaPublicarAlert','❌ Erro ao cadastrar: '+e.message,'error',0);
-        btn.disabled=false; btn.textContent='✅ Confirmar Publicação'; return;
-      }
-    }
-  }
+  const { dataInicio, dataMap, diasUsados, escalados } = ctx;
 
   const btn = $('btnConfirmarPublicar');
   btn.disabled = true; btn.textContent = '⏳ Publicando...';
 
   try {
-    let criados = 0, atualizados = 0, bloqueados = 0, conflitos = [];
+    let criados = 0, atualizados = 0, bloqueados = 0;
 
     for(const diaSem of diasUsados) {
       const dateStr = dataMap[diaSem];
-      const funcsNoDia = escalaFuncs.filter(f => f.dias[diaSem]);
+      const funcsNoDia = escalados.filter(f => f.dias[diaSem]);
       const docRef = db.collection('presencas_diarias').doc(dateStr);
       const snap = await docRef.get();
       const st = snap.exists ? snap.data().status : null;
 
-      // Dias bloqueados
       if(st === 'aguardando_fechamento' || st === 'fechado') { bloqueados++; continue; }
 
-      // Reaberto: pedir confirmação (simplificado: prosseguir)
       const fmExistente = snap.exists ? (snap.data().funcionarios || {}) : {};
-
-      // Montar funcionários para este dia
       const fm = { ...fmExistente };
-      for(const f of funcsNoDia) {
-        // Resolver firebaseId
-        let fid = f.firebaseId;
 
-        if(!fid || f.avulso) {
-          // Extra: usar EXTRA_ prefixo com nome como chave
-          const extraKey = 'EXTRA_' + f.nome.replace(/\s+/g,'_').toLowerCase();
-          // Anti-duplicidade: verificar se já existe pelo nome
-          const jaExiste = Object.entries(fmExistente).find(([,p]) => p.nome === f.nome);
-          if(jaExiste) continue; // não duplicar
-          fm[extraKey] = {
-            nome: f.nome, cargo: f.cargo, pix: f.pix || '', diariaPadrao: f.diaria || 0,
-            presente: true, atrasado: false, consumo: 0, auxCount: 0,
-            origem: 'escala', publicadoEm: new Date().toISOString(), publicadoPor: currentUser.uid
-          };
-        } else {
-          // Cadastrado: anti-duplicidade por ID
-          if(fm[fid]) {
-            // Já existe — verificar conflito de nome
-            if(fm[fid].nome !== f.nome) conflitos.push(`${f.nome} vs ${fm[fid].nome} no dia ${dateStr}`);
-            continue; // manter o existente
-          }
-          fm[fid] = {
-            nome: f.nome, cargo: f.cargo, cargoPadrao: f.cargo, pix: f.pix || '',
-            diariaPadrao: f.diaria || 0, presente: true, atrasado: false, consumo: 0, auxCount: 0,
-            origem: 'escala', publicadoEm: new Date().toISOString(), publicadoPor: currentUser.uid
-          };
-        }
+      for(const f of funcsNoDia) {
+        if(fm[f.id]) continue; // já existe, não sobrescreve
+        fm[f.id] = {
+          nome: f.nome, cargo: f.cargo, cargoPadrao: f.cargo,
+          pix: f.pix || '', diariaPadrao: f.diaria || 0,
+          presente: true, atrasado: false, consumo: 0, auxCount: 0,
+          origem: 'escala', publicadoEm: new Date().toISOString()
+        };
       }
 
       const e = { de: st, para: 'em_aberto', por: currentUser.uid,
@@ -2382,121 +2279,33 @@ async function confirmarPublicarEscala() {
       }
     }
 
-    // Salvar metadata da publicação na escala
     await escalaSalvarFirebase({
       ultimaPublicacao: {
         dataInicio, diasCriados: criados, diasAtualizados: atualizados,
         publicadoEm: new Date().toISOString(), publicadoPor: currentUser.uid
       }
     });
+    escalaDataInicioAtual = dataInicio;
 
     await logAuditoria('ESCALA_PUBLICADA', `escala_semanal/${escalaDocId}`, {}, {
       semana: dataInicio, criados, atualizados, bloqueados
     });
 
-    // Badge
     $('escalaBadgePublicada').style.display = 'block';
     $('escalaBadgeInfo').textContent = `semana de ${dataInicio} · ${criados} dia(s) criado(s), ${atualizados} atualizado(s)`;
 
     let msg = `✅ Publicado! ${criados} criado(s), ${atualizados} atualizado(s).`;
     if(bloqueados) msg += ` ${bloqueados} dia(s) bloqueado(s) não alterado(s).`;
-    if(conflitos.length) msg += ` ⚠️ Conflitos: ${conflitos.join('; ')}`;
     showAlert('escalaPublicarAlert', msg, 'success', 0);
-
     setTimeout(() => fecharModal('modalEscalaConfirmar'), 2500);
 
   } catch(e) {
-    const msg = e.message?.includes('permission')
-      ? '❌ Sem permissão. Verifique as regras do Firestore.'
-      : '❌ Erro: ' + e.message;
-    showAlert('escalaPublicarAlert', msg, 'error', 0);
+    showAlert('escalaPublicarAlert',
+      e.message?.includes('permission') ? '❌ Sem permissão. Verifique as regras do Firestore.' : '❌ Erro: ' + e.message,
+      'error', 0);
   } finally {
     btn.disabled = false; btn.textContent = '✅ Confirmar Publicação';
   }
-}
-
-
-/* ── Cadastro rápido de avulsos no modal ── */
-function escalaToggleFormCadastro() {
-  const opcao = document.querySelector('input[name="avulsosOpcao"]:checked')?.value;
-  const formWrap = $('escalaFormCadastroRapido');
-  const lista    = $('escalaFormCadastroLista');
-  if(!formWrap || !lista) return;
-
-  if(opcao !== 'cadastrar') { formWrap.style.display = 'none'; return; }
-
-  formWrap.style.display = 'block';
-  const ctx = window._escalaPublicarCtx;
-  if(!ctx?.avulsos?.length) { formWrap.style.display = 'none'; return; }
-
-  const CARGOS = ['Gerente','Garcom','Cumim','Cozinheiro','Bar','Aux. Bar',
-    'Caixa','Recepcionista','Monitora','Aux. Cozinha','Limpeza','Seguranca'];
-
-  lista.innerHTML = ctx.avulsos.map((f, i) => `
-    <div style="background:#fff;border:1.5px solid #EDCBA0;border-radius:8px;padding:10px 12px;margin-bottom:8px">
-      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:8px">${f.nome}</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div>
-          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Cargo</div>
-          <select id="cad_cargo_${i}" class="form-select" style="font-size:13px">
-            ${CARGOS.map(c => `<option value="${c}" ${c===f.cargo?'selected':''}>${c}</option>`).join('')}
-          </select>
-        </div>
-        <div>
-          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Tipo</div>
-          <select id="cad_tipo_${i}" class="form-select" style="font-size:13px">
-            <option value="fixo">Fixo</option>
-            <option value="frequente">Frequente</option>
-          </select>
-        </div>
-        <div>
-          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Diaria padrao (R$)</div>
-          <input type="number" id="cad_diaria_${i}" class="form-input" style="font-size:13px"
-            value="${f.diaria || DIARIA_PADRAO[f.cargo] || 0}" step="0.01">
-        </div>
-        <div>
-          <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Chave Pix</div>
-          <input type="text" id="cad_pix_${i}" class="form-input" style="font-size:13px"
-            placeholder="CPF, celular ou e-mail" value="${f.pix||''}">
-        </div>
-      </div>
-    </div>`).join('');
-}
-
-/* ── Cadastrar avulsos antes de publicar ── */
-async function escalaCadastrarAvulsos(avulsos) {
-  const ctx = window._escalaPublicarCtx;
-  const criados = [];
-  for(let i = 0; i < avulsos.length; i++) {
-    const f = avulsos[i];
-    const cargo  = $(`cad_cargo_${i}`)?.value  || f.cargo;
-    const tipo   = $(`cad_tipo_${i}`)?.value   || 'fixo';
-    const diaria = parseFloat($(`cad_diaria_${i}`)?.value) || DIARIA_PADRAO[cargo] || 0;
-    const pix    = $(`cad_pix_${i}`)?.value?.trim() || '';
-
-    // Gerar ID único
-    const novoId = 'EMP' + Date.now().toString().slice(-6) + String(i);
-    await db.collection('funcionarios').doc(novoId).set({
-      id: novoId, nome: f.nome, cargo, tipo, pix, diariaPadrao: diaria,
-      ativo: true, criadoPor: currentUser.uid,
-      criadoEm: firebase.firestore.FieldValue.serverTimestamp()
-    });
-    await logAuditoria('FUNCIONARIO_CRIADO_VIA_ESCALA', `funcionarios/${novoId}`, {}, { nome: f.nome });
-
-    // Atualizar referência na escala
-    const escIdx = escalaFuncs.findIndex(ef => ef.nome === f.nome && ef.avulso);
-    if(escIdx >= 0) {
-      escalaFuncs[escIdx].firebaseId = novoId;
-      escalaFuncs[escIdx].avulso = false;
-      escalaFuncs[escIdx].cargo = cargo;
-      escalaFuncs[escIdx].diaria = diaria;
-      escalaFuncs[escIdx].pix = pix;
-    }
-    criados.push({ ...f, firebaseId: novoId, cargo, diaria, pix });
-  }
-  // Recarregar o select
-  await escalaCarregarCadastro();
-  return criados;
 }
 
 </script>
