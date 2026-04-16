@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Primus — Setup Dados</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  body{font-family:system-ui,sans-serif;background:#F7F4EF;color:#1A1714;padding:24px;max-width:720px;margin:0 auto}
+  h1{font-size:22px;font-weight:800;color:#C8782A;margin-bottom:4px}
+  .sub{font-size:13px;color:#8A837A;margin-bottom:24px}
+  .card{background:#fff;border:1.5px solid #E2DDD5;border-radius:10px;padding:20px;margin-bottom:16px}
+  h2{font-size:14px;font-weight:700;margin-bottom:4px}
+  .desc{font-size:13px;color:#4A4540;margin-bottom:14px;line-height:1.6}
+  button{background:#C8782A;color:#fff;border:none;border-radius:6px;padding:11px 22px;font-size:14px;font-weight:700;cursor:pointer;width:100%;margin-top:4px;transition:background .15s}
+  button:hover{background:#A05E1E}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .btn-danger{background:#C0392B}
+  .btn-danger:hover{background:#922b21}
+  .alert{padding:10px 14px;border-radius:6px;font-size:13px;margin-top:10px;display:none;font-weight:500;line-height:1.6}
+  .alert.success{background:#E8F5EE;border:1.5px solid #B8DFC9;color:#276749;display:block}
+  .alert.error{background:#FDECEA;border:1.5px solid #F5C0BA;color:#C0392B;display:block}
+  .alert.info{background:#E3F0FB;border:1.5px solid #B8D9F0;color:#1A6FA8;display:block}
+  .log{background:#1A1714;color:#F7F4EF;border-radius:8px;padding:14px;font-size:12px;font-family:monospace;max-height:240px;overflow-y:auto;margin-top:10px;display:none;line-height:1.7}
+  .log.show{display:block}
+  input[type=email],input[type=password]{width:100%;padding:10px 12px;border:1.5px solid #E2DDD5;border-radius:6px;font-size:14px;margin-bottom:8px;box-sizing:border-box;font-family:inherit}
+  input:focus{outline:none;border-color:#C8782A}
+  .warn{background:#FFF8E1;border:1.5px solid #F5C400;border-radius:8px;padding:10px 14px;font-size:13px;color:#854F0B;margin-bottom:12px;line-height:1.6}
+</style>
+</head>
+<body>
+
+<h1>🛠️ Primus — Setup de Dados</h1>
+<div class="sub">Execute na ordem. Feche depois que terminar.</div>
+
+<div id="loginCard" class="card">
+  <h2>Login Admin</h2>
+  <div class="desc">Entre com a conta admin para executar as operações.</div>
+  <input type="email" id="email" value="admin@primus.com.br" placeholder="E-mail">
+  <input type="password" id="senha" placeholder="Senha">
+  <button onclick="doLogin()">Entrar</button>
+  <div id="loginAlert" class="alert"></div>
+</div>
+
+<div id="mainContent" style="display:none">
+
+  <!-- OP 1: LIMPAR DIAS DE TESTE -->
+  <div class="card">
+    <h2>1. Limpar Dias de Teste</h2>
+    <div class="desc">
+      Apaga todos os documentos das coleções <strong>presencas_diarias</strong>, <strong>fechamento_diario</strong> e <strong>fechamento_funcionario</strong>.<br>
+      Também limpa a coleção <strong>escala_semanal</strong>.
+    </div>
+    <div class="warn">⚠️ <strong>Atenção:</strong> esta operação é irreversível. Todos os dados de teste serão apagados permanentemente.</div>
+    <button class="btn-danger" onclick="limparDados()">🗑️ Limpar Todos os Dados de Teste</button>
+    <div id="limparAlert" class="alert"></div>
+    <div id="limparLog" class="log"></div>
+  </div>
+
+  <!-- OP 2: SINCRONIZAR FUNCIONÁRIOS -->
+  <div class="card">
+    <h2>2. Sincronizar Cadastro de Funcionários</h2>
+    <div class="desc">
+      Atualiza os <strong>40 funcionários</strong> da lista oficial.<br>
+      • Se já existe pelo nome → atualiza cargo e Pix<br>
+      • Se não existe → cria novo com ID automático<br>
+      • Funcionários que não estão na lista → marcados como <strong>inativos</strong>
+    </div>
+    <button onclick="sincronizarFuncionarios()">✅ Sincronizar Cadastro</button>
+    <div id="sincAlert" class="alert"></div>
+    <div id="sincLog" class="log"></div>
+  </div>
+
+</div>
+
+<script>
+firebase.initializeApp({
+  apiKey:            "AIzaSyDEo7pB-dLtSHFGjqvYf8Bt8n7VSu5HdrY",
+  authDomain:        "projeto-primus-9b643.firebaseapp.com",
+  projectId:         "projeto-primus-9b643",
+  storageBucket:     "projeto-primus-9b643.firebasestorage.app",
+  messagingSenderId: "547842320766",
+  appId:             "1:547842320766:web:a87b857ce7c2d434cdab2f"
+});
+const auth = firebase.auth();
+const db   = firebase.firestore();
+
+// ── LISTA OFICIAL DE FUNCIONÁRIOS ──
+const LISTA_OFICIAL = [
+  { nome:'Gean Marcos',        cargo:'Cozinheiro',    pix:'conta salário Itaú' },
+  { nome:'Claudenilson',       cargo:'Cozinheiro',    pix:'conta salário Itaú' },
+  { nome:'Ana Maria',          cargo:'Cozinheiro',    pix:'conta salário Itaú' },
+  { nome:'Nadine',             cargo:'Cozinheiro',    pix:'(65)9.9207-0121' },
+  { nome:'Camila',             cargo:'Cozinheiro',    pix:'conta salário Itaú' },
+  { nome:'Beatriz Sarate',     cargo:'Cozinheiro',    pix:'beapix01@gmail.com' },
+  { nome:'Dartagnan',          cargo:'Gerente',       pix:'conta salário Itaú' },
+  { nome:'Brenno Araujo',      cargo:'Aux. Cozinha',  pix:'062.083.651-20' },
+  { nome:'Luis Mario',         cargo:'Garçom',        pix:'conta salário Itaú' },
+  { nome:'Alexandre',          cargo:'Garçom',        pix:'conta salário Itaú' },
+  { nome:'Jonas Dantas',       cargo:'Garçom',        pix:'conta salário Itaú' },
+  { nome:'Aparicio',           cargo:'Garçom',        pix:'062.090.861-01' },
+  { nome:'Gabi Ferreira',      cargo:'Limpeza',       pix:'071.052.411-01' },
+  { nome:'Warley Alexandre',   cargo:'Bar',           pix:'(65)99694-7477' },
+  { nome:'Gabriel Ferreira',   cargo:'Garçom',        pix:'706.814.021-13' },
+  { nome:'Monica',             cargo:'Monitora',      pix:'(65)9.9326-9091' },
+  { nome:'Bruno Cabanhas',     cargo:'Garçom',        pix:'(65)9.9235-0709' },
+  { nome:'Helena Hartzcozf',   cargo:'Caixa',         pix:'(66)9.9222-2678' },
+  { nome:'Carlos Henrique',    cargo:'Cumim',         pix:'DINHEIRO' },
+  { nome:'Maria Clara',        cargo:'Aux. Bar',      pix:'DINHEIRO' },
+  { nome:'Emanuel Santos',     cargo:'Cumim',         pix:'DINHEIRO' },
+  { nome:'Luiz Gomes',         cargo:'Segurança',     pix:'970.468.171-20' },
+  { nome:'Matheus Maciel',     cargo:'Aux. Cozinha',  pix:'matheus.maciel.18.11.1999@gmail.com' },
+  { nome:'Brunno Badini',      cargo:'Garçom',        pix:'068.992.711-84' },
+  { nome:'Emilly Moraes',      cargo:'Monitora',      pix:'061.594.291-16' },
+  { nome:'Ana Clara Pestana',  cargo:'Monitora',      pix:'(65)9.9205-6522' },
+  { nome:'Christiane Toffolo', cargo:'Recepcionista', pix:'(65)99208-0172' },
+  { nome:'Ana Clara Reis',     cargo:'Recepcionista', pix:'061.586.901-71' },
+  { nome:'Luiz Junior',        cargo:'Garçom',        pix:'(65)9.8171-4808' },
+  { nome:'Luiz Henrique',      cargo:'Garçom',        pix:'(65)9.9616-4863' },
+  { nome:'Jonas Antônio',      cargo:'Garçom',        pix:'(65)9.9808-8243' },
+  { nome:'Daniela Dirceu',     cargo:'Cumim',         pix:'(65)9.8459-8663' },
+  { nome:'Ingridi Maciel',     cargo:'Aux. Cozinha',  pix:'052.960.061-78' },
+  { nome:'Pedro Henrique',     cargo:'Cumim',         pix:'097.741.101-02' },
+  { nome:'Angelo Gabriel',     cargo:'Cumim',         pix:'DINHEIRO' },
+  { nome:'Monica Santiago',    cargo:'Limpeza',       pix:'(65)99251-6513' },
+  { nome:'Ana Luisa',          cargo:'Recepcionista', pix:'053.083.071-05' },
+  { nome:'Israelly',           cargo:'Limpeza',       pix:'080.793.861-02' },
+  { nome:'David Ramos',        cargo:'Cumim',         pix:'(65)981287570' },
+  { nome:'Rhennan Alves',      cargo:'Cumim',         pix:'056.680.721-18' },
+];
+
+const DIARIA_PADRAO = {
+  'Gerente':0,'Garçom':80,'Cumim':100,'Cozinheiro':0,'Bar':0,'Aux. Bar':80,
+  'Caixa':150,'Recepcionista':120,'Monitora':120,'Aux. Cozinha':140,'Limpeza':120,'Segurança':200
+};
+
+function showAlert(id, msg, type) {
+  const el = document.getElementById(id);
+  el.innerHTML = msg; el.className = 'alert ' + type;
+}
+function log(logId, msg) {
+  const el = document.getElementById(logId);
+  el.classList.add('show');
+  el.innerHTML += msg + '\n';
+  el.scrollTop = el.scrollHeight;
+}
+
+async function doLogin() {
+  const email = document.getElementById('email').value.trim();
+  const senha = document.getElementById('senha').value;
+  try {
+    await auth.signInWithEmailAndPassword(email, senha);
+    document.getElementById('loginCard').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'block';
+  } catch(e) {
+    showAlert('loginAlert', '❌ ' + e.message, 'error');
+  }
+}
+
+// ── OP 1: LIMPAR DADOS ──
+async function limparDados() {
+  if(!confirm('Tem certeza? Todos os dados de teste serão apagados permanentemente.')) return;
+
+  const btn = document.querySelector('#mainContent .card:first-child button');
+  btn.disabled = true; btn.textContent = '⏳ Apagando...';
+  showAlert('limparAlert', '⏳ Iniciando limpeza...', 'info');
+
+  const colecoes = ['presencas_diarias','fechamento_diario','fechamento_funcionario','escala_semanal','auditoria'];
+  let totalApagados = 0;
+
+  try {
+    for(const col of colecoes) {
+      log('limparLog', `🔍 Buscando ${col}...`);
+      const snap = await db.collection(col).get();
+      if(!snap.size) { log('limparLog', `   ✓ Vazio, pulando.`); continue; }
+
+      // Apagar em lotes de 400
+      let lote = db.batch(); let count = 0;
+      for(const doc of snap.docs) {
+        lote.delete(doc.ref); count++;
+        if(count % 400 === 0) { await lote.commit(); lote = db.batch(); }
+      }
+      if(count % 400 !== 0) await lote.commit();
+      totalApagados += snap.size;
+      log('limparLog', `   ✅ ${snap.size} documentos apagados de ${col}`);
+    }
+    showAlert('limparAlert', `✅ Limpeza concluída! ${totalApagados} documentos removidos.`, 'success');
+  } catch(e) {
+    showAlert('limparAlert', '❌ Erro: ' + e.message, 'error');
+    log('limparLog', '❌ ERRO: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '🗑️ Limpar Todos os Dados de Teste';
+  }
+}
+
+// ── OP 2: SINCRONIZAR FUNCIONÁRIOS ──
+async function sincronizarFuncionarios() {
+  const btn = document.querySelectorAll('#mainContent button')[1];
+  btn.disabled = true; btn.textContent = '⏳ Sincronizando...';
+  showAlert('sincAlert', '⏳ Buscando cadastro atual...', 'info');
+
+  try {
+    // Buscar todos os funcionários atuais
+    const snap = await db.collection('funcionarios').get();
+    const existentes = {}; // { nome_normalizado: { id, data } }
+    snap.docs.forEach(d => {
+      const nome = d.data().nome?.trim().toLowerCase();
+      if(nome) existentes[nome] = { id: d.id, data: d.data() };
+    });
+
+    log('sincLog', `📋 ${snap.size} funcionários existentes no banco.`);
+    log('sincLog', `📋 ${LISTA_OFICIAL.length} funcionários na lista oficial.\n`);
+
+    // Determinar próximo ID
+    let maxNum = 0;
+    snap.docs.forEach(d => {
+      const m = d.id.match(/^EMP(\d+)$/);
+      if(m) maxNum = Math.max(maxNum, parseInt(m[1]));
+    });
+
+    const nomesOficiais = new Set(LISTA_OFICIAL.map(f => f.nome.trim().toLowerCase()));
+    let criados = 0, atualizados = 0, inativados = 0;
+
+    // Processar lista oficial
+    for(const f of LISTA_OFICIAL) {
+      const nomeKey = f.nome.trim().toLowerCase();
+      const diaria = DIARIA_PADRAO[f.cargo] || 0;
+
+      if(existentes[nomeKey]) {
+        // Atualizar existente
+        const { id, data } = existentes[nomeKey];
+        await db.collection('funcionarios').doc(id).update({
+          nome: f.nome.trim(),
+          cargo: f.cargo,
+          pix: f.pix,
+          diariaPadrao: diaria,
+          ativo: true,
+          tipo: data.tipo || 'fixo',
+          atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        log('sincLog', `  ✏️  Atualizado: ${f.nome} (${id}) — ${f.cargo} | ${f.pix}`);
+        atualizados++;
+      } else {
+        // Criar novo
+        maxNum++;
+        const novoId = 'EMP' + String(maxNum).padStart(3, '0');
+        await db.collection('funcionarios').doc(novoId).set({
+          id: novoId, nome: f.nome.trim(), cargo: f.cargo, pix: f.pix,
+          diariaPadrao: diaria, tipo: 'fixo', ativo: true,
+          criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        log('sincLog', `  ➕ Criado: ${f.nome} (${novoId}) — ${f.cargo} | ${f.pix}`);
+        criados++;
+      }
+    }
+
+    // Inativar quem não está na lista
+    for(const [nomeKey, { id, data }] of Object.entries(existentes)) {
+      if(!nomesOficiais.has(nomeKey) && data.ativo !== false) {
+        await db.collection('funcionarios').doc(id).update({ ativo: false });
+        log('sincLog', `  ⛔ Inativado: ${data.nome} (${id})`);
+        inativados++;
+      }
+    }
+
+    showAlert('sincAlert',
+      `✅ Sincronização concluída!<br>` +
+      `➕ <strong>${criados}</strong> criados &nbsp;|&nbsp; ` +
+      `✏️ <strong>${atualizados}</strong> atualizados &nbsp;|&nbsp; ` +
+      `⛔ <strong>${inativados}</strong> inativados`,
+      'success');
+    log('sincLog', `\n✅ CONCLUÍDO: ${criados} criados, ${atualizados} atualizados, ${inativados} inativados.`);
+
+  } catch(e) {
+    showAlert('sincAlert', '❌ Erro: ' + e.message, 'error');
+    log('sincLog', '❌ ERRO: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '✅ Sincronizar Cadastro';
+  }
+}
+</script>
+</body>
+</html>
