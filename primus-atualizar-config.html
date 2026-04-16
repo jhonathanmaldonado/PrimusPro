@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Primus — Atualizar Configurações Firebase</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  body{font-family:system-ui,sans-serif;background:#F7F4EF;color:#1A1714;padding:24px;max-width:700px;margin:0 auto}
+  h1{font-size:22px;font-weight:800;color:#C8782A;margin-bottom:4px}
+  .sub{font-size:13px;color:#8A837A;margin-bottom:24px}
+  .card{background:#fff;border:1.5px solid #E2DDD5;border-radius:10px;padding:20px;margin-bottom:16px}
+  .card h2{font-size:14px;font-weight:700;margin-bottom:12px;color:#1A1714}
+  .item{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #F0EDE6;font-size:13px}
+  .item:last-child{border:none}
+  .item .lbl{color:#4A4540}
+  .item .val{font-weight:700;color:#C8782A}
+  button{background:#C8782A;color:#fff;border:none;border-radius:6px;padding:11px 22px;font-size:14px;font-weight:700;cursor:pointer;width:100%;margin-top:8px;transition:background .15s}
+  button:hover{background:#A05E1E}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .alert{padding:10px 14px;border-radius:6px;font-size:13px;margin-top:12px;display:none;font-weight:500}
+  .alert.success{background:#E8F5EE;border:1.5px solid #B8DFC9;color:#276749;display:block}
+  .alert.error{background:#FDECEA;border:1.5px solid #F5C0BA;color:#C0392B;display:block}
+  .alert.info{background:#E3F0FB;border:1.5px solid #B8D9F0;color:#1A6FA8;display:block}
+  .step{background:#F0EDE6;border-radius:6px;padding:10px 14px;font-size:12px;margin-top:8px;line-height:1.7;color:#4A4540}
+  .step strong{color:#1A1714}
+  code{background:#E2DDD5;padding:2px 6px;border-radius:4px;font-size:11px;font-family:monospace}
+  pre{background:#1A1714;color:#F7F4EF;padding:14px;border-radius:8px;font-size:11px;overflow-x:auto;margin-top:8px;line-height:1.6}
+  .tag{font-size:10px;padding:2px 8px;border-radius:20px;font-weight:700;display:inline-block;margin-left:6px}
+  .tag-auto{background:#E8F5EE;color:#276749}
+  .tag-manual{background:#F5E6D3;color:#A05E1E}
+  #loginSection{background:#fff;border:1.5px solid #E2DDD5;border-radius:10px;padding:20px;margin-bottom:16px}
+  input[type=email],input[type=password]{width:100%;padding:10px 12px;border:1.5px solid #E2DDD5;border-radius:6px;font-size:14px;margin-bottom:8px;box-sizing:border-box}
+  input:focus{outline:none;border-color:#C8782A}
+</style>
+</head>
+<body>
+
+<h1>🔧 Primus — Atualizar Configurações</h1>
+<div class="sub">Execute cada operação uma vez. Pode fechar depois.</div>
+
+<div id="loginSection">
+  <h2 style="font-size:14px;font-weight:700;margin-bottom:12px">Login Admin</h2>
+  <input type="email" id="email" placeholder="admin@primus.com.br" value="admin@primus.com.br">
+  <input type="password" id="senha" placeholder="Senha">
+  <button onclick="doLogin()">Entrar</button>
+  <div id="loginAlert" class="alert"></div>
+</div>
+
+<div id="mainContent" style="display:none">
+
+  <!-- OP 1: GORJETA -->
+  <div class="card">
+    <h2>1. Atualizar Percentuais de Gorjeta <span class="tag tag-auto">Automático</span></h2>
+    <div class="item"><span class="lbl">Garçom</span><span class="val">45%</span></div>
+    <div class="item"><span class="lbl">Bar</span><span class="val">7%</span></div>
+    <div class="item"><span class="lbl">Cozinheiro</span><span class="val">10%</span></div>
+    <div class="item"><span class="lbl">Cumim</span><span class="val">5%</span></div>
+    <div class="item"><span class="lbl">Gerente</span><span class="val">10%</span></div>
+    <div class="item"><span class="lbl">Aux. Bar</span><span class="val">3%</span></div>
+    <div class="item"><span class="lbl">Casa (retido)</span><span class="val">25%</span></div>
+    <div class="item"><span class="lbl">Demais cargos</span><span class="val">0%</span></div>
+    <button onclick="atualizarGorjeta()">✅ Salvar Percentuais no Firebase</button>
+    <div id="gorjetaAlert" class="alert"></div>
+  </div>
+
+  <!-- OP 2: ESCALA COLLECTION PERMISSIONS (via rules) -->
+  <div class="card">
+    <h2>2. Regras do Firestore <span class="tag tag-manual">Manual</span></h2>
+    <p style="font-size:13px;color:#4A4540;margin-bottom:12px;line-height:1.6">
+      O erro <strong>"Missing or insufficient permissions"</strong> nas telas de Escala e Fechamento
+      é causado pelas regras do Firestore. Copie e cole as regras abaixo no console do Firebase.
+    </p>
+    <div class="step">
+      <strong>Como fazer:</strong><br>
+      1. Acesse <a href="https://console.firebase.google.com/project/projeto-primus-9b643/firestore/rules" target="_blank" style="color:#C8782A">Firebase Console → Firestore → Rules</a><br>
+      2. Apague tudo e cole o conteúdo abaixo<br>
+      3. Clique em <strong>Publicar</strong>
+    </div>
+    <button onclick="copiarRegras()" style="margin-top:12px;background:#276749">📋 Copiar Regras</button>
+    <pre id="regrasPre">rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Função auxiliar: obtém o perfil do usuário logado
+    function perfil() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.perfil;
+    }
+    function ativo() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.ativo == true;
+    }
+    function autenticado() {
+      return request.auth != null && ativo();
+    }
+    function isGerente()   { return autenticado() && perfil() in ['gerente','admin']; }
+    function isFinanceiro(){ return autenticado() && perfil() in ['financeiro','diretoria','admin']; }
+    function isDiretoria() { return autenticado() && perfil() in ['diretoria','admin']; }
+    function isAdmin()     { return autenticado() && perfil() == 'admin'; }
+    function qualquerPerfil() { return autenticado(); }
+
+    // Usuários — admin lê e escreve todos; cada user lê o próprio
+    match /usuarios/{uid} {
+      allow read: if autenticado();
+      allow write: if isAdmin();
+      allow update: if request.auth.uid == uid; // usuário pode atualizar o próprio doc
+    }
+
+    // Funcionários — diretoria/admin escrevem; todos lêem
+    match /funcionarios/{id} {
+      allow read:  if qualquerPerfil();
+      allow write: if isDiretoria() || isGerente(); // gerente pode criar via escala
+    }
+
+    // Presenças — gerente cria e edita (se em_aberto); financeiro lê
+    match /presencas_diarias/{data} {
+      allow read:  if qualquerPerfil();
+      allow create: if isGerente();
+      allow update: if isGerente() || isFinanceiro() || isDiretoria();
+    }
+
+    // Fechamento por dia — financeiro/diretoria/admin escrevem
+    match /fechamento_diario/{id} {
+      allow read:  if qualquerPerfil();
+      allow write: if isFinanceiro();
+    }
+
+    // Fechamento por funcionário — financeiro/diretoria/admin escrevem
+    match /fechamento_funcionario/{id} {
+      allow read:  if qualquerPerfil();
+      allow write: if isFinanceiro();
+    }
+
+    // Configurações (gorjeta) — admin escreve; todos lêem
+    match /configuracoes/{id} {
+      allow read:  if qualquerPerfil();
+      allow write: if isAdmin();
+    }
+
+    // Escala semanal — gerente/admin escrevem; financeiro lê
+    match /escala_semanal/{id} {
+      allow read:  if qualquerPerfil();
+      allow write: if isGerente();
+    }
+
+    // Auditoria — qualquer perfil logado pode criar; ninguém edita
+    match /auditoria/{id} {
+      allow read:  if isDiretoria();
+      allow create: if qualquerPerfil();
+      allow update, delete: if false;
+    }
+  }
+}</pre>
+    <div id="regrasAlert" class="alert"></div>
+  </div>
+
+  <!-- OP 3: CRIAR TIPO NOS FUNCIONÁRIOS EXISTENTES -->
+  <div class="card">
+    <h2>3. Corrigir campo "tipo" nos funcionários <span class="tag tag-auto">Automático</span></h2>
+    <p style="font-size:13px;color:#4A4540;margin-bottom:8px;line-height:1.6">
+      Funcionários sem o campo <code>tipo</code> não aparecem corretamente no filtro da presença.
+      Isso adiciona <code>tipo: "fixo"</code> para quem não tem.
+    </p>
+    <button onclick="corrigirTipoFuncionarios()">🔧 Corrigir Funcionários</button>
+    <div id="tipoAlert" class="alert"></div>
+  </div>
+
+</div>
+
+<script>
+firebase.initializeApp({
+  apiKey:            "AIzaSyDEo7pB-dLtSHFGjqvYf8Bt8n7VSu5HdrY",
+  authDomain:        "projeto-primus-9b643.firebaseapp.com",
+  projectId:         "projeto-primus-9b643",
+  storageBucket:     "projeto-primus-9b643.firebasestorage.app",
+  messagingSenderId: "547842320766",
+  appId:             "1:547842320766:web:a87b857ce7c2d434cdab2f"
+});
+const auth = firebase.auth();
+const db   = firebase.firestore();
+
+function showAlert(id, msg, type) {
+  const el = document.getElementById(id);
+  el.textContent = msg; el.className = 'alert ' + type;
+}
+
+async function doLogin() {
+  const email = document.getElementById('email').value.trim();
+  const senha  = document.getElementById('senha').value;
+  try {
+    await auth.signInWithEmailAndPassword(email, senha);
+    document.getElementById('loginSection').style.display = 'none';
+    document.getElementById('mainContent').style.display  = 'block';
+  } catch(e) {
+    showAlert('loginAlert', '❌ ' + e.message, 'error');
+  }
+}
+
+async function atualizarGorjeta() {
+  const btn = document.querySelector('#mainContent .card:first-child button');
+  btn.disabled = true; btn.textContent = '⏳ Salvando...';
+  try {
+    const regras = {
+      'Garçom':       { percentual: 0.45, descricao: 'Garçom' },
+      'Bar':          { percentual: 0.07, descricao: 'Bar' },
+      'Cozinheiro':   { percentual: 0.10, descricao: 'Cozinheiro' },
+      'Cumim':        { percentual: 0.05, descricao: 'Cumim' },
+      'Gerente':      { percentual: 0.10, descricao: 'Gerente' },
+      'Aux. Bar':     { percentual: 0.03, descricao: 'Aux. Bar' },
+      // Demais cargos recebem 0%
+      'Caixa':        { percentual: 0.00, descricao: 'Caixa' },
+      'Recepcionista':{ percentual: 0.00, descricao: 'Recepcionista' },
+      'Monitora':     { percentual: 0.00, descricao: 'Monitora' },
+      'Aux. Cozinha': { percentual: 0.00, descricao: 'Aux. Cozinha' },
+      'Limpeza':      { percentual: 0.00, descricao: 'Limpeza' },
+      'Segurança':    { percentual: 0.00, descricao: 'Segurança' },
+    };
+    // Total distribuído: 45+7+10+5+10+3 = 80% → Casa fica com 20%
+    await db.collection('configuracoes').doc('gorjeta').set({
+      regras,
+      percentualCasa: 0.20,
+      totalDistribuido: 0.80,
+      descricao: 'Garçom 45% | Bar 7% | Cozinha 10% | Cumim 5% | Gerente 10% | Aux.Bar 3% | Casa 20%',
+      atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    showAlert('gorjetaAlert', '✅ Percentuais atualizados com sucesso!', 'success');
+  } catch(e) {
+    showAlert('gorjetaAlert', '❌ ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '✅ Salvar Percentuais no Firebase';
+  }
+}
+
+function copiarRegras() {
+  const text = document.getElementById('regrasPre').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    showAlert('regrasAlert', '✅ Regras copiadas! Agora cole no Firebase Console.', 'success');
+  }).catch(() => {
+    showAlert('regrasAlert', 'Selecione o texto acima manualmente e copie.', 'info');
+  });
+}
+
+async function corrigirTipoFuncionarios() {
+  const btn = document.querySelectorAll('#mainContent button')[2];
+  btn.disabled = true; btn.textContent = '⏳ Corrigindo...';
+  try {
+    const snap = await db.collection('funcionarios').get();
+    const batch = db.batch();
+    let count = 0;
+    snap.docs.forEach(d => {
+      const data = d.data();
+      if(!data.tipo) {
+        batch.update(d.ref, { tipo: 'fixo' });
+        count++;
+      }
+    });
+    if(count > 0) {
+      await batch.commit();
+      showAlert('tipoAlert', `✅ ${count} funcionário(s) corrigido(s)!`, 'success');
+    } else {
+      showAlert('tipoAlert', '✅ Todos os funcionários já têm o campo "tipo" correto.', 'success');
+    }
+  } catch(e) {
+    showAlert('tipoAlert', '❌ ' + e.message, 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = '🔧 Corrigir Funcionários';
+  }
+}
+</script>
+</body>
+</html>
