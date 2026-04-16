@@ -883,37 +883,48 @@ async function gerCarregarDia(dateStr) {
     if(daySnap.exists) {
       const dd = daySnap.data();
       gerDayStatus = dd.status; gerDocExists = true;
-      gerFuncionarios = cadastros.map(f => {
-        const p = (dd.funcionarios||{})[f.id] || {};
-        return {
-          id:f.id, nome:f.nome, cargo:p.cargo||f.cargo, cargoPadrao:f.cargo,
-          isExtra:false, isFrequente:f.tipo==='frequente',
-          presente:p.presente!==undefined?p.presente:true,
-          atrasado:p.atrasado||false, consumo:p.consumo||0,
-          auxCount:p.auxCount||0, pix:f.pix||'',
-          diariaPadrao:p.diariaPadrao??f.diariaPadrao??DIARIA_PADRAO[f.cargo]??0
-        };
-      });
-      // extras
-      Object.entries(dd.funcionarios||{}).forEach(([id,p]) => {
-        if(id.startsWith('EXTRA_'))
+      const cadMap = {};
+      cadastros.forEach(f => cadMap[f.id] = f);
+
+      // Mostrar SOMENTE quem esta em presencas_diarias (veio da escala ou foi adicionado)
+      gerFuncionarios = [];
+      Object.entries(dd.funcionarios||{}).forEach(([id, p]) => {
+        if(id.startsWith('EXTRA_')) {
           gerFuncionarios.push({
-            id, nome:p.nome||id, cargo:p.cargo||'Garçom', pix:p.pix||'',
+            id, nome:p.nome||id, cargo:p.cargo||'Garcom', pix:p.pix||'',
             diariaPadrao:p.diariaPadrao||DIARIA_PADRAO[p.cargo]||0,
             isExtra:true, isFrequente:false,
             presente:p.presente!==false, atrasado:p.atrasado||false,
             consumo:p.consumo||0, auxCount:p.auxCount||0
           });
+        } else {
+          const cad = cadMap[id];
+          gerFuncionarios.push({
+            id, nome:p.nome||cad?.nome||id,
+            cargo:p.cargo||cad?.cargo||'Garcom',
+            cargoPadrao:cad?.cargo||p.cargo||'Garcom',
+            isExtra:false, isFrequente:cad?.tipo==='frequente',
+            presente:p.presente!==false,
+            atrasado:p.atrasado||false, consumo:p.consumo||0,
+            auxCount:p.auxCount||0,
+            pix:p.pix||cad?.pix||'',
+            diariaPadrao:p.diariaPadrao??cad?.diariaPadrao??DIARIA_PADRAO[p.cargo]??0
+          });
+        }
       });
+
+      // Ordenar: fixos, frequentes, extras
+      gerFuncionarios.sort((a,b) => {
+        if(a.isExtra !== b.isExtra) return a.isExtra ? 1 : -1;
+        if(a.isFrequente !== b.isFrequente) return a.isFrequente ? 1 : -1;
+        return a.nome.localeCompare(b.nome, 'pt-BR');
+      });
+
       $('gerObs').value = dd.obs || '';
     } else {
+      // Dia sem registro — lista vazia, gerente adiciona ou publica escala
       gerDayStatus = null; gerDocExists = false;
-      gerFuncionarios = cadastros.map(f => ({
-        id:f.id, nome:f.nome, cargo:f.cargo, cargoPadrao:f.cargo,
-        isExtra:false, isFrequente:f.tipo==='frequente',
-        presente:true, atrasado:false, consumo:0, auxCount:0,
-        pix:f.pix||'', diariaPadrao:f.diariaPadrao||DIARIA_PADRAO[f.cargo]||0
-      }));
+      gerFuncionarios = [];
       $('gerObs').value = '';
     }
     $('gerSumDate').textContent = fmtDate(dateStr);
@@ -2085,12 +2096,18 @@ function escalaGerarPDF() {
   });
 
   const hoje = new Date().toLocaleDateString('pt-BR',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
-  // Calcular primeiro dia da semana atual (segunda-feira)
-  const agora = new Date();
-  const dowAgora = agora.getDay();
-  const diasParaSeg = dowAgora === 0 ? -6 : 1 - dowAgora;
-  const seg = new Date(agora); seg.setDate(agora.getDate() + diasParaSeg);
-  const primeirodia = seg.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  // Usar data da publicacao se disponivel, senao semana atual
+  let primeirodia;
+  if(escalaDataInicioAtual) {
+    const dt = new Date(escalaDataInicioAtual + 'T12:00:00');
+    primeirodia = dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  } else {
+    const agora = new Date();
+    const dowAgora = agora.getDay();
+    const diasParaSeg = dowAgora === 0 ? -6 : 1 - dowAgora;
+    const seg = new Date(agora); seg.setDate(agora.getDate() + diasParaSeg);
+    primeirodia = seg.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'});
+  }
   const totalMarcados = escalaFuncs.reduce((a,f)=>a+DIAS_SEMANA.filter(d=>f.dias[d]).length,0);
   const porDia = DIAS_SEMANA.map(d=>({dia:d,qt:escalaFuncs.filter(f=>f.dias[d]).length}));
 
