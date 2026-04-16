@@ -510,1035 +510,818 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
 </div>
 
 <script>
-/* ══ FIREBASE CONFIG ══ */
-const FIREBASE_CONFIG = {
+
+/* ═══════════════════════════════════════════════════
+   PEIXARIA PRIMUS — SISTEMA DE GESTÃO UNIFICADO
+   Arquitetura limpa — IDs canônicos do HTML
+═══════════════════════════════════════════════════ */
+
+/* ══ FIREBASE ══ */
+firebase.initializeApp({
   apiKey:            "AIzaSyDEo7pB-dLtSHFGjqvYf8Bt8n7VSu5HdrY",
   authDomain:        "projeto-primus-9b643.firebaseapp.com",
   projectId:         "projeto-primus-9b643",
   storageBucket:     "projeto-primus-9b643.firebasestorage.app",
   messagingSenderId: "547842320766",
   appId:             "1:547842320766:web:a87b857ce7c2d434cdab2f"
-};
-firebase.initializeApp(FIREBASE_CONFIG);
+});
 const auth = firebase.auth();
 const db   = firebase.firestore();
 
 /* ══ CONSTANTES ══ */
-const CARGOS = [
-  'Gerente','Garçom','Cumim','Cozinheiro','Bar','Aux. Bar',
-  'Caixa','Recepcionista','Monitora','Aux. Cozinha','Limpeza','Segurança'
-];
-
 const CARGO_SETOR = {
   'Garçom':'garcom','Bar':'bar','Cozinheiro':'cozinha','Cumim':'cumim',
-  'Gerente':'gerente','Limpeza':'outros','Recepcionista':'outros','Monitora':'outros',
-  'Aux. Cozinha':'cozinha','Caixa':'outros','Segurança':'outros',
-  'Aux. Bar':'bar','Parquinho':'outros','Professor':'outros',
+  'Gerente':'gerente','Aux. Bar':'bar','Limpeza':'outros','Recepcionista':'outros',
+  'Monitora':'outros','Aux. Cozinha':'cozinha','Caixa':'outros','Segurança':'outros'
 };
-
-// Diária padrão por cargo (0 = sem diária fixa)
 const DIARIA_PADRAO = {
-  'Gerente':    0,
-  'Garçom':     80,
-  'Cumim':      100,
-  'Cozinheiro': 0,
-  'Bar':        0,
-  'Aux. Bar':   80,
-  'Caixa':      150,
-  'Recepcionista': 120,
-  'Monitora':   120,
-  'Aux. Cozinha': 140,
-  'Limpeza':    120,
-  'Segurança':  200,
+  'Gerente':0,'Garçom':80,'Cumim':100,'Cozinheiro':0,'Bar':0,'Aux. Bar':80,
+  'Caixa':150,'Recepcionista':120,'Monitora':120,'Aux. Cozinha':140,'Limpeza':120,'Segurança':200
 };
-
 const STATUS_LABEL = {
-  em_aberto:'🔵 Em Aberto', aguardando_fechamento:'🟡 Aguardando Fechamento',
-  fechado:'🟢 Fechado', reaberto:'🔴 Reaberto',
+  em_aberto:'🔵 Em Aberto',aguardando_fechamento:'🟡 Aguardando Fechamento',
+  fechado:'🟢 Fechado',reaberto:'🔴 Reaberto'
 };
+const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+               'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+const COLORS = ['#C8782A','#1A6FA8','#276749','#C0392B','#6B3FA8','#D4A03A','#A05E1E','#56d364'];
 
-/* ══ ESTADO ══ */
-let currentUser = null, currentPerfil = null, currentDate = '';
-let funcionarios = [], dayStatus = null, dayDocExists = false, saveTimer = null;
-let calAno = new Date().getFullYear(), calMes = new Date().getMonth();
-let diasStatus = {}, modalCargoIdx = -1;
+/* ══ ESTADO GLOBAL ══ */
+let currentUser = null, currentPerfil = null;
+let gorjetaRegras = {};
+
+// Gerente
+let gerFuncionarios = [], gerDayStatus = null, gerDocExists = false;
+let gerSaveTimer = null, gerCurrentDate = '';
+let gerCalAno = new Date().getFullYear(), gerCalMes = new Date().getMonth();
+let gerDiasStatus = {}, gerFiltro = 'todos', gerCargoIdx = -1, gerAuxExtra = 2;
+
+// Financeiro
+let finDate = null, finPresentes = [], finGorjetaMap = {}, finDayStatus = null;
+let finCalAno = new Date().getFullYear(), finCalMes = new Date().getMonth();
+let finDiasStatus = {};
+
+// QR
+let pendingQR = null;
+
+/* ══ UTILS ══ */
+const fmt = v => 'R$ ' + Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+const todayStr = () => new Date().toISOString().split('T')[0];
+const $ = id => document.getElementById(id);
+function fmtDate(d) {
+  if(!d) return '—';
+  const [y,m,day] = d.split('-');
+  const nomes = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  return `${nomes[new Date(+y,+m-1,+day).getDay()]}, ${day}/${m}/${y}`;
+}
+function setor(c) { return CARGO_SETOR[c] || 'outros'; }
+function badge(c) { return `<span class="badge c-${setor(c)}">${c}</span>`; }
+function showAlert(id, msg, type, dur=5000) {
+  const el = $(id); if(!el) return;
+  el.textContent = msg; el.className = 'alert ' + type;
+  if(dur) setTimeout(() => el.className = 'alert', dur);
+}
+function hideAlert(id) { const el=$(id); if(el) el.className='alert'; }
+function abrirModal(id) { $(id)?.classList.add('open'); }
+function fecharModal(id) { $(id)?.classList.remove('open'); }
+function setSyncStatus(st) {
+  const el = $('syncIndicator'); if(!el) return;
+  if(st==='saving'){el.className='sync-indicator saving';el.textContent='⏳ Salvando...';}
+  else if(st==='saved'){el.className='sync-indicator saved';el.textContent='✅ Salvo na nuvem';}
+  else{el.className='sync-indicator';el.textContent='';}
+}
+async function logAuditoria(acao, entidade, antes, depois) {
+  try {
+    await db.collection('auditoria').add({
+      ts: firebase.firestore.FieldValue.serverTimestamp(),
+      usuarioId: currentUser.uid,
+      usuarioNome: $('userLabel')?.textContent || '',
+      perfil: currentPerfil, acao, entidade,
+      valorAntes: antes, valorDepois: depois
+    });
+  } catch(_) {}
+}
+async function carregarGorjetaConfig() {
+  try {
+    const s = await db.collection('configuracoes').doc('gorjeta').get();
+    gorjetaRegras = s.exists ? (s.data().regras || {}) : {};
+  } catch(_) { gorjetaRegras = {}; }
+}
+function pctGorjeta(c) { return gorjetaRegras[c]?.percentual ?? 0; }
 
 /* ══ AUTH ══ */
 auth.onAuthStateChanged(async user => {
-  if (!user) { showLogin(); return; }
+  if(!user) { showLogin(); return; }
   try {
     const snap = await db.collection('usuarios').doc(user.uid).get();
-    if (!snap.exists || !snap.data().ativo) { await auth.signOut(); showLogin(); return; }
+    if(!snap.exists || !snap.data().ativo) { await auth.signOut(); showLogin(); return; }
     const data = snap.data();
-    if (!['gerente','admin'].includes(data.perfil)) {
-      await auth.signOut(); showLogin('Acesso restrito ao módulo gerente.'); return;
-    }
     currentUser = user; currentPerfil = data.perfil;
-    document.getElementById('userLabel').textContent = data.nome || user.email;
+    $('userLabel').textContent = data.nome || user.email;
+    const pb = $('perfilBadge');
+    const labels = {gerente:'Gerente',financeiro:'Financeiro',diretoria:'Diretoria',admin:'Admin'};
+    pb.textContent = labels[data.perfil] || data.perfil;
+    pb.className = `perfil-badge perfil-${data.perfil}`;
+    await carregarGorjetaConfig();
+    configurarAbas();
     showApp();
   } catch(e) { await auth.signOut(); showLogin('Erro: ' + e.message); }
 });
 
 function showLogin(msg='') {
-  document.getElementById('loginScreen').style.display = 'flex';
-  document.getElementById('appScreen').style.display = 'none';
-  if (msg) { const el=document.getElementById('loginError'); el.textContent=msg; el.classList.add('show'); }
+  $('loginScreen').style.display = 'flex';
+  $('appScreen').style.display = 'none';
+  const el = $('loginError');
+  if(msg) { el.textContent = msg; el.classList.add('show'); }
+  else { el.classList.remove('show'); }
 }
 function showApp() {
-  document.getElementById('loginScreen').style.display = 'none';
-  document.getElementById('appScreen').style.display = 'block';
-  document.getElementById('obsInput').addEventListener('input', () => autoSave());
-  carregarStatusMes();
+  $('loginScreen').style.display = 'none';
+  $('appScreen').style.display = 'block';
+  $('gerObs').addEventListener('input', () => gerAutoSave());
+  if(currentPerfil === 'gerente') { ativarTab('presenca'); gerCarregarMes(); }
+  else { ativarTab('calendario'); carregarCalFin(); }
 }
 async function doLogin() {
-  const email=document.getElementById('loginEmail').value.trim();
-  const pass=document.getElementById('loginPass').value;
-  const btn=document.getElementById('loginBtn');
-  document.getElementById('loginError').classList.remove('show');
-  btn.disabled=true; btn.innerHTML='<span class="loading-spinner"></span>Entrando...';
+  const email = $('loginEmail').value.trim();
+  const pass  = $('loginPass').value;
+  const btn   = $('loginBtn');
+  $('loginError').classList.remove('show');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-spinner"></span>Entrando...';
   try { await auth.signInWithEmailAndPassword(email, pass); }
   catch(e) {
-    document.getElementById('loginError').textContent = e.code==='auth/invalid-credential'?'E-mail ou senha incorretos.':e.message;
-    document.getElementById('loginError').classList.add('show');
-    btn.disabled=false; btn.textContent='Entrar';
+    $('loginError').textContent = e.code === 'auth/invalid-credential' ? 'E-mail ou senha incorretos.' : e.message;
+    $('loginError').classList.add('show');
+    btn.disabled = false; btn.textContent = 'Entrar';
   }
 }
 async function doLogout() { await auth.signOut(); }
 document.addEventListener('keydown', e => {
-  if (e.key==='Enter' && document.getElementById('loginScreen').style.display!=='none') doLogin();
+  if(e.key === 'Enter' && $('loginScreen').style.display !== 'none') doLogin();
 });
 
-/* ══ UTILS ══ */
-function todayStr() { return new Date().toISOString().split('T')[0]; }
-function fmtDate(d) {
-  const [y,m,day]=d.split('-');
-  const n=['Domingo','Segunda-feira','Terça-feira','Quarta-feira','Quinta-feira','Sexta-feira','Sábado'];
-  return `${n[new Date(+y,+m-1,+day).getDay()]}, ${day}/${m}/${y}`;
+/* ══ TABS ══ */
+function configurarAbas() {
+  const isGer = currentPerfil === 'gerente';
+  const isFin = ['financeiro','diretoria','admin'].includes(currentPerfil);
+  const isDir = ['diretoria','admin'].includes(currentPerfil);
+  const isAdm = currentPerfil === 'admin';
+  const mapa  = {
+    presenca:isGer, calendario:isFin, fechamento:isFin, pagamentos:isFin,
+    historico:isFin, resumo:isFin, cadastro:isDir, usuarios:isAdm, qrfallback:true
+  };
+  Object.entries(mapa).forEach(([tab,vis]) =>
+    document.querySelector(`[data-tab="${tab}"]`)?.classList.toggle('hidden',!vis)
+  );
 }
-function setor(cargo) { return CARGO_SETOR[cargo]||'outros'; }
-function showAlert(id,msg,type,dur=5000) {
-  const el=document.getElementById(id); el.textContent=msg; el.className='alert '+type;
-  if(dur) setTimeout(()=>el.className='alert',dur);
+function ativarTab(tab) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  $('sec-' + tab)?.classList.add('active');
+  document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
 }
-function setSyncStatus(st) {
-  const el=document.getElementById('syncIndicator');
-  if(st==='saving'){el.className='sync-indicator saving';el.textContent='⏳ Salvando...';}
-  else if(st==='saved'){el.className='sync-indicator saved';el.textContent='✅ Salvo na nuvem';}
-  else{el.className='sync-indicator';el.textContent='';}
+function showTab(tab, el) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  $('sec-' + tab)?.classList.add('active');
+  el.classList.add('active');
+  if(tab==='historico') renderHistorico();
+  if(tab==='resumo')    renderResumoInit();
+  if(tab==='cadastro')  renderCadList();
+  if(tab==='pagamentos') renderPagamentos();
+  if(tab==='calendario') carregarCalFin();
+  if(tab==='usuarios')   renderUsuarios();
 }
 
-/* ══ CALENDÁRIO ══ */
-async function carregarStatusMes() {
-  const anoMes = `${calAno}-${String(calMes+1).padStart(2,'0')}`;
+/* ════════════════════════════════════════
+   MÓDULO GERENTE — PRESENÇA
+════════════════════════════════════════ */
+
+/* ── Calendário do Gerente ── */
+async function gerCarregarMes() {
+  const ym = `${gerCalAno}-${String(gerCalMes+1).padStart(2,'0')}`;
   try {
-    const snap = await db.collection('presencas_diarias')
-      .where('data','>=',anoMes+'-01').where('data','<=',anoMes+'-31').get();
-    diasStatus = {};
-    snap.docs.forEach(d => { diasStatus[d.id] = d.data().status||'em_aberto'; });
-  } catch(_) { diasStatus = {}; }
-  renderCalendario();
+    const s = await db.collection('presencas_diarias')
+      .where('data','>=',ym+'-01').where('data','<=',ym+'-31').get();
+    gerDiasStatus = {};
+    s.docs.forEach(d => gerDiasStatus[d.id] = d.data().status || 'em_aberto');
+  } catch(_) { gerDiasStatus = {}; }
+  renderGerCal();
 }
-
-function mudarMes(delta) {
-  calMes += delta;
-  if(calMes<0){calMes=11;calAno--;} if(calMes>11){calMes=0;calAno++;}
-  carregarStatusMes();
+function mudarMesGer(delta) {
+  gerCalMes += delta;
+  if(gerCalMes < 0)  { gerCalMes = 11; gerCalAno--; }
+  if(gerCalMes > 11) { gerCalMes = 0;  gerCalAno++; }
+  gerCarregarMes();
 }
-
-function renderCalendario() {
-  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  document.getElementById('calMesLabel').textContent = `${meses[calMes]} ${calAno}`;
-  const grid = document.getElementById('calGrid');
-  const hoje = todayStr();
-  const primeiroDia = new Date(calAno, calMes, 1).getDay();
-  const totalDias   = new Date(calAno, calMes+1, 0).getDate();
-  const diasSem = ['D','S','T','Q','Q','S','S'];
-  let html = diasSem.map(d=>`<div class="cal-sem">${d}</div>`).join('');
-  for(let i=0;i<primeiroDia;i++) html+='<div></div>';
-  for(let d=1;d<=totalDias;d++) {
-    const ds = `${calAno}-${String(calMes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const st = diasStatus[ds];
-    const isHoje = ds===hoje, isSel = ds===currentDate;
-    let bg='transparent',color='var(--muted)';
-    if(st==='em_aberto')             {bg='rgba(79,195,247,.2)';color='#4fc3f7';}
-    else if(st==='aguardando_fechamento'){bg='rgba(232,160,69,.2)';color='var(--accent)';}
-    else if(st==='fechado')          {bg='rgba(63,185,80,.2)';color='var(--success)';}
-    else if(st==='reaberto')         {bg='rgba(248,81,73,.2)';color='var(--danger)';}
-    html+=`<div class="cal-day${isHoje?' hoje':''}${isSel?' selecionado':''}"
-      style="background:${bg};color:${color}"
-      onclick="selecionarDia('${ds}')"
-      title="${ds}${st?' — '+STATUS_LABEL[st]:''}">
-      ${d}</div>`;
+function renderGerCal() {
+  $('gerCalLabel').textContent = `${MESES[gerCalMes]} ${gerCalAno}`;
+  const grid = $('gerCalGrid'), hoje = todayStr();
+  const pDia = new Date(gerCalAno,gerCalMes,1).getDay();
+  const nDias = new Date(gerCalAno,gerCalMes+1,0).getDate();
+  let html = ['D','S','T','Q','Q','S','S'].map(d=>`<div class="cal-sem">${d}</div>`).join('');
+  for(let i=0;i<pDia;i++) html += '<div></div>';
+  for(let d=1;d<=nDias;d++) {
+    const ds = `${gerCalAno}-${String(gerCalMes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const st = gerDiasStatus[ds];
+    const isH = ds===hoje, isS = ds===gerCurrentDate;
+    let bg='#F0EDE6',color='#8A837A';
+    if(st==='em_aberto'){bg='#E3F0FB';color='#1A6FA8';}
+    else if(st==='aguardando_fechamento'){bg='#F5E6D3';color='#A05E1E';}
+    else if(st==='fechado'){bg='#E8F5EE';color='#276749';}
+    else if(st==='reaberto'){bg='#FDECEA';color='#C0392B';}
+    html += `<div class="cal-day${isH?' hoje':''}${isS?' selecionado':''}" style="background:${bg};color:${color}" onclick="gerSelecionarDia('${ds}')">${d}</div>`;
   }
   grid.innerHTML = html;
 }
-
-async function selecionarDia(dateStr) {
-  currentDate = dateStr;
-  renderCalendario(); // atualiza highlight
-  await carregarDia(dateStr);
+async function gerSelecionarDia(ds) {
+  gerCurrentDate = ds; renderGerCal(); await gerCarregarDia(ds);
 }
 
-/* ══ CARREGAR DIA ══ */
-async function carregarDia(dateStr) {
-  document.getElementById('mainContent').style.display = 'none';
+/* ── Carregar Dia (Gerente) ── */
+async function gerCarregarDia(dateStr) {
+  $('gerContent').style.display = 'none';
   setSyncStatus('');
   try {
     const fSnap = await db.collection('funcionarios').where('ativo','==',true).get();
-    const funcsCadastrados = fSnap.docs.map(d=>({id:d.id,...d.data()}))
+    const cadastros = fSnap.docs.map(d=>({id:d.id,...d.data()}))
       .sort((a,b)=>a.nome.localeCompare(b.nome,'pt-BR'));
-
     const daySnap = await db.collection('presencas_diarias').doc(dateStr).get();
     if(daySnap.exists) {
-      const dayData = daySnap.data();
-      dayStatus = dayData.status; dayDocExists = true;
-      funcionarios = funcsCadastrados.map(f => {
-        const p=(dayData.funcionarios||{})[f.id]||{};
-        // cargo do dia pode ser diferente do cadastro permanente
-        return {id:f.id, nome:f.nome, cargo:p.cargo||f.cargo, cargoPadrao:f.cargo,
-          isExtra:false, isFrequente: f.tipo==='frequente',
+      const dd = daySnap.data();
+      gerDayStatus = dd.status; gerDocExists = true;
+      gerFuncionarios = cadastros.map(f => {
+        const p = (dd.funcionarios||{})[f.id] || {};
+        return {
+          id:f.id, nome:f.nome, cargo:p.cargo||f.cargo, cargoPadrao:f.cargo,
+          isExtra:false, isFrequente:f.tipo==='frequente',
           presente:p.presente!==undefined?p.presente:true,
           atrasado:p.atrasado||false, consumo:p.consumo||0,
-          auxCount:p.auxCount||0,
-          pix:f.pix||'', diariaPadrao:f.diariaPadrao||DIARIA_PADRAO[f.cargo]||0};
+          auxCount:p.auxCount||0, pix:f.pix||'',
+          diariaPadrao:p.diariaPadrao??f.diariaPadrao??DIARIA_PADRAO[f.cargo]??0
+        };
       });
-      // Extras do dia
-      Object.entries(dayData.funcionarios||{}).forEach(([id,p])=>{
-        if(id.startsWith('EXTRA_')) funcionarios.push({
-          id, nome:p.nome||id, cargo:p.cargo||'Garçom', pix:p.pix||'',
-          diariaPadrao:p.diariaPadrao||DIARIA_PADRAO[p.cargo]||0,
-          isExtra:true, isFrequente:false,
-          presente:p.presente!==false, atrasado:p.atrasado||false,
-          consumo:p.consumo||0, auxCount:p.auxCount||0
-        });
+      // extras
+      Object.entries(dd.funcionarios||{}).forEach(([id,p]) => {
+        if(id.startsWith('EXTRA_'))
+          gerFuncionarios.push({
+            id, nome:p.nome||id, cargo:p.cargo||'Garçom', pix:p.pix||'',
+            diariaPadrao:p.diariaPadrao||DIARIA_PADRAO[p.cargo]||0,
+            isExtra:true, isFrequente:false,
+            presente:p.presente!==false, atrasado:p.atrasado||false,
+            consumo:p.consumo||0, auxCount:p.auxCount||0
+          });
       });
-      document.getElementById('obsInput').value = dayData.obs||'';
+      $('gerObs').value = dd.obs || '';
     } else {
-      dayStatus=null; dayDocExists=false;
-      funcionarios = funcsCadastrados.map(f=>({
+      gerDayStatus = null; gerDocExists = false;
+      gerFuncionarios = cadastros.map(f => ({
         id:f.id, nome:f.nome, cargo:f.cargo, cargoPadrao:f.cargo,
-        isExtra:false, isFrequente: f.tipo==='frequente',
+        isExtra:false, isFrequente:f.tipo==='frequente',
         presente:true, atrasado:false, consumo:0, auxCount:0,
         pix:f.pix||'', diariaPadrao:f.diariaPadrao||DIARIA_PADRAO[f.cargo]||0
       }));
-      document.getElementById('obsInput').value = '';
+      $('gerObs').value = '';
     }
-    document.getElementById('sumDate').textContent = fmtDate(dateStr);
-    document.getElementById('printMeta').innerHTML =
-      `<strong>${fmtDate(dateStr)}</strong><br>Gerado às ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`;
-    renderStatusUI(); renderList();
-    document.getElementById('mainContent').style.display = 'block';
-    document.getElementById('qrSection').classList.remove('visible');
-  } catch(e) { showAlert('mainAlert','❌ Erro ao carregar: '+e.message,'error',0); }
+    $('gerSumDate').textContent = fmtDate(dateStr);
+    renderGerStatus();
+    renderGerList();
+    $('gerContent').style.display = 'block';
+    $('gerQrSection').classList.remove('visible');
+  } catch(e) { showAlert('gerAlert','❌ Erro: '+e.message,'error',0); }
 }
 
-/* ══ STATUS UI ══ */
-function renderStatusUI() {
-  const pillEl = document.getElementById('statusPill');
-  pillEl.innerHTML = dayStatus
-    ? `<span class="status-pill status-${dayStatus}">${STATUS_LABEL[dayStatus]||dayStatus}</span>`
-    : '<span class="status-pill status-em_aberto">🔵 Novo dia</span>';
-
-  const podeEditar = !dayStatus || dayStatus==='em_aberto';
-  const soPodeObs  = dayStatus==='aguardando_fechamento';
-  const bloqueado  = dayStatus==='fechado';
-  const banner = document.getElementById('bloqueadoBanner');
+/* ── Status UI (Gerente) ── */
+function renderGerStatus() {
+  const pill = $('gerStatusPill');
+  pill.innerHTML = gerDayStatus
+    ? `<span class="status-pill status-${gerDayStatus}">${STATUS_LABEL[gerDayStatus]}</span>`
+    : `<span class="status-pill status-em_aberto">🔵 Novo dia</span>`;
+  const podeEditar = !gerDayStatus || gerDayStatus === 'em_aberto';
+  const soPodeObs  = gerDayStatus === 'aguardando_fechamento';
+  const bloqueado  = gerDayStatus === 'fechado';
+  const banner = $('gerBanner');
   if(bloqueado) {
-    banner.textContent='🔒 Dia fechado. Apenas Diretoria ou Admin pode reabrir.';
-    banner.style.display='block';
-  } else if(soPodeObs) {
-    banner.textContent='📤 Enviado para o financeiro. Presença e consumo bloqueados. Somente observações podem ser editadas. Para corrigir presença ou consumo, solicite reabertura ao financeiro/diretoria.';
-    banner.style.display='block';
-  } else { banner.style.display='none'; }
-
-  document.getElementById('addExtraBtn').style.display = podeEditar?'block':'none';
-  document.getElementById('obsInput').disabled = bloqueado;
-
-  const acoesDiv = document.getElementById('acoesDiv');
-  const qrWrap   = document.getElementById('qrWrap');
-  if(bloqueado) { acoesDiv.innerHTML=''; qrWrap.style.display='none'; }
-  else if(soPodeObs) {
-    acoesDiv.innerHTML=`<button class="btn btn-secondary btn-block" onclick="salvarPresenca(true)">💾 Salvar Observações</button>`;
-    qrWrap.style.display='block';
+    banner.innerHTML = '🔒 Dia fechado. Apenas Diretoria pode reabrir.';
+    banner.className = 'bloqueado-banner lock'; banner.style.display = 'block';
+  } else if(soPadeObs) {
+    banner.innerHTML = '📤 Enviado para o financeiro. <strong>Presença e consumo bloqueados.</strong>';
+    banner.className = 'bloqueado-banner warn'; banner.style.display = 'block';
+  } else { banner.style.display = 'none'; }
+  $('btnAddExtra').style.display = podeEditar ? 'block' : 'none';
+  $('gerObs').disabled = bloqueado;
+  const acoes = $('gerAcoes'), qrW = $('gerQrWrap');
+  if(bloqueado) {
+    acoes.innerHTML = ''; qrW.style.display = 'none';
+  } else if(soPadeObs) {
+    acoes.innerHTML = `<button class="btn btn-secondary btn-block" onclick="gerSalvar(true)">💾 Salvar Observações</button>`;
+    qrW.style.display = 'block';
   } else {
-    acoesDiv.innerHTML=`
-      <button class="btn btn-primary btn-block" onclick="salvarPresenca(false)">💾 Salvar Presença</button>
-      <button class="btn btn-success btn-block" onclick="enviarParaFinanceiro()" style="margin-top:8px">📤 Enviar para o Financeiro</button>`;
-    qrWrap.style.display='block';
+    acoes.innerHTML = `
+      <button class="btn btn-primary btn-block" onclick="gerSalvar(false)">💾 Salvar Presença</button>
+      <button class="btn btn-success btn-block" onclick="gerEnviar()" style="margin-top:8px">📤 Enviar para o Financeiro</button>`;
+    qrW.style.display = 'block';
   }
 }
+// typo fix helper
+const soPadeObs = () => gerDayStatus === 'aguardando_fechamento';
 
-/* ══ FILTRO ══ */
-let filtroAtual = 'todos';
+/* ── Lista de Funcionários (Gerente) ── */
 function setFiltro(f) {
-  filtroAtual = f;
-  ['todos','fixos','frequentes'].forEach(x => {
-    const btn = document.getElementById('filtro'+x.charAt(0).toUpperCase()+x.slice(1));
-    btn.className = x===f ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm';
-  });
-  renderList();
+  gerFiltro = f;
+  ['ftTodos','ftFixos','ftFreq'].forEach(id => $(id).className = 'btn btn-secondary btn-sm');
+  const activeId = f==='todos'?'ftTodos':f==='fixos'?'ftFixos':'ftFreq';
+  $(activeId).className = 'btn btn-primary btn-sm';
+  renderGerList();
 }
-
-/* ══ RENDER LIST ══ */
-function renderList() {
-  const podeEditar = !dayStatus || dayStatus==='em_aberto';
-  const fixos     = funcionarios.filter(f => !f.isExtra && !f.isFrequente);
-  const frequentes = funcionarios.filter(f => f.isFrequente);
-  const extras     = funcionarios.filter(f => f.isExtra);
-
-  const renderGrupo = (lista, grupoOffset) => lista.map((f, i) => {
-    const idx = funcionarios.indexOf(f);
-    const st = setor(f.cargo);
-    const cargoChanged = !f.isExtra && !f.isFrequente && f.cargo !== f.cargoPadrao;
-    const isSeguranca  = f.cargo === 'Segurança';
-    return `
-      <div class="emp-row ${f.presente?'presente':'ausente'}">
-        <div class="check-box ${f.presente?'on':''}" onclick="${podeEditar?`togglePresente(${idx})`:''}" style="${!podeEditar?'cursor:default':''}"></div>
-        <div class="emp-name">
-          ${f.nome}
-          ${f.isFrequente?'<span style="font-size:10px;color:#4fc3f7;margin-left:4px">[frequente]</span>':''}
-          ${f.isExtra?'<span style="font-size:10px;color:var(--muted);margin-left:4px">[extra]</span>':''}
-          <small>
-            ${f.cargo}
-            ${cargoChanged?`<span style="color:var(--accent);font-size:10px"> ✏️(padrão: ${f.cargoPadrao})</span>`:''}
-            ${podeEditar&&!f.isExtra?`<span onclick="abrirModalCargo(${idx})" style="color:var(--accent);cursor:pointer;margin-left:6px;font-size:10px">🔄</span>`:''}
-            ${isSeguranca&&f.auxCount>0?`<span style="font-size:10px;color:var(--muted);margin-left:4px">+${f.auxCount} aux.</span>`:''}
-          </small>
-        </div>
-        <span class="badge c-${st}">${f.cargo}</span>
-        ${isSeguranca&&podeEditar?`
-          <div style="display:flex;align-items:center;gap:4px">
-            <button onclick="ajustarAuxIdx(${idx},-1)" style="background:var(--surface);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:13px;width:24px;height:24px;cursor:pointer;line-height:1">−</button>
-            <span style="font-size:12px;min-width:18px;text-align:center;color:var(--muted)">${f.auxCount||0}aux</span>
-            <button onclick="ajustarAuxIdx(${idx},1)" style="background:var(--surface);border:1px solid var(--border);border-radius:5px;color:var(--text);font-size:13px;width:24px;height:24px;cursor:pointer;line-height:1">+</button>
-          </div>
-        `:`
-          <button class="late-btn ${f.atrasado?'on':''}"
-            onclick="${podeEditar?`toggleAtrasado(${idx})`:''}"
-            ${!podeEditar?'disabled':''}>
-            ${f.atrasado?'⏰ Atrasado':'No Horário'}
-          </button>
-        `}
-        <input class="cons-input" type="number" placeholder="R$" step="0.01"
-          value="${f.consumo||''}" onchange="setConsumo(${idx},this.value)"
-          ${!podeEditar?'disabled':''} title="Consumo">
-      </div>`;
+function renderGrupoGer(lista) {
+  const podeEditar = !gerDayStatus || gerDayStatus === 'em_aberto';
+  return lista.map(f => {
+    const idx = gerFuncionarios.indexOf(f);
+    const isSeg = f.cargo === 'Segurança';
+    const cargoMudou = !f.isExtra && !f.isFrequente && f.cargo !== f.cargoPadrao;
+    return `<div class="emp-row ${f.presente?'presente':'ausente'}">
+      <div class="check-box ${f.presente?'on':''}" onclick="${podeEditar?`gerTogglePres(${idx})`:''}" style="${!podeEditar?'cursor:default':''}"></div>
+      <div class="emp-name">${f.nome}
+        ${f.isFrequente?'<span style="font-size:10px;color:#1A6FA8;margin-left:3px;font-weight:700">[freq]</span>':''}
+        ${f.isExtra?'<span style="font-size:10px;color:var(--muted);margin-left:3px">[extra]</span>':''}
+        <small>${f.cargo}${cargoMudou?`<span style="color:var(--accent-dk);font-size:10px;font-weight:700"> ✏️(${f.cargoPadrao})</span>`:''}
+        ${podeEditar&&!f.isExtra?`<span onclick="gerAbrirCargo(${idx})" style="color:var(--accent);cursor:pointer;margin-left:5px;font-size:10px;font-weight:700">🔄</span>`:''}
+        ${isSeg&&f.auxCount>0?`<span style="font-size:10px;color:var(--muted)"> +${f.auxCount}aux</span>`:''}</small>
+      </div>
+      <span class="badge c-${setor(f.cargo)}">${f.cargo}</span>
+      ${isSeg && podeEditar
+        ? `<div style="display:flex;align-items:center;gap:4px">
+             <button onclick="gerAjustarAux(${idx},-1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:5px;color:var(--text);font-size:13px;width:26px;height:26px;cursor:pointer;font-weight:700">−</button>
+             <span style="font-size:12px;min-width:20px;text-align:center;color:var(--muted);font-weight:700">${f.auxCount||0}</span>
+             <button onclick="gerAjustarAux(${idx},1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:5px;color:var(--text);font-size:13px;width:26px;height:26px;cursor:pointer;font-weight:700">+</button>
+           </div>`
+        : `<button class="late-btn ${f.atrasado?'on':''}" onclick="${podeEditar?`gerToggleAtras(${idx})`:''}" ${!podeEditar?'disabled':''}>
+             ${f.atrasado?'⏰ Atrasado':'No Horário'}</button>`}
+      <input class="cons-input" type="number" placeholder="R$" step="0.01" value="${f.consumo||''}"
+        onchange="gerSetConsumo(${idx},this.value)" ${!podeEditar?'disabled':''}>
+    </div>`;
   }).join('');
-
-  // Aplicar filtro de visibilidade dos grupos
-  const showFixos    = filtroAtual==='todos'||filtroAtual==='fixos';
-  const showFreq     = filtroAtual==='todos'||filtroAtual==='frequentes';
-  const showExtras   = filtroAtual==='todos';
-
-  document.getElementById('grupoFixos').style.display     = showFixos?'block':'none';
-  document.getElementById('grupoFrequentes').style.display = showFreq?'block':'none';
-  document.getElementById('grupoExtras').style.display    = showExtras?'block':'none';
-
-  document.getElementById('empListFixos').innerHTML      = renderGrupo(fixos);
-  document.getElementById('empListFrequentes').innerHTML = frequentes.length ? renderGrupo(frequentes) : '';
-  document.getElementById('emptyFrequentes').style.display = frequentes.length?'none':'block';
-  document.getElementById('empListExtras').innerHTML     = renderGrupo(extras);
-
-  updateSummary();
-  const total = funcionarios.filter(f=>f.presente).length;
-  const total2 = funcionarios.length;
-  document.getElementById('empCount').textContent =
-    `${total} presentes de ${total2} (${fixos.length} fixos · ${frequentes.length} frequentes · ${extras.length} extras do dia)`;
+}
+function renderGerList() {
+  const fixos   = gerFuncionarios.filter(f => !f.isExtra && !f.isFrequente);
+  const freq    = gerFuncionarios.filter(f => f.isFrequente);
+  const extras  = gerFuncionarios.filter(f => f.isExtra);
+  const sf = gerFiltro==='todos'||gerFiltro==='fixos';
+  const sq = gerFiltro==='todos'||gerFiltro==='frequentes';
+  const se = gerFiltro==='todos';
+  $('grpFixos').style.display  = sf ? 'block' : 'none';
+  $('grpFreq').style.display   = sq ? 'block' : 'none';
+  $('grpExtras').style.display = se ? 'block' : 'none';
+  $('listFixos').innerHTML  = renderGrupoGer(fixos);
+  $('listFreq').innerHTML   = freq.length ? renderGrupoGer(freq) : '';
+  $('emptyFreq').style.display = freq.length ? 'none' : 'block';
+  $('listExtras').innerHTML = renderGrupoGer(extras);
+  const pres = gerFuncionarios.filter(f=>f.presente).length;
+  $('gerPres').textContent  = pres;
+  $('gerAus').textContent   = gerFuncionarios.filter(f=>!f.presente).length;
+  $('gerAtras').textContent = gerFuncionarios.filter(f=>f.atrasado).length;
+  $('gerEmpCount').textContent = `${pres} presentes de ${gerFuncionarios.length} (${fixos.length} fixos · ${freq.length} frequentes · ${extras.length} extras)`;
+}
+function gerTogglePres(i)  { gerFuncionarios[i].presente=!gerFuncionarios[i].presente; if(!gerFuncionarios[i].presente)gerFuncionarios[i].atrasado=false; renderGerList(); gerAutoSave(); }
+function gerToggleAtras(i) { gerFuncionarios[i].atrasado=!gerFuncionarios[i].atrasado; renderGerList(); gerAutoSave(); }
+function gerSetConsumo(i,v){ gerFuncionarios[i].consumo=parseFloat(v)||0; gerAutoSave(); }
+function gerAjustarAux(i,d){ gerFuncionarios[i].auxCount=Math.max(0,Math.min(4,(gerFuncionarios[i].auxCount||0)+d)); gerFuncionarios[i].diariaPadrao=200+(gerFuncionarios[i].auxCount*120); renderGerList(); gerAutoSave(); }
+function gerAbrirCargo(i) {
+  gerCargoIdx = i;
+  $('modalCargoNome').textContent = gerFuncionarios[i].nome;
+  $('modalCargoSel').value = gerFuncionarios[i].cargo;
+  abrirModal('modalCargo');
+}
+function confirmarCargo() {
+  if(gerCargoIdx < 0) return;
+  gerFuncionarios[gerCargoIdx].cargo = $('modalCargoSel').value;
+  fecharModal('modalCargo'); renderGerList(); gerAutoSave();
 }
 
-function togglePresente(i) {
-  funcionarios[i].presente = !funcionarios[i].presente;
-  if(!funcionarios[i].presente) funcionarios[i].atrasado=false;
-  renderList(); autoSave();
-}
-function toggleAtrasado(i) { funcionarios[i].atrasado=!funcionarios[i].atrasado; renderList(); autoSave(); }
-function setConsumo(i,val) { funcionarios[i].consumo=parseFloat(val)||0; updateSummary(); autoSave(); }
-function updateSummary() {
-  document.getElementById('sumPresentes').textContent = funcionarios.filter(f=>f.presente).length;
-  document.getElementById('sumAusentes').textContent  = funcionarios.filter(f=>!f.presente).length;
-  document.getElementById('sumAtrasados').textContent = funcionarios.filter(f=>f.atrasado).length;
-}
-
-/* ══ MODAL EXTRA ══ */
-let auxCountExtra = 2;
-
-function abrirModalExtra() {
-  auxCountExtra = 2;
-  document.getElementById('modalExtra').classList.add('open');
-  document.getElementById('extNome').value='';
-  document.getElementById('extPix').value='';
-  document.getElementById('extDiaria').value='';
-  preencherDiariaExtra();
-}
-function fecharModalExtra() { document.getElementById('modalExtra').classList.remove('open'); }
-
+/* ── Extra do Dia ── */
 function preencherDiariaExtra() {
-  const cargo = document.getElementById('extCargo').value;
-  const diaria = DIARIA_PADRAO[cargo] || 0;
-  const input = document.getElementById('extDiaria');
-  const hint  = document.getElementById('extDiariaHint');
-  const segWrap = document.getElementById('segurancaWrap');
-
-  if(cargo === 'Segurança') {
-    segWrap.style.display='block';
-    atualizarTotalSegExtra();
-  } else {
-    segWrap.style.display='none';
-  }
-
-  if(diaria > 0) {
-    input.value = diaria;
-    hint.textContent = `(padrão: R$ ${diaria})`;
-  } else if(cargo === 'Gerente') {
-    input.value = '';
-    hint.textContent = '(Gerente não recebe diária)';
-  } else {
-    input.value = '';
-    hint.textContent = '';
-  }
+  const c = $('extCargo').value;
+  const d = DIARIA_PADRAO[c] || 0;
+  const segW = $('segAuxWrap');
+  if(c === 'Segurança') {
+    segW.style.display = 'block'; gerAuxExtra = 2;
+    $('auxExtCount').textContent = 2; atualizarTotalSegExtra();
+  } else { segW.style.display = 'none'; }
+  $('extHint').textContent = c==='Gerente'?'(sem diária)':d?`(padrão: R$ ${d})`:'';
+  $('extDiaria').value = c==='Gerente' ? '' : d || '';
 }
-
-function ajustarAux(delta) {
-  auxCountExtra = Math.max(0, Math.min(4, auxCountExtra + delta));
-  document.getElementById('auxCount').textContent = auxCountExtra;
+function ajustarAuxExtra(delta) {
+  gerAuxExtra = Math.max(0, Math.min(4, gerAuxExtra + delta));
+  $('auxExtCount').textContent = gerAuxExtra;
   atualizarTotalSegExtra();
 }
-
 function atualizarTotalSegExtra() {
-  const total = 200 + (auxCountExtra * 120);
-  document.getElementById('auxTotal').textContent = `Total: R$ ${total} (R$200 + ${auxCountExtra}×R$120)`;
-  document.getElementById('extDiaria').value = total;
+  const t = 200 + (gerAuxExtra * 120);
+  $('auxExtTotal').textContent = `Total: R$ ${t}`;
+  $('extDiaria').value = t;
 }
-
 function confirmarExtra() {
-  const nome   = document.getElementById('extNome').value.trim();
-  const cargo  = document.getElementById('extCargo').value;
-  const pix    = document.getElementById('extPix').value.trim();
-  const diaria = parseFloat(document.getElementById('extDiaria').value)||0;
-  if(!nome){alert('Informe o nome.');return;}
-  const id = 'EXTRA_' + Date.now();
-  funcionarios.push({
-    id, nome, cargo, pix, diariaPadrao: diaria,
-    isExtra:true, isFrequente:false, presente:true, atrasado:false, consumo:0,
-    auxCount: cargo==='Segurança' ? auxCountExtra : 0
+  const nome   = $('extNome').value.trim();
+  const cargo  = $('extCargo').value;
+  const pix    = $('extPix').value.trim();
+  const diaria = parseFloat($('extDiaria').value) || 0;
+  if(!nome) { alert('Informe o nome.'); return; }
+  gerFuncionarios.push({
+    id:'EXTRA_'+Date.now(), nome, cargo, pix, diariaPadrao:diaria,
+    isExtra:true, isFrequente:false, presente:true, atrasado:false,
+    consumo:0, auxCount:cargo==='Segurança'?gerAuxExtra:0
   });
-  fecharModalExtra();renderList();autoSave();
+  $('extNome').value=''; $('extPix').value='';
+  fecharModal('modalExtra'); renderGerList(); gerAutoSave();
 }
 
-/* ══ SEGURANÇA AUX (em linha na lista) ══ */
-function ajustarAuxIdx(idx, delta) {
-  const f = funcionarios[idx];
-  f.auxCount = Math.max(0, Math.min(4, (f.auxCount||0) + delta));
-  // Atualiza diária automaticamente
-  f.diariaPadrao = 200 + (f.auxCount * 120);
-  renderList(); autoSave();
+/* ── Salvar / Enviar (Gerente) ── */
+function gerAutoSave() {
+  clearTimeout(gerSaveTimer);
+  setSyncStatus('saving');
+  gerSaveTimer = setTimeout(() => gerSalvar(false, true), 1500);
 }
-
-/* ══ MODAL CARGO ══ */
-function abrirModalCargo(i) {
-  modalCargoIdx=i;
-  document.getElementById('modalCargoNome').textContent=funcionarios[i].nome;
-  document.getElementById('modalCargoSelect').value=funcionarios[i].cargo;
-  document.getElementById('modalCargo').classList.add('open');
-}
-function fecharModalCargo() { document.getElementById('modalCargo').classList.remove('open'); }
-function confirmarCargo() {
-  if(modalCargoIdx<0)return;
-  funcionarios[modalCargoIdx].cargo=document.getElementById('modalCargoSelect').value;
-  fecharModalCargo(); renderList(); autoSave();
-}
-
-/* ══ AUTO-SAVE ══ */
-function autoSave() {
-  clearTimeout(saveTimer); setSyncStatus('saving');
-  saveTimer=setTimeout(()=>salvarPresenca(false,true),1500);
-}
-
-/* ══ SALVAR ══ */
-async function salvarPresenca(apenasObs=false, silencioso=false) {
-  if(!currentDate||!currentUser) return;
-  if(dayStatus==='fechado') return;
+async function gerSalvar(apenasObs=false, silencioso=false) {
+  if(!gerCurrentDate || !currentUser) return;
+  if(gerDayStatus === 'fechado') return;
   setSyncStatus('saving');
   try {
-    const obs=document.getElementById('obsInput').value.trim();
-    const payload = {obs, atualizadoPor:currentUser.uid, atualizadoEm:firebase.firestore.FieldValue.serverTimestamp()};
+    const obs = $('gerObs').value.trim();
+    const payload = {
+      obs,
+      atualizadoPor: currentUser.uid,
+      atualizadoEm:  firebase.firestore.FieldValue.serverTimestamp()
+    };
     if(!apenasObs) {
-      const funcMap={};
-      funcionarios.forEach(f=>{
-        funcMap[f.id]={nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,
+      const fm = {};
+      gerFuncionarios.forEach(f => {
+        fm[f.id] = {nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,
           presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0,auxCount:f.auxCount||0};
       });
-      payload.funcionarios=funcMap;
+      payload.funcionarios = fm;
     }
-    if(!dayDocExists) {
-      payload.data=currentDate; payload.status='em_aberto';
-      payload.registradoPor=currentUser.uid;
-      payload.registradoEm=firebase.firestore.FieldValue.serverTimestamp();
-      payload.statusHistorico=[{de:null,para:'em_aberto',por:currentUser.uid,em:new Date().toISOString(),motivo:''}];
-      if(!payload.funcionarios){const fm={};funcionarios.forEach(f=>{fm[f.id]={nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0};});payload.funcionarios=fm;}
-      await db.collection('presencas_diarias').doc(currentDate).set(payload);
-      dayDocExists=true; dayStatus='em_aberto';
-      diasStatus[currentDate]='em_aberto';
-      renderCalendario(); renderStatusUI();
+    if(!gerDocExists) {
+      payload.data = gerCurrentDate; payload.status = 'em_aberto';
+      payload.registradoPor = currentUser.uid;
+      payload.registradoEm  = firebase.firestore.FieldValue.serverTimestamp();
+      payload.statusHistorico = [{de:null,para:'em_aberto',por:currentUser.uid,em:new Date().toISOString(),motivo:''}];
+      if(!payload.funcionarios) {
+        const fm = {};
+        gerFuncionarios.forEach(f => { fm[f.id]={nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0,auxCount:f.auxCount||0}; });
+        payload.funcionarios = fm;
+      }
+      await db.collection('presencas_diarias').doc(gerCurrentDate).set(payload);
+      gerDocExists=true; gerDayStatus='em_aberto';
+      gerDiasStatus[gerCurrentDate]='em_aberto'; renderGerCal(); renderGerStatus();
     } else {
-      await db.collection('presencas_diarias').doc(currentDate).update(payload);
+      await db.collection('presencas_diarias').doc(gerCurrentDate).update(payload);
     }
-    await auditoria('PRESENCA_SALVA',`presencas_diarias/${currentDate}`,{},{obs,status:dayStatus});
+    await logAuditoria('PRESENCA_SALVA',`presencas_diarias/${gerCurrentDate}`,{},{status:gerDayStatus||'em_aberto'});
     setSyncStatus('saved');
-    if(!silencioso) showAlert('mainAlert','✅ Salvo na nuvem!','success');
-  } catch(e) { setSyncStatus(''); showAlert('mainAlert','❌ Erro: '+e.message,'error',0); }
+    if(!silencioso) showAlert('gerAlert','✅ Salvo na nuvem!','success');
+  } catch(e) { setSyncStatus(''); showAlert('gerAlert','❌ Erro: '+e.message,'error',0); }
 }
-
-/* ══ ENVIAR PARA FINANCEIRO ══ */
-async function enviarParaFinanceiro() {
-  if(!currentDate||!currentUser) return;
-  if(!confirm('Enviar para o financeiro? Presença e consumo ficam bloqueados para edição.')) return;
+async function gerEnviar() {
+  if(!gerCurrentDate || !currentUser) return;
+  if(!confirm('Enviar para o financeiro? Presença e consumo ficarão bloqueados.')) return;
   try {
-    await salvarPresenca(false,true);
-    const novoStatus='aguardando_fechamento';
-    const entrada={de:dayStatus||'em_aberto',para:novoStatus,por:currentUser.uid,em:new Date().toISOString(),motivo:''};
-    await db.collection('presencas_diarias').doc(currentDate).update({
-      status:novoStatus, atualizadoPor:currentUser.uid,
+    await gerSalvar(false, true);
+    const ns = 'aguardando_fechamento';
+    const e = {de:gerDayStatus||'em_aberto',para:ns,por:currentUser.uid,em:new Date().toISOString(),motivo:''};
+    await db.collection('presencas_diarias').doc(gerCurrentDate).update({
+      status:ns, atualizadoPor:currentUser.uid,
       atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
-      statusHistorico:firebase.firestore.FieldValue.arrayUnion(entrada),
+      statusHistorico:firebase.firestore.FieldValue.arrayUnion(e)
     });
-    dayStatus=novoStatus;
-    diasStatus[currentDate]=novoStatus;
-    await auditoria('STATUS_ALTERADO',`presencas_diarias/${currentDate}`,{status:entrada.de},{status:novoStatus});
-    renderCalendario(); renderStatusUI(); renderList();
-    showAlert('mainAlert','✅ Enviado para o financeiro!','success');
-  } catch(e) { showAlert('mainAlert','❌ Erro: '+e.message,'error',0); }
+    gerDayStatus=ns; gerDiasStatus[gerCurrentDate]=ns;
+    await logAuditoria('STATUS_ALTERADO',`presencas_diarias/${gerCurrentDate}`,{status:e.de},{status:ns});
+    renderGerCal(); renderGerStatus(); renderGerList();
+    showAlert('gerAlert','✅ Enviado para o financeiro!','success');
+  } catch(e) { showAlert('gerAlert','❌ Erro: '+e.message,'error',0); }
 }
 
-/* ══ QR ══ */
-function toggleQR() {
-  const sec=document.getElementById('qrSection');
-  if(sec.classList.contains('visible')){sec.classList.remove('visible');return;}
-  const obs=document.getElementById('obsInput').value.trim();
-  const payload={v:2,date:currentDate,ts:Date.now(),obs,
-    presenca:funcionarios.map(f=>({id:f.id,nome:f.nome,cargo:f.cargo,pix:f.pix||'',
-      diariaPadrao:f.diariaPadrao||0,presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0}))};
-  const b64=btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
-  if(b64.length>2800){showAlert('mainAlert','⚠️ Dados grandes para QR. Reduza observações.','error');return;}
-  document.getElementById('qrCanvas').innerHTML='';
-  new QRCode(document.getElementById('qrCanvas'),{text:b64,width:160,height:160,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
-  document.getElementById('qrSize').textContent=`${b64.length} chars`;
+/* ── QR (Gerente) ── */
+function toggleGerQR() {
+  const sec = $('gerQrSection');
+  if(sec.classList.contains('visible')) { sec.classList.remove('visible'); return; }
+  const obs = $('gerObs').value.trim();
+  const payload = {v:2,date:gerCurrentDate,ts:Date.now(),obs,
+    presenca:gerFuncionarios.map(f=>({id:f.id,nome:f.nome,cargo:f.cargo,pix:f.pix||'',
+      diariaPadrao:f.diariaPadrao||0,presente:f.presente,atrasado:f.atrasado,
+      consumo:f.consumo||0,auxCount:f.auxCount||0}))};
+  const b64 = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  if(b64.length > 2800) { showAlert('gerAlert','⚠️ Dados grandes para QR. Reduza observações.','error'); return; }
+  $('gerQrCanvas').innerHTML = '';
+  new QRCode($('gerQrCanvas'),{text:b64,width:160,height:160,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+  $('gerQrSize').textContent = `${b64.length} chars`;
   sec.classList.add('visible');
-  setTimeout(()=>window.print(),400);
+  setTimeout(() => window.print(), 400);
 }
 
-/* ══ AUDITORIA ══ */
-async function auditoria(acao,entidade,antes,depois) {
-  try { await db.collection('auditoria').add({ts:firebase.firestore.FieldValue.serverTimestamp(),
-    usuarioId:currentUser.uid,usuarioNome:document.getElementById('userLabel').textContent,
-    perfil:currentPerfil,acao,entidade,camposAlterados:Object.keys(depois),valorAntes:antes,valorDepois:depois});
-  } catch(_){}
-}
+/* ════════════════════════════════════════
+   MÓDULO FINANCEIRO
+════════════════════════════════════════ */
 
-/* ══ REROUTING tabs/ativarTab from gerente to unified ══ */
-function showTab(tab,el){
-  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('sec-'+tab).classList.add('active');el.classList.add('active');
-  if(tab==='historico')renderHistorico();
-  if(tab==='resumo')renderResumoInit();
-  if(tab==='cadastro')renderCadList();
-  if(tab==='pagamentos')renderPagamentos();
-  if(tab==='calendario')carregarCalFin();
-  if(tab==='usuarios')renderUsuarios();
-}
-function ativarTab(tab){
-  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('sec-'+tab)?.classList.add('active');
-  document.querySelector(`[data-tab="${tab}"]`)?.classList.add('active');
-}
-function configurarAbas(){
-  const isGer=currentPerfil==='gerente';
-  const isFin=['financeiro','diretoria','admin'].includes(currentPerfil);
-  const isDir=['diretoria','admin'].includes(currentPerfil);
-  const isAdm=currentPerfil==='admin';
-  const tabs={presenca:isGer,calendario:isFin,fechamento:isFin,pagamentos:isFin,historico:isFin,resumo:isFin,cadastro:isDir,usuarios:isAdm,qrfallback:true};
-  Object.entries(tabs).forEach(([tab,vis])=>document.querySelector(`[data-tab="${tab}"]`)?.classList.toggle('hidden',!vis));
-}
-function showApp(){
-  document.getElementById('loginScreen').style.display='none';
-  document.getElementById('appScreen').style.display='block';
-  document.getElementById('gerObs').addEventListener('input',()=>gerAutoSave());
-  if(currentPerfil==='gerente'){ativarTab('presenca');gerCarregarMes();}
-  else{ativarTab('calendario');carregarCalFin();}
-}
-
-/* ══ FIREBASE ══ */
-const FIREBASE_CONFIG = {
-  apiKey:            "AIzaSyDEo7pB-dLtSHFGjqvYf8Bt8n7VSu5HdrY",
-  authDomain:        "projeto-primus-9b643.firebaseapp.com",
-  projectId:         "projeto-primus-9b643",
-  storageBucket:     "projeto-primus-9b643.firebasestorage.app",
-  messagingSenderId: "547842320766",
-  appId:             "1:547842320766:web:a87b857ce7c2d434cdab2f"
-};
-firebase.initializeApp(FIREBASE_CONFIG);
-const auth = firebase.auth();
-const db   = firebase.firestore();
-
-/* ══ CONSTANTES ══ */
-const CARGO_SETOR = {
-  'Garçom':'garcom','Bar':'bar','Cozinheiro':'cozinha','Cumim':'cumim',
-  'Gerente':'gerente','Limpeza':'outros','Recepcionista':'outros','Monitora':'outros',
-  'Aux. Cozinha':'cozinha','Caixa':'outros','Professor':'outros','Parquinho':'outros',
-  'Aux. Bar':'bar','Segurança':'outros',
-};
-const STATUS_LABEL = {
-  em_aberto:'🔵 Em Aberto', aguardando_fechamento:'🟡 Aguardando Fechamento',
-  fechado:'🟢 Fechado', reaberto:'🔴 Reaberto',
-};
-const COLORS = ['#e8a045','#4fc3f7','#3fb950','#f85149','#a371f7','#79c0ff','#d29922','#56d364'];
-
-/* ══ ESTADO ══ */
-let currentUser=null, currentPerfil=null;
-let finDate=null, finPresentes=[], finGorjetaMap={}, gorjetaRegras={}, finDayStatus=null;
-let pendingQR=null;
-let diasCalAno=new Date().getFullYear(), diasCalMes=new Date().getMonth();
-let diasStatusMap={};
-
-/* ══ AUTH ══ */
-auth.onAuthStateChanged(async user => {
-  if(!user){showLogin();return;}
+/* ── Calendário Financeiro ── */
+async function carregarCalFin() {
+  const ym = `${finCalAno}-${String(finCalMes+1).padStart(2,'0')}`;
+  $('finCalLabel').textContent = `${MESES[finCalMes]} ${finCalAno}`;
   try {
-    const snap=await db.collection('usuarios').doc(user.uid).get();
-    if(!snap.exists||!snap.data().ativo){await auth.signOut();showLogin();return;}
-    const data=snap.data();
-    if(!['financeiro','diretoria','admin'].includes(data.perfil)){
-      await auth.signOut();showLogin('Acesso restrito ao módulo financeiro/gestão.');return;
-    }
-    currentUser=user;currentPerfil=data.perfil;
-    document.getElementById('userLabel').textContent=`${data.nome||user.email} (${data.perfil})`;
-    await carregarGorjetaConfig();
-    configurarAbas();
-    showApp();
-  } catch(e){await auth.signOut();showLogin('Erro: '+e.message);}
-});
-
-function showLogin(msg=''){
-  document.getElementById('loginScreen').style.display='flex';
-  document.getElementById('appScreen').style.display='none';
-  if(msg){const el=document.getElementById('loginError');el.textContent=msg;el.classList.add('show');}
+    const s = await db.collection('presencas_diarias')
+      .where('data','>=',ym+'-01').where('data','<=',ym+'-31').get();
+    finDiasStatus = {};
+    s.docs.forEach(d => finDiasStatus[d.id] = d.data().status || 'em_aberto');
+  } catch(_) { finDiasStatus = {}; }
+  renderCalFin();
 }
-function showApp(){
-  document.getElementById('loginScreen').style.display='none';
-  document.getElementById('appScreen').style.display='block';
-  carregarDias();
+function mudarMesFin(delta) {
+  finCalMes += delta;
+  if(finCalMes < 0)  { finCalMes=11; finCalAno--; }
+  if(finCalMes > 11) { finCalMes=0;  finCalAno++; }
+  carregarCalFin();
 }
-async function doLogin(){
-  const email=document.getElementById('loginEmail').value.trim();
-  const pass=document.getElementById('loginPass').value;
-  const btn=document.getElementById('loginBtn');
-  document.getElementById('loginError').classList.remove('show');
-  btn.disabled=true;btn.innerHTML='<span class="loading-spinner"></span>Entrando...';
-  try{await auth.signInWithEmailAndPassword(email,pass);}
-  catch(e){
-    document.getElementById('loginError').textContent=e.code==='auth/invalid-credential'?'E-mail ou senha incorretos.':e.message;
-    document.getElementById('loginError').classList.add('show');btn.disabled=false;btn.textContent='Entrar';
+function renderCalFin() {
+  const grid = $('finCalGrid'), hoje = todayStr();
+  const pDia = new Date(finCalAno,finCalMes,1).getDay();
+  const nDias = new Date(finCalAno,finCalMes+1,0).getDate();
+  let html = ['D','S','T','Q','Q','S','S'].map(d=>`<div class="cal-sem">${d}</div>`).join('');
+  for(let i=0;i<pDia;i++) html += '<div></div>';
+  for(let d=1;d<=nDias;d++) {
+    const ds = `${finCalAno}-${String(finCalMes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const st = finDiasStatus[ds];
+    const isH = ds===hoje, isS = ds===finDate;
+    let bg='#F0EDE6',color='#8A837A';
+    if(st==='em_aberto'){bg='#E3F0FB';color='#1A6FA8';}
+    else if(st==='aguardando_fechamento'){bg='#F5E6D3';color='#A05E1E';}
+    else if(st==='fechado'){bg='#E8F5EE';color='#276749';}
+    else if(st==='reaberto'){bg='#FDECEA';color='#C0392B';}
+    html += `<div class="cal-day${isH?' hoje':''}${isS?' selecionado':''}" style="background:${bg};color:${color}" onclick="finSelecionarDia('${ds}')" title="${fmtDate(ds)}${st?' — '+STATUS_LABEL[st]:''}">${d}</div>`;
   }
+  grid.innerHTML = html;
 }
-async function doLogout(){await auth.signOut();}
-document.addEventListener('keydown',e=>{if(e.key==='Enter'&&document.getElementById('loginScreen').style.display!=='none')doLogin();});
-
-function configurarAbas(){
-  const podeAdmin=['diretoria','admin'].includes(currentPerfil);
-  document.querySelector('[data-tab="cadastro"]').classList.toggle('hidden',!podeAdmin);
-}
-
-/* ══ UTILS ══ */
-const fmt=v=>'R$ '+Number(v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-function fmtDate(d){
-  if(!d)return'—';
-  const[y,m,day]=d.split('-');
-  const n=['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  return `${n[new Date(+y,+m-1,+day).getDay()]}, ${day}/${m}/${y}`;
-}
-function badge(cargo){const s=CARGO_SETOR[cargo]||'outros';return `<span class="badge c-${s}">${cargo}</span>`;}
-function showAlert(id,msg,type,dur=5000){
-  const el=document.getElementById(id);el.textContent=msg;el.className='alert '+type;
-  if(dur)setTimeout(()=>el.className='alert',dur);
-}
-function hideAlert(id){document.getElementById(id).className='alert';}
-
-function showTab(tab,el){
-  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('sec-'+tab).classList.add('active');
-  el.classList.add('active');
-  if(tab==='historico')renderHistorico();
-  if(tab==='resumo')renderResumoInit();
-  if(tab==='cadastro')renderCadList();
-  if(tab==='pagamentos')renderPagamentos();
-  if(tab==='dias')carregarDias();
+async function finSelecionarDia(ds) {
+  finDate = ds; renderCalFin();
+  ativarTab('fechamento');
+  document.querySelector('[data-tab="fechamento"]')?.classList.add('active');
+  await loadFechamento(ds);
 }
 
-/* ══ GORJETA CONFIG ══ */
-async function carregarGorjetaConfig(){
-  try{
-    const snap=await db.collection('configuracoes').doc('gorjeta').get();
-    gorjetaRegras=snap.exists?(snap.data().regras||{}):{};
-  }catch(_){gorjetaRegras={};}
-}
-function pctGorjeta(cargo){return gorjetaRegras[cargo]?.percentual??0;}
-
-/* ══ CALENDÁRIO ══ */
-async function carregarDias(){
-  const anoMes=`${diasCalAno}-${String(diasCalMes+1).padStart(2,'0')}`;
-  const meses=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
-  document.getElementById('diasMesLabel').textContent=`${meses[diasCalMes]} ${diasCalAno}`;
-  try{
-    const snap=await db.collection('presencas_diarias')
-      .where('data','>=',anoMes+'-01').where('data','<=',anoMes+'-31').get();
-    diasStatusMap={};
-    snap.docs.forEach(d=>{diasStatusMap[d.id]=d.data().status||'em_aberto';});
-  }catch(_){diasStatusMap={};}
-  renderCalDias();
-}
-
-function mudarMesDias(delta){
-  diasCalMes+=delta;
-  if(diasCalMes<0){diasCalMes=11;diasCalAno--;}
-  if(diasCalMes>11){diasCalMes=0;diasCalAno++;}
-  carregarDias();
-}
-
-function renderCalDias(){
-  const grid=document.getElementById('diasCalGrid');
-  const hoje=new Date().toISOString().split('T')[0];
-  const primeiroDia=new Date(diasCalAno,diasCalMes,1).getDay();
-  const totalDias=new Date(diasCalAno,diasCalMes+1,0).getDate();
-  const diasSem=['D','S','T','Q','Q','S','S'];
-  let html=diasSem.map(d=>`<div class="cal-sem">${d}</div>`).join('');
-  for(let i=0;i<primeiroDia;i++)html+='<div></div>';
-  for(let d=1;d<=totalDias;d++){
-    const ds=`${diasCalAno}-${String(diasCalMes+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    const st=diasStatusMap[ds];
-    const isHoje=ds===hoje,isSel=ds===finDate;
-    let bg='rgba(255,255,255,.04)',color='var(--muted)';
-    if(st==='em_aberto'){bg='rgba(79,195,247,.2)';color='#4fc3f7';}
-    else if(st==='aguardando_fechamento'){bg='rgba(232,160,69,.2)';color='var(--accent)';}
-    else if(st==='fechado'){bg='rgba(63,185,80,.2)';color='var(--success)';}
-    else if(st==='reaberto'){bg='rgba(248,81,73,.2)';color='var(--danger)';}
-    html+=`<div class="cal-day${isHoje?' hoje':''}${isSel?' selecionado':''}"
-      style="background:${bg};color:${color}"
-      onclick="selecionarDiaCalendario('${ds}')"
-      title="${fmtDate(ds)}${st?' — '+STATUS_LABEL[st]:''}">
-      ${d}</div>`;
-  }
-  grid.innerHTML=html;
-}
-
-async function selecionarDiaCalendario(dateStr){
-  finDate=dateStr;
-  renderCalDias();
-  // Ir para aba financeiro
-  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('sec-financeiro').classList.add('active');
-  document.querySelector('[data-tab="financeiro"]').classList.add('active');
-  await loadFin(dateStr);
-}
-
-/* ══ FINANCEIRO ══ */
-async function loadFin(date){
-  finDate=date;
-  document.getElementById('finContent').style.display='none';
-  document.getElementById('finEmpty').style.display='block';
-  hideAlert('finAlert');
-  try{
-    const daySnap=await db.collection('presencas_diarias').doc(date).get();
-    if(!daySnap.exists){showAlert('finAlert','Dia não encontrado.','error',0);return;}
-    const dayData=daySnap.data();
-    finDayStatus=dayData.status;
-    if(currentPerfil==='financeiro'&&finDayStatus==='em_aberto'){
-      showAlert('finAlert','Este dia ainda está em aberto. Aguarde o gerente enviar.','error',0);return;
+/* ── Fechamento ── */
+async function loadFechamento(date) {
+  finDate = date;
+  $('fechContent').style.display = 'none';
+  $('fechEmpty').style.display   = 'block';
+  hideAlert('fechAlert');
+  try {
+    const daySnap = await db.collection('presencas_diarias').doc(date).get();
+    if(!daySnap.exists) { showAlert('fechAlert','Dia não encontrado.','error',0); return; }
+    const dd = daySnap.data();
+    finDayStatus = dd.status;
+    if(currentPerfil==='financeiro' && finDayStatus==='em_aberto') {
+      showAlert('fechAlert','Dia ainda em aberto. Aguarde o gerente enviar.','error',0); return;
     }
-    document.getElementById('finObsBox').innerHTML=dayData.obs?`<div class="obs-box" style="margin-bottom:14px">📝 ${dayData.obs}</div>`:'';
-    document.getElementById('finStatusPill').innerHTML=`<span class="status-pill status-${finDayStatus}">${STATUS_LABEL[finDayStatus]||finDayStatus}</span>`;
-    const fSnap=await db.collection('funcionarios').get();
-    const cadastro={};fSnap.docs.forEach(d=>cadastro[d.id]=d.data());
-    finPresentes=Object.entries(dayData.funcionarios||{})
-      .filter(([,p])=>p.presente!==false)
-      .map(([id,p])=>({
-        id,nome:p.nome,cargo:p.cargo,consumo:p.consumo||0,atrasado:p.atrasado||false,
+    $('fechObsBox').innerHTML = dd.obs ? `<div class="obs-box">📝 ${dd.obs}</div>` : '';
+    $('fechStatusPill').innerHTML = `<span class="status-pill status-${finDayStatus}">${STATUS_LABEL[finDayStatus]||finDayStatus}</span>`;
+    const fSnap = await db.collection('funcionarios').get();
+    const cadastro = {}; fSnap.docs.forEach(d => cadastro[d.id]=d.data());
+    finPresentes = Object.entries(dd.funcionarios||{})
+      .filter(([,p]) => p.presente!==false)
+      .map(([id,p]) => ({
+        id, nome:p.nome, cargo:p.cargo, consumo:p.consumo||0,
+        atrasado:p.atrasado||false, auxCount:p.auxCount||0,
         pix:p.pix||cadastro[id]?.pix||'',
-        diariaPadrao:cadastro[id]?.diariaPadrao||p.diariaPadrao||0,
+        diariaPadrao:p.diariaPadrao??cadastro[id]?.diariaPadrao??DIARIA_PADRAO[p.cargo]??0
       }));
-    document.getElementById('gorjetaTotal').value='';
-    const bloqueado=finDayStatus==='fechado';
-    document.getElementById('diariasList').innerHTML=finPresentes.map(f=>`
-      <div class="diaria-row">
-        <div class="diaria-name">${f.nome}<small>${f.cargo}</small></div>
+    const bloqueado = finDayStatus === 'fechado';
+    $('gorjetaTotal').value = '';
+    $('diariasList').innerHTML = finPresentes.map(f =>
+      `<div class="diaria-row">
+        <div class="diaria-name">${f.nome}<small>${f.cargo}${f.auxCount>0?` +${f.auxCount} aux.`:''}</small></div>
         ${badge(f.cargo)}
-        <input type="number" class="diaria-input" id="diaria-${f.id}"
-          value="${f.diariaPadrao||''}" step="0.01" oninput="calcResultado()"
-          ${bloqueado?'disabled':''}>
-      </div>`).join('');
-    document.getElementById('finContent').style.display='block';
-    document.getElementById('finEmpty').style.display='none';
+        <input type="number" class="diaria-input" id="diaria-${f.id}" value="${f.diariaPadrao||''}" step="0.01" oninput="calcGorjeta()" ${bloqueado?'disabled':''}>
+      </div>`
+    ).join('');
+    $('fechContent').style.display = 'block';
+    $('fechEmpty').style.display   = 'none';
     await carregarDiariasSalvas(date);
     calcGorjeta();
-    renderFinAcoes(bloqueado);
-  }catch(e){showAlert('finAlert','❌ Erro: '+e.message,'error',0);}
+    renderFechAcoes(bloqueado);
+  } catch(e) { showAlert('fechAlert','❌ Erro: '+e.message,'error',0); }
 }
-
-async function carregarDiariasSalvas(date){
-  try{
-    const snaps=await Promise.all(finPresentes.map(f=>db.collection('fechamento_funcionario').doc(`${date}_${f.id}`).get()));
-    let gorjetaTotal=0;
-    snaps.forEach((snap,i)=>{
-      if(snap.exists){
-        const el=document.getElementById(`diaria-${finPresentes[i].id}`);
-        if(el)el.value=snap.data().diaria??'';
-        gorjetaTotal=snap.data().baseGorjeta||gorjetaTotal;
+async function carregarDiariasSalvas(date) {
+  try {
+    const snaps = await Promise.all(finPresentes.map(f =>
+      db.collection('fechamento_funcionario').doc(`${date}_${f.id}`).get()
+    ));
+    let gt = 0;
+    snaps.forEach((s,i) => {
+      if(s.exists) {
+        const el = $(`diaria-${finPresentes[i].id}`);
+        if(el) el.value = s.data().diaria ?? '';
+        gt = s.data().baseGorjeta || gt;
       }
     });
-    if(gorjetaTotal){document.getElementById('gorjetaTotal').value=gorjetaTotal;}
+    if(gt) $('gorjetaTotal').value = gt;
     calcGorjeta();
-  }catch(_){}
+  } catch(_) {}
 }
-
-function calcGorjeta(){
-  const total=parseFloat(document.getElementById('gorjetaTotal').value)||0;
-  const groups={};
-  finPresentes.forEach(f=>{if(!groups[f.cargo])groups[f.cargo]=[];groups[f.cargo].push(f);});
-  finGorjetaMap={};
-  Object.entries(groups).forEach(([cargo,members])=>{
-    const pct=pctGorjeta(cargo);
-    const pp=members.length?(total*pct)/members.length:0;
-    members.forEach(f=>finGorjetaMap[f.id]=pp);
+function calcGorjeta() {
+  const total = parseFloat($('gorjetaTotal').value) || 0;
+  const groups = {};
+  finPresentes.forEach(f => { if(!groups[f.cargo]) groups[f.cargo]=[]; groups[f.cargo].push(f); });
+  finGorjetaMap = {};
+  Object.entries(groups).forEach(([c,m]) => {
+    const pct = pctGorjeta(c);
+    const pp  = m.length ? (total*pct)/m.length : 0;
+    m.forEach(f => finGorjetaMap[f.id] = pp);
   });
-  const seen={};finPresentes.forEach(f=>seen[f.cargo]=(seen[f.cargo]||0)+1);
-  document.getElementById('gorjetaChips').innerHTML=Object.entries(seen).map(([cargo,cnt])=>{
-    const pct=pctGorjeta(cargo);if(!pct)return'';
-    return `<div class="chip"><strong>${cargo}</strong> ${(pct*100).toFixed(0)}% → ${fmt(total*pct)} ÷ ${cnt}</div>`;
+  const seen = {};
+  finPresentes.forEach(f => seen[f.cargo]=(seen[f.cargo]||0)+1);
+  $('gorjetaChips').innerHTML = Object.entries(seen).map(([c,cnt]) => {
+    const pct = pctGorjeta(c); if(!pct) return '';
+    return `<div class="chip"><strong>${c}</strong> ${(pct*100).toFixed(0)}% → ${fmt(total*pct)} ÷ ${cnt}</div>`;
   }).filter(Boolean).join('');
   calcResultado();
 }
-
-function calcResultado(){
-  let totalDia=0;
-  document.getElementById('resultBody').innerHTML=finPresentes.map(f=>{
-    const diaria=parseFloat(document.getElementById(`diaria-${f.id}`)?.value||0)||0;
-    const gorjeta=finGorjetaMap[f.id]||0;
-    const consumo=f.consumo||0;
-    const total=diaria+gorjeta-consumo;
-    totalDia+=total;
-    const s=CARGO_SETOR[f.cargo]||'outros';
+function calcResultado() {
+  let total = 0;
+  $('resultBody').innerHTML = finPresentes.map(f => {
+    const d = parseFloat($(`diaria-${f.id}`)?.value||0)||0;
+    const g = finGorjetaMap[f.id]||0;
+    const c = f.consumo||0;
+    const t = d+g-c; total += t;
     return `<tr>
       <td>${f.nome}${f.atrasado?' <span class="tag-atrasado">⏰</span>':''}</td>
-      <td><span class="badge c-${s}">${f.cargo}</span></td>
-      <td class="right">${fmt(diaria)}</td>
-      <td class="right">${fmt(gorjeta)}</td>
-      <td class="right val-neg">${consumo>0?'- '+fmt(consumo):'—'}</td>
-      <td class="right val-pos">${fmt(total)}</td>
+      <td>${badge(f.cargo)}</td>
+      <td class="right">${fmt(d)}</td>
+      <td class="right">${fmt(g)}</td>
+      <td class="right val-neg">${c>0?'- '+fmt(c):'—'}</td>
+      <td class="right val-pos">${fmt(t)}</td>
     </tr>`;
-  }).join('')+`<tr class="total-row"><td colspan="5">Total do Dia</td><td class="right">${fmt(totalDia)}</td></tr>`;
+  }).join('') + `<tr class="total-row"><td colspan="5">Total do Dia</td><td class="right">${fmt(total)}</td></tr>`;
 }
-
-function renderFinAcoes(bloqueado){
-  const el=document.getElementById('finAcoes');
-  const podeFin=['financeiro','admin'].includes(currentPerfil);
-  const podeDir=['diretoria','admin'].includes(currentPerfil);
-  if(bloqueado){
-    el.innerHTML=podeDir
-      ?`<button class="btn btn-danger btn-block" onclick="abrirModalReabrir()">🔴 Reabrir Dia</button>`
-      :`<div class="empty-state" style="padding:16px"><p style="color:var(--muted)">Dia fechado. Somente Diretoria pode reabrir.</p></div>`;
-  } else if(['aguardando_fechamento','reaberto'].includes(finDayStatus)&&podeFin){
-    el.innerHTML=`
+function renderFechAcoes(bloqueado) {
+  const el = $('fechAcoes');
+  const podeFin = ['financeiro','admin'].includes(currentPerfil);
+  const podeDir = ['diretoria','admin'].includes(currentPerfil);
+  if(bloqueado) {
+    el.innerHTML = podeDir
+      ? `<button class="btn btn-danger btn-block" onclick="abrirModal('modalReabrir')">🔴 Reabrir Dia</button>`
+      : `<div class="empty-state" style="padding:14px"><p style="color:var(--muted)">Dia fechado. Somente Diretoria pode reabrir.</p></div>`;
+  } else if(['aguardando_fechamento','reaberto','em_aberto'].includes(finDayStatus) && podeFin) {
+    el.innerHTML = `
       <button class="btn btn-primary btn-block" onclick="salvarFechamento(false)">💾 Salvar Fechamento</button>
       <button class="btn btn-success btn-block" onclick="salvarFechamento(true)" style="margin-top:8px">✅ Fechar o Dia</button>`;
-  } else {el.innerHTML='';}
+  } else { el.innerHTML = ''; }
 }
-
-async function salvarFechamento(fechar=false){
-  if(!finDate)return;if(finDayStatus==='fechado')return;
-  try{
-    const gorjetaTotal=parseFloat(document.getElementById('gorjetaTotal').value)||0;
-    const gorjetaDist=Object.values(finGorjetaMap).reduce((a,b)=>a+b,0);
-    let totalDiarias=0,totalConsumos=0,totalLiq=0;
-    const regrasSnap=await db.collection('configuracoes').doc('gorjeta').get();
-    const regrasSnapshot=regrasSnap.exists?regrasSnap.data().regras:{};
-    const batch=db.batch();
-    finPresentes.forEach(f=>{
-      const diaria=parseFloat(document.getElementById(`diaria-${f.id}`)?.value||0)||0;
-      const gorjeta=finGorjetaMap[f.id]||0;
-      const consumo=f.consumo||0;
-      const liq=diaria+gorjeta-consumo;
-      totalDiarias+=diaria;totalConsumos+=consumo;totalLiq+=liq;
+async function salvarFechamento(fechar=false) {
+  if(!finDate) return; if(finDayStatus==='fechado') return;
+  try {
+    const gt  = parseFloat($('gorjetaTotal').value)||0;
+    const gd  = Object.values(finGorjetaMap).reduce((a,b)=>a+b,0);
+    let td=0,tc=0,tl=0;
+    const rSnap = await db.collection('configuracoes').doc('gorjeta').get();
+    const rSnapshot = rSnap.exists ? rSnap.data().regras : {};
+    const batch = db.batch();
+    finPresentes.forEach(f => {
+      const d = parseFloat($(`diaria-${f.id}`)?.value||0)||0;
+      const g = finGorjetaMap[f.id]||0; const c=f.consumo||0; const l=d+g-c;
+      td+=d; tc+=c; tl+=l;
       batch.set(db.collection('fechamento_funcionario').doc(`${finDate}_${f.id}`),{
         data:finDate,funcId:f.id,nomeSnapshot:f.nome,cargoSnapshot:f.cargo,
-        presente:true,atrasado:f.atrasado,consumo,diaria,gorjeta,
-        baseGorjeta:gorjetaTotal,percentualCargo:pctGorjeta(f.cargo),
-        regrasGorjetaSnapshot:regrasSnapshot,totalLiquido:liq,
-        pix:f.pix||'',
-        criadoPor:currentUser.uid,criadoEm:firebase.firestore.FieldValue.serverTimestamp(),versao:1,
+        presente:true,atrasado:f.atrasado,consumo:c,diaria:d,gorjeta:g,
+        baseGorjeta:gt,percentualCargo:pctGorjeta(f.cargo),
+        regrasGorjetaSnapshot:rSnapshot,totalLiquido:l,pix:f.pix||'',
+        criadoPor:currentUser.uid,criadoEm:firebase.firestore.FieldValue.serverTimestamp(),versao:1
       },{merge:true});
     });
     batch.set(db.collection('fechamento_diario').doc(finDate),{
-      data:finDate,gorjetaTotal,gorjetaDistribuida:gorjetaDist,
-      gorjetaCasa:gorjetaTotal-gorjetaDist,gorjetaPerFunc:finGorjetaMap,
-      regrasGorjetaSnapshot:regrasSnapshot,totalFuncionarios:finPresentes.length,
-      totalDiarias,totalConsumos,totalLiquidoDia:totalLiq,
-      fechadoPor:currentUser.uid,fechadoEm:firebase.firestore.FieldValue.serverTimestamp(),versao:1,
+      data:finDate,gorjetaTotal:gt,gorjetaDistribuida:gd,gorjetaCasa:gt-gd,
+      gorjetaPerFunc:finGorjetaMap,regrasGorjetaSnapshot:rSnapshot,
+      totalFuncionarios:finPresentes.length,totalDiarias:td,totalConsumos:tc,
+      totalLiquidoDia:tl,fechadoPor:currentUser.uid,
+      fechadoEm:firebase.firestore.FieldValue.serverTimestamp(),versao:1
     },{merge:true});
-    if(fechar){
-      const entrada={de:finDayStatus,para:'fechado',por:currentUser.uid,em:new Date().toISOString(),motivo:''};
+    if(fechar) {
+      const e = {de:finDayStatus,para:'fechado',por:currentUser.uid,em:new Date().toISOString(),motivo:''};
       batch.update(db.collection('presencas_diarias').doc(finDate),{
         status:'fechado',atualizadoPor:currentUser.uid,
         atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
-        statusHistorico:firebase.firestore.FieldValue.arrayUnion(entrada),
+        statusHistorico:firebase.firestore.FieldValue.arrayUnion(e)
       });
     }
     await batch.commit();
-    await auditoria(fechar?'DIA_FECHADO':'FECHAMENTO_CRIADO',`presencas_diarias/${finDate}`,{},{gorjetaTotal,fechar});
-    if(fechar){
-      finDayStatus='fechado';diasStatusMap[finDate]='fechado';
-      document.getElementById('finStatusPill').innerHTML=`<span class="status-pill status-fechado">${STATUS_LABEL['fechado']}</span>`;
-      renderFinAcoes(true);renderCalDias();
-      showAlert('finAlert2','✅ Dia fechado com sucesso!','success');
-    } else {showAlert('finAlert2','✅ Fechamento salvo!','success');}
-  }catch(e){showAlert('finAlert2','❌ Erro: '+e.message,'error',0);}
+    await logAuditoria(fechar?'DIA_FECHADO':'FECHAMENTO_SALVO',`presencas_diarias/${finDate}`,{},{gorjetaTotal:gt,fechar});
+    if(fechar) {
+      finDayStatus='fechado'; finDiasStatus[finDate]='fechado';
+      $('fechStatusPill').innerHTML=`<span class="status-pill status-fechado">${STATUS_LABEL['fechado']}</span>`;
+      renderFechAcoes(true); renderCalFin();
+      showAlert('fechAlert2','✅ Dia fechado!','success');
+    } else { showAlert('fechAlert2','✅ Fechamento salvo!','success'); }
+  } catch(e) { showAlert('fechAlert2','❌ Erro: '+e.message,'error',0); }
 }
-
-function abrirModalReabrir(){document.getElementById('reabrirModal').classList.add('open');}
-function fecharModal(){document.getElementById('reabrirModal').classList.remove('open');}
-async function confirmarReabrir(){
-  const motivo=document.getElementById('reabrirMotivo').value.trim();
-  if(!motivo){alert('Informe o motivo.');return;}
-  try{
-    const entrada={de:'fechado',para:'reaberto',por:currentUser.uid,em:new Date().toISOString(),motivo};
+async function confirmarReabrir() {
+  const motivo = $('reabrirMotivo').value.trim();
+  if(!motivo) { alert('Informe o motivo.'); return; }
+  try {
+    const e = {de:'fechado',para:'reaberto',por:currentUser.uid,em:new Date().toISOString(),motivo};
     await db.collection('presencas_diarias').doc(finDate).update({
       status:'reaberto',atualizadoPor:currentUser.uid,
       atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
-      statusHistorico:firebase.firestore.FieldValue.arrayUnion(entrada),
+      statusHistorico:firebase.firestore.FieldValue.arrayUnion(e)
     });
-    await auditoria('DIA_REABERTO',`presencas_diarias/${finDate}`,{status:'fechado'},{status:'reaberto',motivo});
-    finDayStatus='reaberto';diasStatusMap[finDate]='reaberto';
-    document.getElementById('finStatusPill').innerHTML=`<span class="status-pill status-reaberto">${STATUS_LABEL['reaberto']}</span>`;
-    fecharModal();renderFinAcoes(false);renderCalDias();
-    finPresentes.forEach(f=>{const el=document.getElementById(`diaria-${f.id}`);if(el)el.disabled=false;});
-    document.getElementById('gorjetaTotal').disabled=false;
-    showAlert('finAlert','✅ Dia reaberto. Corrija e feche novamente.','success');
-  }catch(e){showAlert('finAlert','❌ Erro: '+e.message,'error',0);}
+    await logAuditoria('DIA_REABERTO',`presencas_diarias/${finDate}`,{status:'fechado'},{status:'reaberto',motivo});
+    finDayStatus='reaberto'; finDiasStatus[finDate]='reaberto';
+    $('fechStatusPill').innerHTML=`<span class="status-pill status-reaberto">${STATUS_LABEL['reaberto']}</span>`;
+    fecharModal('modalReabrir'); renderFechAcoes(false); renderCalFin();
+    finPresentes.forEach(f => { const el=$(`diaria-${f.id}`); if(el) el.disabled=false; });
+    $('gorjetaTotal').disabled=false;
+    showAlert('fechAlert','✅ Dia reaberto.','success');
+  } catch(e) { showAlert('fechAlert','❌ Erro: '+e.message,'error',0); }
 }
 
-/* ══ PAGAMENTOS ══ */
-function getPeriodo(){
-  const tipo=document.getElementById('pgtoTipo').value;
-  const hoje=new Date();
-  let de,ate;
-  if(tipo==='semana'){
-    const diaSem=hoje.getDay(); // 0=dom
-    const domingo=new Date(hoje);
-    domingo.setDate(hoje.getDate()-diaSem);
-    const sabado=new Date(domingo);sabado.setDate(domingo.getDate()+6);
-    de=domingo.toISOString().split('T')[0];
-    ate=sabado.toISOString().split('T')[0];
-  } else if(tipo==='semana_ant'){
-    const diaSem=hoje.getDay();
-    const domingoAnt=new Date(hoje);domingoAnt.setDate(hoje.getDate()-diaSem-7);
-    const sabadoAnt=new Date(domingoAnt);sabadoAnt.setDate(domingoAnt.getDate()+6);
-    de=domingoAnt.toISOString().split('T')[0];
-    ate=sabadoAnt.toISOString().split('T')[0];
-  } else if(tipo==='mes'){
-    de=`${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}-01`;
-    ate=`${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}-31`;
+/* ── Pagamentos ── */
+function onPgtoTipo() {
+  const c = $('pgtoTipo').value === 'custom';
+  $('pgtoCustom').style.display = c ? 'flex' : 'none';
+  if(!c) renderPagamentos();
+}
+function getPeriodo() {
+  const t = $('pgtoTipo').value, h = new Date(); let de, ate;
+  if(t==='semana') {
+    const dow=h.getDay(); let qua=new Date(h);
+    qua.setDate(h.getDate()-(dow>=3?dow-3:dow+4));
+    const dom=new Date(qua); dom.setDate(qua.getDate()+4);
+    de=qua.toISOString().split('T')[0]; ate=dom.toISOString().split('T')[0];
+  } else if(t==='semana_ant') {
+    const dow=h.getDay(); let qua=new Date(h);
+    qua.setDate(h.getDate()-(dow>=3?dow-3:dow+4)-7);
+    const dom=new Date(qua); dom.setDate(qua.getDate()+4);
+    de=qua.toISOString().split('T')[0]; ate=dom.toISOString().split('T')[0];
+  } else if(t==='mes') {
+    de=`${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-01`;
+    ate=`${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-31`;
   } else {
-    de=document.getElementById('pgtoDe').value;
-    ate=document.getElementById('pgtoAte').value;
+    de=$('pgtoDe').value; ate=$('pgtoAte').value;
   }
   return {de,ate};
 }
-
-document.addEventListener('DOMContentLoaded',()=>{
-  document.getElementById('pgtoTipo').addEventListener('change',()=>{
-    const isCustom=document.getElementById('pgtoTipo').value==='custom';
-    const el=document.getElementById('pgtoCustomDates');
-    el.style.display=isCustom?'flex':'none';
-  });
-});
-
-async function renderPagamentos(){
-  const{de,ate}=getPeriodo();
-  if(!de||!ate){showAlert('pgtoAlert','Selecione o período.','error');return;}
-  const cont=document.getElementById('pgtoContent');
-  cont.innerHTML='<div class="empty-state"><span class="loading-spinner"></span> Buscando...</div>';
-  try{
-    const snap=await db.collection('fechamento_funcionario')
+async function renderPagamentos() {
+  const {de,ate} = getPeriodo();
+  if(!de||!ate) { showAlert('pgtoAlert','Selecione o período.','error'); return; }
+  const cont = $('pgtoContent');
+  cont.innerHTML='<div class="empty-state"><span class="loading-spinner"></span></div>';
+  try {
+    const snap = await db.collection('fechamento_funcionario')
       .where('data','>=',de).where('data','<=',ate).get();
-    const totals={};
-    snap.docs.forEach(d=>{
-      const r=d.data();if(!r.presente)return;
-      if(!totals[r.funcId])totals[r.funcId]={
-        nome:r.nomeSnapshot,cargo:r.cargoSnapshot,pix:r.pix||'',
-        dias:[],gorjeta:0,diarias:0,consumo:0,total:0
-      };
+    const totals = {};
+    snap.docs.forEach(d => {
+      const r=d.data(); if(!r.presente) return;
+      if(!totals[r.funcId]) totals[r.funcId]={nome:r.nomeSnapshot,cargo:r.cargoSnapshot,pix:r.pix||'',dias:[],gorjeta:0,diarias:0,consumo:0,total:0};
       totals[r.funcId].dias.push(r.data);
-      totals[r.funcId].gorjeta+=r.gorjeta||0;
-      totals[r.funcId].diarias+=r.diaria||0;
-      totals[r.funcId].consumo+=r.consumo||0;
-      totals[r.funcId].total+=r.totalLiquido||0;
+      totals[r.funcId].gorjeta+=r.gorjeta||0; totals[r.funcId].diarias+=r.diaria||0;
+      totals[r.funcId].consumo+=r.consumo||0; totals[r.funcId].total+=r.totalLiquido||0;
     });
-    const sorted=Object.values(totals).sort((a,b)=>b.total-a.total);
-    if(!sorted.length){
-      cont.innerHTML='<div class="empty-state"><div class="icon">💳</div><p>Nenhum fechamento encontrado no período</p></div>';
-      return;
-    }
-    const tipo=document.getElementById('pgtoTipo').value;
-    const periodoLabel=tipo==='semana'?'Esta Semana':tipo==='semana_ant'?'Semana Anterior':tipo==='mes'?'Este Mês':`${de} a ${ate}`;
-    const totalGeral=sorted.reduce((a,t)=>a+t.total,0);
-    cont.innerHTML=`
-      <div class="card" style="background:rgba(232,160,69,.08);border-color:var(--accent)">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-          <div><div style="font-family:'Syne',sans-serif;font-weight:800;font-size:16px">📋 ${periodoLabel}</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:2px">${de} até ${ate} · ${sorted.length} funcionários</div></div>
-          <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:22px;color:var(--accent)">${fmt(totalGeral)}</div>
-        </div>
-      </div>
-      ${sorted.map(t=>{
-        const s=CARGO_SETOR[t.cargo]||'outros';
-        const metodoPgto=t.pix.includes('Itaú')||t.pix.includes('salário')?'🏦 Conta Salário Itaú':t.pix?'📱 Pix: '+t.pix:'❓ Sem chave cadastrada';
-        return `<div class="pgto-card">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
-            <div>
-              <div class="pgto-name">${t.nome} <span class="badge c-${s}">${t.cargo}</span></div>
-              <div class="pgto-pix">${metodoPgto}</div>
-              <div class="pgto-detail">
-                ${t.dias.length} dia(s) trabalhado(s) · Diárias: ${fmt(t.diarias)} · Gorjeta: ${fmt(t.gorjeta)}
-                ${t.consumo>0?` · <span style="color:var(--danger)">Consumo: -${fmt(t.consumo)}</span>`:''}
-              </div>
-              <div style="font-size:11px;color:var(--muted);margin-top:4px">Dias: ${t.dias.sort().map(d=>d.split('-').reverse().join('/')).join(', ')}</div>
-            </div>
-            <div class="pgto-total">${fmt(t.total)}</div>
+    const sorted = Object.values(totals).sort((a,b)=>b.total-a.total);
+    if(!sorted.length) { cont.innerHTML='<div class="empty-state"><div class="icon">💳</div><p>Nenhum fechamento no período</p></div>'; return; }
+    const totalGeral = sorted.reduce((a,t)=>a+t.total,0);
+    const lbl = {semana:'Esta Semana',semana_ant:'Semana Anterior',mes:'Este Mês',custom:'Período Personalizado'}[$('pgtoTipo').value];
+    cont.innerHTML = `<div class="card" style="border-color:var(--accent);margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+        <div><div style="font-size:16px;font-weight:800">📋 ${lbl}</div><div style="font-size:12px;color:var(--muted)">${de} → ${ate} · ${sorted.length} func.</div></div>
+        <div style="font-size:24px;font-weight:800;color:var(--accent)">${fmt(totalGeral)}</div>
+      </div></div>
+    ${sorted.map(t => {
+      const s=setor(t.cargo);
+      const metodo=t.pix.toLowerCase().includes('itaú')||t.pix.toLowerCase().includes('salário')?'🏦 Conta Salário Itaú':t.pix?'📱 Pix: '+t.pix:'❓ Sem chave';
+      return `<div class="pgto-card">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+          <div>
+            <div class="pgto-name">${t.nome} <span class="badge c-${s}">${t.cargo}</span></div>
+            <div class="pgto-pix">${metodo}</div>
+            <div class="pgto-detail">${t.dias.length} dia(s) · Diárias: ${fmt(t.diarias)} · Gorjeta: ${fmt(t.gorjeta)}${t.consumo>0?` · <span style="color:var(--danger)">-${fmt(t.consumo)}</span>`:''}</div>
+            <div style="font-size:11px;color:var(--muted);margin-top:4px">📅 ${t.dias.sort().map(d=>d.split('-').reverse().slice(0,2).join('/')).join(' · ')}</div>
           </div>
-        </div>`;
-      }).join('')}`;
-  }catch(e){cont.innerHTML=`<div class="empty-state"><p>Erro: ${e.message}</p></div>`;}
+          <div class="pgto-total">${fmt(t.total)}</div>
+        </div></div>`;
+    }).join('')}`;
+  } catch(e) { cont.innerHTML=`<div class="empty-state"><p>Erro: ${e.message}</p></div>`; }
 }
 
-function imprimirPagamentos(){
-  window.print();
-}
-
-/* ══ HISTÓRICO ══ */
-async function renderHistorico(){
-  const el=document.getElementById('historicoList');
-  el.innerHTML='<div class="empty-state"><span class="loading-spinner"></span> Carregando...</div>';
-  try{
-    const snap=await db.collection('presencas_diarias').orderBy('data','desc').limit(60).get();
-    if(!snap.size){el.innerHTML='<div class="empty-state"><div class="icon">📋</div><p>Nenhum dia ainda</p></div>';return;}
-    const fechSnaps=await Promise.all(snap.docs.map(d=>db.collection('fechamento_diario').doc(d.id).get()));
-    const fechMap={};fechSnaps.forEach(s=>{if(s.exists)fechMap[s.id]=s.data();});
-    el.innerHTML=snap.docs.map(d=>{
-      const day=d.data(),fech=fechMap[d.id];
-      const funcsMap=day.funcionarios||{};
-      const presentes=Object.entries(funcsMap).filter(([,f])=>f.presente!==false);
+/* ── Histórico ── */
+async function renderHistorico() {
+  const el = $('historicoList');
+  el.innerHTML='<div class="empty-state"><span class="loading-spinner"></span></div>';
+  try {
+    const snap = await db.collection('presencas_diarias').orderBy('data','desc').limit(60).get();
+    if(!snap.size) { el.innerHTML='<div class="empty-state"><div class="icon">📋</div><p>Nenhum dia ainda</p></div>'; return; }
+    const fechSnaps = await Promise.all(snap.docs.map(d=>db.collection('fechamento_diario').doc(d.id).get()));
+    const fechMap={}; fechSnaps.forEach(s=>{ if(s.exists) fechMap[s.id]=s.data(); });
+    el.innerHTML = snap.docs.map(d => {
+      const day=d.data(), fech=fechMap[d.id];
+      const pres=Object.entries(day.funcionarios||{}).filter(([,f])=>f.presente!==false);
       return `<div class="hist-item">
         <div class="hist-header" onclick="this.nextElementSibling.classList.toggle('open')">
           <div>
@@ -1546,302 +1329,165 @@ async function renderHistorico(){
             <div style="margin-top:4px"><span class="status-pill status-${day.status||'em_aberto'}">${STATUS_LABEL[day.status]||day.status}</span></div>
           </div>
           <div class="hist-meta">
-            <span>${presentes.length} presentes</span>
+            <span>${pres.length} pres.</span>
             ${fech?`<span class="val">${fmt(fech.totalLiquidoDia)}</span>`:'<span style="color:var(--accent)">Pendente</span>'}
             <span>▾</span>
           </div>
         </div>
         <div class="hist-body">
           ${day.obs?`<div class="obs-box" style="margin-bottom:10px">📝 ${day.obs}</div>`:''}
-          ${presentes.map(([id,p])=>{
-            const s=CARGO_SETOR[p.cargo]||'outros';
-            const g=fech?.gorjetaPerFunc?.[id]||0;
-            const di=fech?((fech[`diaria_${id}`]||0)):0;
-            return `<div class="info-row">
-              <span class="lbl">${p.nome||id} <span class="badge c-${s}">${p.cargo}</span>
-                ${p.atrasado?'<span class="tag-atrasado">⏰</span>':''}</span>
-              <span>${fech?fmt(di+g-(p.consumo||0)):'—'}</span>
-            </div>`;
+          ${pres.map(([id,p])=>{
+            const s=setor(p.cargo); const g=fech?.gorjetaPerFunc?.[id]||0;
+            return `<div class="info-row"><span class="lbl">${p.nome||id} ${badge(p.cargo)}${p.atrasado?'<span class="tag-atrasado" style="margin-left:4px">⏰</span>':''}</span><span>${fech?fmt(g-(p.consumo||0)):'—'}</span></div>`;
           }).join('')}
         </div>
       </div>`;
     }).join('');
-  }catch(e){el.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`;}
+  } catch(e) { el.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`; }
 }
 
-/* ══ RESUMO MENSAL ══ */
-async function renderResumoInit(){
-  const snap=await db.collection('presencas_diarias').orderBy('data','desc').limit(120).get();
-  const meses=new Set(snap.docs.map(d=>d.id.substring(0,7)));
-  const sel=document.getElementById('resumoMes');
-  const cur=sel.value;
-  sel.innerHTML='<option value="">Todos</option>'+[...meses].sort().reverse().map(m=>{
-    const[y,mo]=m.split('-');
-    return `<option value="${m}" ${m===cur?'selected':''}>${new Date(+y,+mo-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</option>`;
-  }).join('');
+/* ── Resumo Mensal ── */
+async function renderResumoInit() {
+  const snap = await db.collection('presencas_diarias').orderBy('data','desc').limit(120).get();
+  const meses = new Set(snap.docs.map(d=>d.id.substring(0,7)));
+  const sel = $('resumoMes'); const cur = sel.value;
+  sel.innerHTML = '<option value="">Todos os meses</option>' +
+    [...meses].sort().reverse().map(m => {
+      const [y,mo]=m.split('-');
+      return `<option value="${m}" ${m===cur?'selected':''}>${new Date(+y,+mo-1,1).toLocaleDateString('pt-BR',{month:'long',year:'numeric'})}</option>`;
+    }).join('');
   renderResumo();
 }
-
-async function renderResumo(){
-  const mes=document.getElementById('resumoMes').value;
-  const cont=document.getElementById('resumoContent');
+async function renderResumo() {
+  const mes = $('resumoMes').value;
+  const cont = $('resumoContent');
   cont.innerHTML='<div class="empty-state"><span class="loading-spinner"></span></div>';
-  try{
-    let q=db.collection('fechamento_funcionario');
-    if(mes)q=q.where('data','>=',mes+'-01').where('data','<=',mes+'-31');
-    const snap=await q.get();
-    const totals={};
-    snap.docs.forEach(d=>{
-      const r=d.data();if(!r.presente)return;
-      if(!totals[r.funcId])totals[r.funcId]={nome:r.nomeSnapshot,cargo:r.cargoSnapshot,pix:r.pix||'',dias:0,gorjeta:0,diarias:0,consumo:0,total:0};
-      totals[r.funcId].dias++;
-      totals[r.funcId].gorjeta+=r.gorjeta||0;
-      totals[r.funcId].diarias+=r.diaria||0;
-      totals[r.funcId].consumo+=r.consumo||0;
+  try {
+    let q = db.collection('fechamento_funcionario');
+    if(mes) q=q.where('data','>=',mes+'-01').where('data','<=',mes+'-31');
+    const snap = await q.get(); const totals={};
+    snap.docs.forEach(d => {
+      const r=d.data(); if(!r.presente) return;
+      if(!totals[r.funcId]) totals[r.funcId]={nome:r.nomeSnapshot,cargo:r.cargoSnapshot,pix:r.pix||'',dias:0,gorjeta:0,diarias:0,consumo:0,total:0};
+      totals[r.funcId].dias++; totals[r.funcId].gorjeta+=r.gorjeta||0;
+      totals[r.funcId].diarias+=r.diaria||0; totals[r.funcId].consumo+=r.consumo||0;
       totals[r.funcId].total+=r.totalLiquido||0;
     });
     const sorted=Object.values(totals).sort((a,b)=>b.total-a.total);
-    if(!sorted.length){cont.innerHTML='<div class="empty-state"><div class="icon">📊</div><p>Nenhum fechamento no período</p></div>';return;}
+    if(!sorted.length) { cont.innerHTML='<div class="empty-state"><div class="icon">📊</div><p>Nenhum fechamento no período</p></div>'; return; }
     const totalGeral=sorted.reduce((a,t)=>a+t.total,0);
-    cont.innerHTML=`
-      <div class="card" style="background:rgba(232,160,69,.08);border-color:var(--accent);margin-bottom:16px">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-          <div><div style="font-family:'Syne',sans-serif;font-weight:800;font-size:16px">Total do Período</div>
-            <div style="font-size:12px;color:var(--muted);margin-top:2px">${sorted.length} funcionários</div></div>
-          <div style="font-family:'Syne',sans-serif;font-weight:800;font-size:24px;color:var(--accent)">${fmt(totalGeral)}</div>
+    cont.innerHTML=`<div class="card" style="border-color:var(--accent);margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div><div style="font-size:16px;font-weight:800">Total do Período</div><div style="font-size:12px;color:var(--muted)">${sorted.length} funcionários</div></div>
+        <div style="font-size:24px;font-weight:800;color:var(--accent)">${fmt(totalGeral)}</div>
+      </div></div>
+    ${sorted.map((t,i)=>{
+      const color=COLORS[i%COLORS.length];
+      const init=t.nome.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+      const s=setor(t.cargo);
+      const pct=totalGeral>0?((t.total/totalGeral)*100).toFixed(1):0;
+      return `<div class="resumo-card">
+        <div class="resumo-avatar" style="background:${color}18;color:${color}">${init}</div>
+        <div class="resumo-info">
+          <div class="resumo-name">${t.nome} ${badge(t.cargo)}</div>
+          <div class="resumo-sub">${t.dias} dia(s) · Gorjeta ${fmt(t.gorjeta)} · Diárias ${fmt(t.diarias)}${t.consumo>0?` · <span style="color:var(--danger)">-${fmt(t.consumo)}</span>`:''} · <span style="color:${color};font-weight:700">${pct}%</span></div>
+          ${t.pix?`<div style="font-size:11px;color:var(--muted);font-style:italic;margin-top:2px">${t.pix}</div>`:''}
         </div>
-      </div>
-      ${sorted.map((t,i)=>{
-        const color=COLORS[i%COLORS.length];
-        const initials=t.nome.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
-        const s=CARGO_SETOR[t.cargo]||'outros';
-        const pct=totalGeral>0?((t.total/totalGeral)*100).toFixed(1):0;
-        return `<div class="resumo-card">
-          <div class="resumo-avatar" style="background:${color}22;color:${color}">${initials}</div>
-          <div class="resumo-info">
-            <div class="resumo-name">${t.nome} <span class="badge c-${s}">${t.cargo}</span></div>
-            <div class="resumo-sub">
-              ${t.dias} dia(s) · Gorjeta ${fmt(t.gorjeta)} · Diárias ${fmt(t.diarias)}
-              ${t.consumo>0?` · <span style="color:var(--danger)">-${fmt(t.consumo)}</span>`:''}
-              · <span style="color:${color}">${pct}% do total</span>
-            </div>
-            ${t.pix?`<div style="font-size:11px;color:var(--muted);margin-top:2px;font-style:italic">${t.pix}</div>`:''}
-          </div>
-          <div class="resumo-total">${fmt(t.total)}</div>
-        </div>`;
-      }).join('')}`;
-  }catch(e){cont.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`;}
+        <div class="resumo-total">${fmt(t.total)}</div>
+      </div>`;
+    }).join('')}`;
+  } catch(e) { cont.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`; }
 }
 
-function imprimirResumo(){window.print();}
-
-/* ══ CADASTRO ══ */
-async function addFunc(){
-  const id=document.getElementById('cadId').value.trim().toUpperCase();
-  const nome=document.getElementById('cadNome').value.trim();
-  if(!id||!nome){showAlert('cadAlert','Informe ID e nome.','error');return;}
-  if(!id.match(/^EMP\d{3,}$/)){showAlert('cadAlert','ID deve ser EMP016, EMP017...','error');return;}
-  try{
+/* ════════════════════════════════════════
+   MÓDULO FUNCIONÁRIOS
+════════════════════════════════════════ */
+async function addFunc() {
+  const id   = $('cadId').value.trim().toUpperCase();
+  const nome = $('cadNome').value.trim();
+  if(!id||!nome) { showAlert('cadAlert','Informe ID e nome.','error'); return; }
+  if(!id.match(/^EMP\d{3,}$/)) { showAlert('cadAlert','ID deve ser EMP016, EMP017...','error'); return; }
+  try {
     await db.collection('funcionarios').doc(id).set({
-      id,nome,cargo:document.getElementById('cadCargo').value,
-      tipo:document.getElementById('cadTipo').value,
-      pix:document.getElementById('cadPix').value.trim(),
-      diariaPadrao:parseFloat(document.getElementById('cadDiaria').value)||0,
-      ativo:true,criadoPor:currentUser.uid,criadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      id, nome, cargo:$('cadCargo').value, tipo:$('cadTipo').value,
+      pix:$('cadPix').value.trim(),
+      diariaPadrao:parseFloat($('cadDiaria').value)||0,
+      ativo:true, criadoPor:currentUser.uid,
+      criadoEm:firebase.firestore.FieldValue.serverTimestamp()
     });
-    await auditoria('FUNCIONARIO_CRIADO',`funcionarios/${id}`,{},{nome});
+    await logAuditoria('FUNCIONARIO_CRIADO',`funcionarios/${id}`,{},{nome});
     showAlert('cadAlert',`✅ ${nome} adicionado!`,'success');
-    document.getElementById('cadNome').value='';document.getElementById('cadPix').value='';
-    document.getElementById('cadDiaria').value='';document.getElementById('cadId').value='';
+    ['cadNome','cadPix','cadDiaria','cadId'].forEach(x=>$(x).value='');
     renderCadList();
-  }catch(e){showAlert('cadAlert','❌ '+e.message,'error');}
+  } catch(e) { showAlert('cadAlert','❌ '+e.message,'error'); }
 }
-
-async function renderCadList(){
-  const el=document.getElementById('cadList');
+async function renderCadList() {
+  const el = $('cadList');
   el.innerHTML='<span class="loading-spinner"></span>';
-  try{
-    const snap=await db.collection('funcionarios').orderBy('nome').get();
-    if(!snap.size){el.innerHTML='<div class="empty-state"><p>Nenhum cadastrado</p></div>';return;}
-    const podeEdit=['diretoria','admin'].includes(currentPerfil);
-    el.innerHTML=snap.docs.map(d=>{
-      const f=d.data();const s=CARGO_SETOR[f.cargo]||'outros';
-      const tipoLabel = f.tipo==='frequente'
-        ? '<span style="font-size:10px;color:#4fc3f7;border:1px solid #4fc3f7;border-radius:10px;padding:1px 6px">Frequente</span>'
-        : '<span style="font-size:10px;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:1px 6px">Fixo</span>';
+  try {
+    const snap = await db.collection('funcionarios').orderBy('nome').get();
+    if(!snap.size) { el.innerHTML='<div class="empty-state"><p>Nenhum cadastrado</p></div>'; return; }
+    const podeEdit = ['diretoria','admin'].includes(currentPerfil);
+    el.innerHTML = snap.docs.map(d => {
+      const f=d.data(), s=setor(f.cargo);
+      const tBadge = f.tipo==='frequente'
+        ? `<span style="font-size:10px;color:#1A6FA8;border:1.5px solid #B8D9F0;border-radius:10px;padding:1px 7px;font-weight:700">Frequente</span>`
+        : `<span style="font-size:10px;color:var(--muted);border:1.5px solid var(--border);border-radius:10px;padding:1px 7px">Fixo</span>`;
       return `<div class="diaria-row" style="${!f.ativo?'opacity:.4':''}">
-        <div class="diaria-name">${f.nome}${!f.ativo?' <span style="color:var(--danger);font-size:11px">[inativo]</span>':''} ${tipoLabel}
+        <div class="diaria-name">${f.nome}${!f.ativo?' <span style="color:var(--danger);font-size:11px">[inativo]</span>':''} ${tBadge}
           <small>${f.pix||'Sem Pix'} · R$ ${f.diariaPadrao||0}/dia</small></div>
-        <span class="badge c-${s}">${f.cargo}</span>
-        ${podeEdit?`
+        ${badge(f.cargo)}
+        ${podeEdit ? `
           <button class="btn btn-secondary btn-sm" onclick="abrirEditFunc('${d.id}')">✏️</button>
           ${f.ativo?`<button class="btn btn-danger btn-sm" onclick="desativarFunc('${d.id}')">Desativar</button>`:''}
-        `:''}
+        ` : ''}
       </div>`;
     }).join('');
-  }catch(e){el.innerHTML='<div class="empty-state"><p>'+e.message+'</p></div>';}
+  } catch(e) { el.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`; }
 }
-
-async function abrirEditFunc(id){
-  const snap=await db.collection('funcionarios').doc(id).get();
-  if(!snap.exists)return;
-  const f=snap.data();
-  document.getElementById('editFuncId').value=id;
-  document.getElementById('editNome').value=f.nome||'';
-  document.getElementById('editCargo').value=f.cargo||'Garçom';
-  document.getElementById('editPix').value=f.pix||'';
-  document.getElementById('editDiaria').value=f.diariaPadrao||'';
-  document.getElementById('editFuncModal').classList.add('open');
+async function abrirEditFunc(id) {
+  const snap = await db.collection('funcionarios').doc(id).get();
+  if(!snap.exists) return; const f=snap.data();
+  $('editFuncId').value=id; $('editNome').value=f.nome||'';
+  $('editCargo').value=f.cargo||'Garçom'; $('editTipo').value=f.tipo||'fixo';
+  $('editPix').value=f.pix||''; $('editDiaria').value=f.diariaPadrao||'';
+  abrirModal('modalEditFunc');
 }
-function fecharEditFunc(){document.getElementById('editFuncModal').classList.remove('open');}
-
-async function salvarEdicaoFunc(){
-  const id=document.getElementById('editFuncId').value;
-  if(!id)return;
-  try{
-    const dados={
-      nome:document.getElementById('editNome').value.trim(),
-      cargo:document.getElementById('editCargo').value,
-      pix:document.getElementById('editPix').value.trim(),
-      diariaPadrao:parseFloat(document.getElementById('editDiaria').value)||0,
-    };
+async function salvarEdicaoFunc() {
+  const id = $('editFuncId').value; if(!id) return;
+  try {
+    const dados = {nome:$('editNome').value.trim(),cargo:$('editCargo').value,
+      tipo:$('editTipo').value,pix:$('editPix').value.trim(),
+      diariaPadrao:parseFloat($('editDiaria').value)||0};
     await db.collection('funcionarios').doc(id).update(dados);
-    await auditoria('FUNCIONARIO_ATUALIZADO',`funcionarios/${id}`,{},{...dados});
+    await logAuditoria('FUNCIONARIO_ATUALIZADO',`funcionarios/${id}`,{},{...dados});
     showAlert('editFuncAlert','✅ Salvo!','success');
-    setTimeout(()=>{fecharEditFunc();renderCadList();},1000);
-  }catch(e){showAlert('editFuncAlert','❌ '+e.message,'error');}
+    setTimeout(()=>{ fecharModal('modalEditFunc'); renderCadList(); }, 900);
+  } catch(e) { showAlert('editFuncAlert','❌ '+e.message,'error'); }
 }
-
-async function desativarFunc(id){
+async function desativarFunc(id) {
   const snap=await db.collection('funcionarios').doc(id).get();
-  if(!confirm(`Desativar ${snap.data()?.nome}?`))return;
+  if(!confirm(`Desativar ${snap.data()?.nome}?`)) return;
   await db.collection('funcionarios').doc(id).update({ativo:false});
-  await auditoria('FUNCIONARIO_DESATIVADO',`funcionarios/${id}`,{ativo:true},{ativo:false});
   renderCadList();
 }
 
-/* ══ QR FALLBACK ══ */
-function onDragOver(e){e.preventDefault();document.querySelector('.import-zone')?.classList.add('drag');}
-function onDragLeave(){document.querySelector('.import-zone')?.classList.remove('drag');}
-function onDrop(e){e.preventDefault();document.querySelector('.import-zone')?.classList.remove('drag');if(e.dataTransfer.files[0])handleFile(e.dataTransfer.files[0]);}
-
-function handleFile(file){
-  if(!file)return;
-  document.getElementById('scanResult').classList.remove('visible','ok');
-  pendingQR=null;
-  if(file.type.startsWith('image/'))readImageQR(file);
-  else if(file.type==='application/pdf')renderPDFandScan(file);
-  else showAlert('importAlert','Arquivo não suportado.','error');
-}
-
-function readImageQR(file){
-  const reader=new FileReader();
-  reader.onload=e=>{
-    const img=new Image();
-    img.onload=()=>{
-      const c=document.createElement('canvas');c.width=img.width;c.height=img.height;
-      const ctx=c.getContext('2d');ctx.drawImage(img,0,0);
-      const code=jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height);
-      code?parseQR(code.data):showAlert('importAlert','QR Code não encontrado.','error');
-    };img.src=e.target.result;
-  };reader.readAsDataURL(file);
-}
-
-async function renderPDFandScan(file){
-  showAlert('importAlert','⏳ Lendo PDF...','success');
-  try{
-    if(!window.pdfjsLib){
-      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
-      window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-    }
-    const pdf=await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
-    let found=false;
-    for(let p=1;p<=pdf.numPages&&!found;p++){
-      const page=await pdf.getPage(p);const vp=page.getViewport({scale:3});
-      const c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;
-      const ctx=c.getContext('2d');await page.render({canvasContext:ctx,viewport:vp}).promise;
-      const code=jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height);
-      if(code){parseQR(code.data);found=true;}
-    }
-    if(!found)showAlert('importAlert','QR Code não encontrado no PDF.','error');
-  }catch(e){showAlert('importAlert','❌ '+e.message,'error');}
-}
-
-function loadScript(src){
-  return new Promise((res,rej)=>{
-    if(document.querySelector(`script[src="${src}"]`)){res();return;}
-    const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;
-    document.head.appendChild(s);
-  });
-}
-
-function parseQR(raw){
-  try{
-    const data=JSON.parse(decodeURIComponent(escape(atob(raw))));
-    if(!data.date||!data.presenca)throw new Error('Formato inválido');
-    pendingQR=data;
-    document.getElementById('scanDate').textContent=fmtDate(data.date);
-    document.getElementById('scanBadge').textContent=`${data.presenca.filter(f=>f.presente).length} presentes`;
-    document.getElementById('obsBox').innerHTML=data.obs?`<div class="obs-box">📝 ${data.obs}</div>`:'';
-    document.getElementById('scanEmpList').innerHTML=data.presenca.map(f=>`
-      <div class="emp-row ${f.presente?'presente':'ausente'}">
-        <div class="emp-name">${f.nome}<small>${f.cargo}</small></div>
-        ${badge(f.cargo)}
-        <div style="display:flex;gap:6px">
-          ${f.atrasado?'<span class="tag-atrasado">⏰</span>':''}
-          ${!f.presente?'<span style="font-size:10px;padding:2px 7px;border-radius:20px;background:rgba(248,81,73,.15);color:var(--danger);font-weight:600">Ausente</span>':''}
-        </div>
-      </div>`).join('');
-    document.getElementById('scanResult').classList.add('visible','ok');
-    showAlert('importAlert',`✅ QR do dia ${fmtDate(data.date)} lido!`,'success');
-  }catch(e){showAlert('importAlert','❌ QR Code inválido.','error');}
-}
-
-async function importarQR(){
-  if(!pendingQR)return;
-  try{
-    const date=pendingQR.date;
-    const funcMap={};
-    pendingQR.presenca.forEach(f=>{
-      funcMap[f.id]={nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,
-        presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0};
-    });
-    const snap=await db.collection('presencas_diarias').doc(date).get();
-    const entrada={de:snap.exists?snap.data().status:null,para:'aguardando_fechamento',
-      por:currentUser.uid,em:new Date().toISOString(),motivo:'Importado via QR Code offline'};
-    await db.collection('presencas_diarias').doc(date).set({
-      data:date,status:'aguardando_fechamento',obs:pendingQR.obs||'',funcionarios:funcMap,
-      registradoPor:currentUser.uid,registradoEm:firebase.firestore.FieldValue.serverTimestamp(),
-      atualizadoPor:currentUser.uid,atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
-      statusHistorico:firebase.firestore.FieldValue.arrayUnion(entrada),
-    },{merge:true});
-    showAlert('importAlert',`✅ Dia ${fmtDate(date)} importado!`,'success');
-    pendingQR=null;carregarDias();
-  }catch(e){showAlert('importAlert','❌ '+e.message,'error');}
-}
-
-/* ══ AUDITORIA ══ */
-async function auditoria(acao,entidade,antes,depois){
-  try{await db.collection('auditoria').add({
-    ts:firebase.firestore.FieldValue.serverTimestamp(),
-    usuarioId:currentUser.uid,usuarioNome:document.getElementById('userLabel').textContent,
-    perfil:currentPerfil,acao,entidade,camposAlterados:Object.keys(depois),
-    valorAntes:antes,valorDepois:depois,
-  });}catch(_){}
-}
-
-
-/* ══ USUÁRIOS (ADMIN) ══ */
-async function renderUsuarios(){
-  const el=document.getElementById('usuariosList');el.innerHTML='<div class="empty-state"><span class="loading-spinner"></span></div>';
-  try{
-    const snap=await db.collection('usuarios').get();
-    if(!snap.size){el.innerHTML='<div class="empty-state"><p>Nenhum usuário</p></div>';return;}
+/* ════════════════════════════════════════
+   MÓDULO USUÁRIOS (ADMIN)
+════════════════════════════════════════ */
+async function renderUsuarios() {
+  const el = $('usuariosList');
+  el.innerHTML='<div class="empty-state"><span class="loading-spinner"></span></div>';
+  try {
+    const snap = await db.collection('usuarios').get();
+    if(!snap.size) { el.innerHTML='<div class="empty-state"><p>Nenhum usuário</p></div>'; return; }
     const labels={gerente:'Gerente',financeiro:'Financeiro',diretoria:'Diretoria',admin:'Admin'};
     const cores={gerente:'#1A6FA8',financeiro:'#A05E1E',diretoria:'#6B3FA8',admin:'#276749'};
-    el.innerHTML=snap.docs.map(d=>{
-      const u=d.data();const init=(u.nome||u.email||'?')[0].toUpperCase();const cor=cores[u.perfil]||'#8A837A';
-      return`<div class="user-card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    el.innerHTML = snap.docs.map(d => {
+      const u=d.data();
+      const init=(u.nome||u.email||'?')[0].toUpperCase();
+      const cor=cores[u.perfil]||'#8A837A';
+      return `<div class="user-card" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <div class="user-avatar" style="background:${cor}18;color:${cor}">${init}</div>
         <div class="user-info-card" style="flex:1">
           <div class="user-nome">${u.nome||'(sem nome)'}</div>
@@ -1856,56 +1502,144 @@ async function renderUsuarios(){
         </div>
       </div>`;
     }).join('');
-  }catch(e){el.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`;}
+  } catch(e) { el.innerHTML=`<div class="empty-state"><p>${e.message}</p></div>`; }
 }
-
-async function criarUsuario(){
-  const nome=document.getElementById('nuNome').value.trim();
-  const email=document.getElementById('nuEmail').value.trim();
-  const senha=document.getElementById('nuSenha').value;
-  const perfil=document.getElementById('nuPerfil').value;
-  if(!nome||!email||!senha){showAlert('nuAlert','Preencha todos os campos.','error');return;}
-  if(senha.length<8){showAlert('nuAlert','Senha deve ter mínimo 8 caracteres.','error');return;}
-  try{
-    showAlert('nuAlert','⏳ Criando usuário...','success');
-    const apiKey='AIzaSyDEo7pB-dLtSHFGjqvYf8Bt8n7VSu5HdrY';
-    const res=await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password:senha,returnSecureToken:true})});
-    const data=await res.json();
-    if(!res.ok)throw new Error(data.error?.message||'Erro ao criar conta');
-    const uid=data.localId;
-    await db.collection('usuarios').doc(uid).set({uid,nome,email,perfil,ativo:true,criadoPor:currentUser.uid,criadoEm:firebase.firestore.FieldValue.serverTimestamp()});
+async function criarUsuario() {
+  const nome   = $('nuNome').value.trim();
+  const email  = $('nuEmail').value.trim();
+  const senha  = $('nuSenha').value;
+  const perfil = $('nuPerfil').value;
+  if(!nome||!email||!senha) { showAlert('nuAlert','Preencha todos os campos.','error'); return; }
+  if(senha.length<8) { showAlert('nuAlert','Senha deve ter mínimo 8 caracteres.','error'); return; }
+  try {
+    showAlert('nuAlert','⏳ Criando...','success');
+    const res = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=AIzaSyDEo7pB-dLtSHFGjqvYf8Bt8n7VSu5HdrY`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({email,password:senha,returnSecureToken:true})
+    });
+    const data = await res.json();
+    if(!res.ok) throw new Error(data.error?.message||'Erro ao criar conta');
+    const uid = data.localId;
+    await db.collection('usuarios').doc(uid).set({
+      uid,nome,email,perfil,ativo:true,
+      criadoPor:currentUser.uid,criadoEm:firebase.firestore.FieldValue.serverTimestamp()
+    });
     await logAuditoria('USUARIO_CRIADO',`usuarios/${uid}`,{},{nome,email,perfil});
-    showAlert('nuAlert',`✅ ${nome} criado com sucesso!`,'success');
-    ['nuNome','nuEmail','nuSenha'].forEach(x=>document.getElementById(x).value='');
-    setTimeout(()=>{fecharModal('modalNovoUsuario');renderUsuarios();},1200);
-  }catch(e){showAlert('nuAlert','❌ '+e.message,'error');}
+    showAlert('nuAlert',`✅ ${nome} criado!`,'success');
+    ['nuNome','nuEmail','nuSenha'].forEach(x=>$(x).value='');
+    setTimeout(()=>{ fecharModal('modalNovoUsuario'); renderUsuarios(); },1200);
+  } catch(e) { showAlert('nuAlert','❌ '+e.message,'error'); }
 }
-
-async function trocarPerfil(uid,atual){
-  const perfis=['gerente','financeiro','diretoria','admin'];
-  const novo=prompt(`Perfil atual: ${atual}\nDigite o novo perfil:\n${perfis.join(', ')}`);
-  if(!novo||!perfis.includes(novo.toLowerCase().trim()))return;
+async function trocarPerfil(uid, atual) {
+  const perfis = ['gerente','financeiro','diretoria','admin'];
+  const novo = prompt(`Perfil atual: ${atual}\nDigite o novo perfil:\n${perfis.join(', ')}`);
+  if(!novo || !perfis.includes(novo.toLowerCase().trim())) return;
   await db.collection('usuarios').doc(uid).update({perfil:novo.toLowerCase().trim()});
   await logAuditoria('USUARIO_PERFIL_ALTERADO',`usuarios/${uid}`,{perfil:atual},{perfil:novo});
-  showAlert('usuariosAlert','✅ Perfil atualizado!','success');renderUsuarios();
+  showAlert('usuariosAlert','✅ Perfil atualizado!','success');
+  renderUsuarios();
 }
-
-async function desativarUsuario(uid,nome){
-  if(!confirm(`Desativar ${nome}? O usuário não conseguirá mais logar.`))return;
+async function desativarUsuario(uid, nome) {
+  if(!confirm(`Desativar ${nome}?`)) return;
   await db.collection('usuarios').doc(uid).update({ativo:false});
   await logAuditoria('USUARIO_DESATIVADO',`usuarios/${uid}`,{ativo:true},{ativo:false});
   renderUsuarios();
 }
 
+/* ════════════════════════════════════════
+   MÓDULO QR FALLBACK
+════════════════════════════════════════ */
+function onQRDrop(e) { e.preventDefault(); if(e.dataTransfer.files[0]) handleQRFile(e.dataTransfer.files[0]); }
+function handleQRFile(file) {
+  if(!file) return;
+  $('qrScanResult').classList.remove('visible','ok');
+  pendingQR = null;
+  if(file.type.startsWith('image/')) readQRImg(file);
+  else if(file.type==='application/pdf') readQRPDF(file);
+  else showAlert('qrImportAlert','Arquivo não suportado.','error');
+}
+function readQRImg(file) {
+  const r = new FileReader();
+  r.onload = e => {
+    const img=new Image();
+    img.onload=()=>{
+      const c=document.createElement('canvas'); c.width=img.width; c.height=img.height;
+      const ctx=c.getContext('2d'); ctx.drawImage(img,0,0);
+      const code=jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height);
+      code ? parseQRData(code.data) : showAlert('qrImportAlert','QR não encontrado.','error');
+    };
+    img.src=e.target.result;
+  };
+  r.readAsDataURL(file);
+}
+async function readQRPDF(file) {
+  showAlert('qrImportAlert','⏳ Lendo PDF...','success');
+  try {
+    if(!window.pdfjsLib) {
+      await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+    const pdf = await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+    let found = false;
+    for(let p=1;p<=pdf.numPages&&!found;p++) {
+      const page=await pdf.getPage(p);
+      const vp=page.getViewport({scale:3});
+      const c=document.createElement('canvas'); c.width=vp.width; c.height=vp.height;
+      const ctx=c.getContext('2d');
+      await page.render({canvasContext:ctx,viewport:vp}).promise;
+      const code=jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height);
+      if(code) { parseQRData(code.data); found=true; }
+    }
+    if(!found) showAlert('qrImportAlert','QR não encontrado.','error');
+  } catch(e) { showAlert('qrImportAlert','❌ '+e.message,'error'); }
+}
+function loadScript(src) {
+  return new Promise((res,rej)=>{
+    if(document.querySelector(`script[src="${src}"]`)){res();return;}
+    const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s);
+  });
+}
+function parseQRData(raw) {
+  try {
+    const data = JSON.parse(decodeURIComponent(escape(atob(raw))));
+    if(!data.date||!data.presenca) throw new Error('Inválido');
+    pendingQR = data;
+    $('qrScanDate').textContent = fmtDate(data.date);
+    $('qrScanBadge').textContent = `${data.presenca.filter(f=>f.presente).length} presentes`;
+    $('qrObsBox').innerHTML = data.obs ? `<div class="obs-box">📝 ${data.obs}</div>` : '';
+    $('qrEmpList').innerHTML = data.presenca.map(f =>
+      `<div class="emp-row ${f.presente?'presente':'ausente'}">
+        <div class="emp-name">${f.nome}<small>${f.cargo}</small></div>
+        ${badge(f.cargo)}
+        <div>${f.atrasado?'<span class="tag-atrasado">⏰</span>':''}</div>
+      </div>`
+    ).join('');
+    $('qrScanResult').classList.add('visible','ok');
+    showAlert('qrImportAlert',`✅ QR do dia ${fmtDate(data.date)} lido!`,'success');
+  } catch(e) { showAlert('qrImportAlert','❌ QR inválido.','error'); }
+}
+async function importarQR() {
+  if(!pendingQR) return;
+  try {
+    const date=pendingQR.date; const fm={};
+    pendingQR.presenca.forEach(f=>{
+      fm[f.id]={nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,
+        presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0};
+    });
+    const snap=await db.collection('presencas_diarias').doc(date).get();
+    const e={de:snap.exists?snap.data().status:null,para:'aguardando_fechamento',
+      por:currentUser.uid,em:new Date().toISOString(),motivo:'Importado via QR Code offline'};
+    await db.collection('presencas_diarias').doc(date).set({
+      data:date,status:'aguardando_fechamento',obs:pendingQR.obs||'',funcionarios:fm,
+      registradoPor:currentUser.uid,registradoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      atualizadoPor:currentUser.uid,atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      statusHistorico:firebase.firestore.FieldValue.arrayUnion(e)
+    },{merge:true});
+    showAlert('qrImportAlert',`✅ Dia ${fmtDate(date)} importado!`,'success');
+    pendingQR=null; carregarCalFin();
+  } catch(e) { showAlert('qrImportAlert','❌ '+e.message,'error'); }
+}
 
-/* ══ QR FALLBACK ══ */
-function onQRDrop(e){e.preventDefault();if(e.dataTransfer.files[0])handleQRFile(e.dataTransfer.files[0]);}
-function handleQRFile(file){if(!file)return;document.getElementById('qrScanResult').classList.remove('visible','ok');pendingQR=null;if(file.type.startsWith('image/'))readQRImg(file);else if(file.type==='application/pdf')readQRPDF(file);else showAlert('qrImportAlert','Arquivo não suportado.','error');}
-function readQRImg(file){const r=new FileReader();r.onload=e=>{const img=new Image();img.onload=()=>{const c=document.createElement('canvas');c.width=img.width;c.height=img.height;const ctx=c.getContext('2d');ctx.drawImage(img,0,0);const code=jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height);code?parseQRData(code.data):showAlert('qrImportAlert','QR não encontrado.','error');};img.src=e.target.result;};r.readAsDataURL(file);}
-async function readQRPDF(file){showAlert('qrImportAlert','⏳ Lendo PDF...','success');try{if(!window.pdfjsLib){await loadScript('https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js');window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}const pdf=await window.pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;let found=false;for(let p=1;p<=pdf.numPages&&!found;p++){const page=await pdf.getPage(p);const vp=page.getViewport({scale:3});const c=document.createElement('canvas');c.width=vp.width;c.height=vp.height;const ctx=c.getContext('2d');await page.render({canvasContext:ctx,viewport:vp}).promise;const code=jsQR(ctx.getImageData(0,0,c.width,c.height).data,c.width,c.height);if(code){parseQRData(code.data);found=true;}}if(!found)showAlert('qrImportAlert','QR não encontrado.','error');}catch(e){showAlert('qrImportAlert','❌ '+e.message,'error');}}
-function loadScript(src){return new Promise((res,rej)=>{if(document.querySelector(`script[src="${src}"]`)){res();return;}const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s);});}
-function parseQRData(raw){try{const data=JSON.parse(decodeURIComponent(escape(atob(raw))));if(!data.date||!data.presenca)throw new Error('Inválido');pendingQR=data;document.getElementById('qrScanDate').textContent=fmtDate(data.date);document.getElementById('qrScanBadge').textContent=`${data.presenca.filter(f=>f.presente).length} presentes`;document.getElementById('qrObsBox').innerHTML=data.obs?`<div class="obs-box">📝 ${data.obs}</div>`:'';document.getElementById('qrEmpList').innerHTML=data.presenca.map(f=>`<div class="emp-row ${f.presente?'presente':'ausente'}"><div class="emp-name">${f.nome}<small>${f.cargo}</small></div><span class="badge c-${setor(f.cargo)}">${f.cargo}</span><div>${f.atrasado?'<span class="tag-atrasado">⏰</span>':''}</div></div>`).join('');document.getElementById('qrScanResult').classList.add('visible','ok');showAlert('qrImportAlert',`✅ QR do dia ${fmtDate(data.date)} lido!`,'success');}catch(e){showAlert('qrImportAlert','❌ QR inválido.','error');}}
-async function importarQR(){if(!pendingQR)return;try{const date=pendingQR.date;const fm={};pendingQR.presenca.forEach(f=>{fm[f.id]={nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0};});const snap=await db.collection('presencas_diarias').doc(date).get();const e={de:snap.exists?snap.data().status:null,para:'aguardando_fechamento',por:currentUser.uid,em:new Date().toISOString(),motivo:'Importado via QR Code offline'};await db.collection('presencas_diarias').doc(date).set({data:date,status:'aguardando_fechamento',obs:pendingQR.obs||'',funcionarios:fm,registradoPor:currentUser.uid,registradoEm:firebase.firestore.FieldValue.serverTimestamp(),atualizadoPor:currentUser.uid,atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),statusHistorico:firebase.firestore.FieldValue.arrayUnion(e)},{merge:true});showAlert('qrImportAlert',`✅ Dia ${fmtDate(date)} importado!`,'success');pendingQR=null;carregarCalFin();}catch(e){showAlert('qrImportAlert','❌ '+e.message,'error');}}
 </script>
 </body>
 </html>
