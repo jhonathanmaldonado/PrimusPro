@@ -327,6 +327,7 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
     <div class="tab hidden" data-tab="resumo"     onclick="showTab('resumo',this)">📊 Resumo</div>
     <div class="tab hidden" data-tab="cadastro"   onclick="showTab('cadastro',this)">👥 Funcionários</div>
     <div class="tab hidden" data-tab="usuarios"   onclick="showTab('usuarios',this)">🔑 Usuários</div>
+    <div class="tab hidden" data-tab="escala"     onclick="showTab('escala',this)">📅 Escala</div>
     <div class="tab hidden" data-tab="qrfallback" onclick="showTab('qrfallback',this)">📥 QR Fallback</div>
   </div>
 
@@ -382,6 +383,18 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
           <button class="btn btn-secondary btn-block" onclick="toggleGerQR()" style="font-size:12px">📄 Gerar QR Code (contingência offline)</button>
           <div class="qr-section" id="gerQrSection"><div id="gerQrCanvas"></div><div class="qr-info"><strong>QR Code de Contingência</strong>Use só sem internet.<br><span id="gerQrSize"></span></div></div>
         </div>
+      </div>
+
+      <!-- FUNCIONÁRIOS (visível ao gerente) -->
+      <div class="card" id="gerFuncCard" style="display:none">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>👥 Funcionários Cadastrados</span>
+          <button class="btn btn-secondary btn-sm" onclick="toggleGerFunc()">✕ Fechar</button>
+        </div>
+        <div id="gerFuncList"></div>
+      </div>
+      <div class="no-print" style="margin-top:10px">
+        <button class="btn btn-secondary btn-block" onclick="toggleGerFunc()" id="btnVerFunc">👥 Ver Funcionários</button>
       </div>
     </div>
 
@@ -488,7 +501,85 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
       <div id="usuariosList"></div>
     </div>
 
+    <!-- ESCALA -->
+    <div class="section" id="sec-escala">
+      <div class="section-header">
+        <div class="section-title">Escala Semanal</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="escalaLimpar()">🗑️ Limpar</button>
+          <button class="btn btn-primary" onclick="abrirPublicarEscala()">📤 Publicar no Sistema</button>
+        </div>
+      </div>
+
+      <!-- FORM ADICIONAR -->
+      <div class="card">
+        <div class="card-title">Adicionar à Escala</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:1;min-width:160px">
+            <div class="field-label">Funcionário</div>
+            <select id="escFuncSel" class="form-select">
+              <option value="">— selecione ou adicione abaixo —</option>
+            </select>
+          </div>
+          <div>
+            <div class="field-label">Ou nome avulso</div>
+            <input type="text" id="escFuncNome" class="form-input" placeholder="Nome do funcionário" style="max-width:180px">
+          </div>
+          <div>
+            <div class="field-label">Função</div>
+            <select id="escFuncCargo" class="form-select" style="max-width:150px">
+              <option>Gerente</option><option>Garçom</option><option>Cumim</option>
+              <option>Cozinheiro</option><option>Bar</option><option>Aux. Bar</option>
+              <option>Caixa</option><option>Recepcionista</option><option>Monitora</option>
+              <option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" onclick="escalaAddFunc()">+ Adicionar</button>
+        </div>
+      </div>
+
+      <!-- GRID DA ESCALA -->
+      <div class="card">
+        <div class="card-title">Grade da Semana</div>
+        <div style="overflow-x:auto">
+          <table class="result-table" id="escalaTable" style="min-width:700px">
+            <thead id="escalaHead"></thead>
+            <tbody id="escalaBody"></tbody>
+          </table>
+        </div>
+        <div id="escalaEmpty" class="empty-state" style="display:none"><div class="icon">📅</div><p>Adicione funcionários para montar a escala</p></div>
+      </div>
+
+      <!-- RESUMO -->
+      <div class="card" id="escalaResumoCard" style="display:none">
+        <div class="card-title">Resumo da Semana</div>
+        <div id="escalaResumo" style="display:flex;gap:10px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+
+    <!-- MODAL PUBLICAR ESCALA -->
+    <div class="modal-overlay" id="modalPublicarEscala">
+      <div class="modal-box" style="max-width:500px">
+        <div class="modal-title">📤 Publicar Escala no Sistema</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6">
+          Os funcionários da escala serão adicionados automaticamente aos dias correspondentes.<br>
+          O gerente só precisará registrar faltas, atrasos e consumos.
+        </p>
+        <div class="form-group">
+          <div class="field-label">Data de início da semana (Segunda-feira)</div>
+          <input type="date" id="escalaDataInicio" class="form-input" onchange="atualizarPreviewPublicacao()">
+        </div>
+        <div id="escalaPublicarPreview" style="margin:12px 0;font-size:13px;color:var(--muted)"></div>
+        <div id="escalaPublicarAlert" class="alert"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn btn-primary" style="flex:1" onclick="confirmarPublicarEscala()">✅ Publicar</button>
+          <button class="btn btn-secondary" onclick="fecharModal('modalPublicarEscala')">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
     <!-- QR FALLBACK -->
+    <div class="section" id="sec-qrfallback">
     <div class="section" id="sec-qrfallback">
       <div class="section-header"><div class="section-title">Importar QR Code</div></div>
       <p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.6">Use apenas quando o gerente enviou PDF sem internet. O fluxo normal é via nuvem.</p>
@@ -641,6 +732,8 @@ function showApp() {
   $('gerObs').addEventListener('input', () => gerAutoSave());
   if(currentPerfil === 'gerente') { ativarTab('presenca'); gerCarregarMes(); }
   else { ativarTab('calendario'); carregarCalFin(); }
+  // Pre-load escala state for gerente (silently)
+  if(['gerente','admin'].includes(currentPerfil)) escalaCarregar();
 }
 async function doLogin() {
   const email = $('loginEmail').value.trim();
@@ -668,7 +761,7 @@ function configurarAbas() {
   const isDir = ['diretoria','admin'].includes(currentPerfil);
   const isAdm = currentPerfil === 'admin';
   const mapa  = {
-    presenca:isGer, calendario:isFin, fechamento:isFin, pagamentos:isFin,
+    presenca:isGer, escala:isGer, calendario:isFin, fechamento:isFin, pagamentos:isFin,
     historico:isFin, resumo:isFin, cadastro:isDir, usuarios:isAdm, qrfallback:true
   };
   Object.entries(mapa).forEach(([tab,vis]) =>
@@ -692,6 +785,7 @@ function showTab(tab, el) {
   if(tab==='pagamentos') renderPagamentos();
   if(tab==='calendario') carregarCalFin();
   if(tab==='usuarios')   renderUsuarios();
+  if(tab==='escala')     escalaCarregar();
 }
 
 /* ════════════════════════════════════════
@@ -1638,6 +1732,427 @@ async function importarQR() {
     showAlert('qrImportAlert',`✅ Dia ${fmtDate(date)} importado!`,'success');
     pendingQR=null; carregarCalFin();
   } catch(e) { showAlert('qrImportAlert','❌ '+e.message,'error'); }
+}
+
+
+/* ════════════════════════════════════════
+   MÓDULO GERENTE — VER FUNCIONÁRIOS
+════════════════════════════════════════ */
+let gerFuncVisible = false;
+
+function toggleGerFunc() {
+  gerFuncVisible = !gerFuncVisible;
+  $('gerFuncCard').style.display = gerFuncVisible ? 'block' : 'none';
+  $('btnVerFunc').textContent = gerFuncVisible ? '✕ Fechar Funcionários' : '👥 Ver Funcionários';
+  if(gerFuncVisible) renderGerFuncList();
+}
+
+async function renderGerFuncList() {
+  const el = $('gerFuncList');
+  el.innerHTML = '<span class="loading-spinner"></span>';
+  try {
+    const snap = await db.collection('funcionarios').where('ativo','==',true).orderBy('nome').get();
+    if(!snap.size) { el.innerHTML = '<div class="empty-state"><p>Nenhum funcionário cadastrado</p></div>'; return; }
+    el.innerHTML = snap.docs.map(d => {
+      const f = d.data(), s = setor(f.cargo);
+      return `<div class="diaria-row">
+        <div class="diaria-name">${f.nome}
+          <small>${f.pix||'Sem Pix'} · R$ ${f.diariaPadrao||0}/dia</small>
+        </div>
+        ${badge(f.cargo)}
+        <span style="font-size:10px;color:var(--muted);border:1px solid var(--border);border-radius:10px;padding:2px 8px">${f.tipo==='frequente'?'Frequente':'Fixo'}</span>
+      </div>`;
+    }).join('');
+  } catch(e) { el.innerHTML = `<div class="empty-state"><p>${e.message}</p></div>`; }
+}
+
+/* ════════════════════════════════════════
+   MÓDULO ESCALA SEMANAL
+════════════════════════════════════════ */
+
+const DIAS_SEMANA = ['Segunda','Terça','Quarta','Quinta','Sexta','Sábado','Domingo'];
+const DIAS_CURTO  = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+const ESCALA_COLLECTION = 'escala_semanal';
+
+// Estado da escala
+let escalaFuncs   = []; // [{id?, nome, cargo, pix?, diaria?, dias:{Segunda:true,...}}]
+let escalaDocId   = null;
+
+/* ── Carregar do Firebase ── */
+async function escalaCarregar() {
+  try {
+    // Pega a escala mais recente
+    const snap = await db.collection(ESCALA_COLLECTION)
+      .orderBy('criadoEm','desc').limit(1).get();
+    if(!snap.empty) {
+      const d = snap.docs[0];
+      escalaDocId = d.id;
+      escalaFuncs = d.data().funcionarios || [];
+    } else {
+      escalaFuncs = [];
+      escalaDocId = null;
+    }
+  } catch(e) {
+    escalaFuncs = [];
+  }
+  await escalaCarregarSelect();
+  escalaRender();
+}
+
+async function escalaCarregarSelect() {
+  try {
+    const snap = await db.collection('funcionarios').where('ativo','==',true).orderBy('nome').get();
+    const sel = $('escFuncSel');
+    sel.innerHTML = '<option value="">— selecione do cadastro —</option>';
+    snap.docs.forEach(d => {
+      const f = d.data();
+      const opt = document.createElement('option');
+      opt.value = d.id;
+      opt.textContent = `${f.nome} (${f.cargo})`;
+      opt.dataset.nome  = f.nome;
+      opt.dataset.cargo = f.cargo;
+      opt.dataset.pix   = f.pix || '';
+      opt.dataset.diaria = f.diariaPadrao || 0;
+      sel.appendChild(opt);
+    });
+  } catch(_) {}
+}
+
+/* ── Salvar no Firebase ── */
+async function escalaSalvar() {
+  try {
+    const payload = {
+      funcionarios: escalaFuncs,
+      atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      atualizadoPor: currentUser.uid
+    };
+    if(escalaDocId) {
+      await db.collection(ESCALA_COLLECTION).doc(escalaDocId).update(payload);
+    } else {
+      payload.criadoEm = firebase.firestore.FieldValue.serverTimestamp();
+      payload.criadoPor = currentUser.uid;
+      const ref = await db.collection(ESCALA_COLLECTION).add(payload);
+      escalaDocId = ref.id;
+    }
+  } catch(e) {
+    console.error('Erro ao salvar escala:', e);
+  }
+}
+
+/* ── Adicionar funcionário à escala ── */
+async function escalaAddFunc() {
+  const sel = $('escFuncSel');
+  const nomeManual = $('escFuncNome').value.trim();
+  const cargo = $('escFuncCargo').value;
+
+  let nome, firebaseId, pix = '', diaria = DIARIA_PADRAO[cargo] || 0;
+
+  if(sel.value) {
+    // Selecionado do cadastro
+    const opt = sel.selectedOptions[0];
+    nome      = opt.dataset.nome;
+    firebaseId = sel.value;
+    pix       = opt.dataset.pix;
+    diaria    = parseFloat(opt.dataset.diaria) || DIARIA_PADRAO[cargo] || 0;
+    // Cargo do cadastro, mas permite override
+    // manter o que o usuário selecionou no select de cargo
+  } else if(nomeManual) {
+    nome = nomeManual;
+    firebaseId = null;
+  } else {
+    alert('Selecione um funcionário do cadastro ou digite o nome.'); return;
+  }
+
+  // Verificar duplicata
+  if(escalaFuncs.find(f => f.nome === nome)) {
+    alert(`${nome} já está na escala.`); return;
+  }
+
+  const dias = {};
+  DIAS_SEMANA.forEach(d => dias[d] = false);
+
+  escalaFuncs.push({ nome, cargo, pix, diaria, firebaseId, dias });
+
+  $('escFuncSel').value = '';
+  $('escFuncNome').value = '';
+
+  escalaRender();
+  escalaSalvar();
+}
+
+/* ── Toggle dia na escala ── */
+function escalaTogleDia(idx, dia) {
+  escalaFuncs[idx].dias[dia] = !escalaFuncs[idx].dias[dia];
+  escalaRender();
+  escalaSalvar();
+}
+
+/* ── Remover funcionário da escala ── */
+function escalaRemoverFunc(idx) {
+  escalaFuncs.splice(idx, 1);
+  escalaRender();
+  escalaSalvar();
+}
+
+/* ── Limpar semana ── */
+function escalaLimpar() {
+  if(!confirm('Limpar toda a escala da semana?')) return;
+  escalaFuncs = [];
+  escalaDocId = null;
+  escalaRender();
+  escalaSalvar();
+}
+
+/* ── Render da grade ── */
+function escalaRender() {
+  const head = $('escalaHead');
+  const body = $('escalaBody');
+  const empty = $('escalaEmpty');
+  const resumoCard = $('escalaResumoCard');
+
+  if(!escalaFuncs.length) {
+    head.innerHTML = '';
+    body.innerHTML = '';
+    empty.style.display = 'block';
+    resumoCard.style.display = 'none';
+    return;
+  }
+  empty.style.display = 'none';
+  resumoCard.style.display = 'block';
+
+  // Cabeçalho
+  head.innerHTML = `<tr>
+    <th style="text-align:left;min-width:160px;font-size:12px">Funcionário</th>
+    ${DIAS_CURTO.map((d,i) => `<th style="font-size:11px;min-width:46px">${d}</th>`).join('')}
+    <th style="font-size:11px">Dias</th>
+    <th style="font-size:11px"></th>
+  </tr>`;
+
+  // Linhas
+  body.innerHTML = escalaFuncs.map((f,idx) => {
+    const s = setor(f.cargo);
+    const total = DIAS_SEMANA.filter(d => f.dias[d]).length;
+    const cells = DIAS_SEMANA.map(d => {
+      const on = f.dias[d];
+      return `<td><div onclick="escalaTogleDia(${idx},'${d}')" style="
+        width:34px;height:34px;border-radius:8px;cursor:pointer;border:1.5px solid ${on?'#7fd4b5':'var(--border)'};
+        background:${on?'var(--success-lt)':'var(--surface2)'};
+        color:${on?'var(--success)':'var(--muted)'};
+        display:inline-flex;align-items:center;justify-content:center;
+        font-size:${on?'14px':'16px'};font-weight:700;user-select:none;transition:all .15s">
+        ${on?'✓':'+'}
+      </div></td>`;
+    }).join('');
+    return `<tr>
+      <td style="text-align:left;padding:8px 10px">
+        <div style="font-size:13px;font-weight:600">${f.nome}</div>
+        <div style="margin-top:2px">${badge(f.cargo)}</div>
+      </td>
+      ${cells}
+      <td style="font-weight:700;color:var(--accent);font-size:15px">${total}</td>
+      <td><button onclick="escalaRemoverFunc(${idx})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:4px" title="Remover">×</button></td>
+    </tr>`;
+  }).join('');
+
+  // Resumo por dia
+  const resumo = $('escalaResumo');
+  const totalMarcados = escalaFuncs.reduce((a,f) => a + DIAS_SEMANA.filter(d=>f.dias[d]).length, 0);
+  resumo.innerHTML = `
+    <div style="background:var(--accent-lt);border-radius:8px;padding:10px 14px;flex:1;min-width:100px">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Funcionários</div>
+      <div style="font-size:22px;font-weight:800;color:var(--accent)">${escalaFuncs.length}</div>
+    </div>
+    <div style="background:var(--success-lt);border-radius:8px;padding:10px 14px;flex:1;min-width:100px">
+      <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Dias marcados</div>
+      <div style="font-size:22px;font-weight:800;color:var(--success)">${totalMarcados}</div>
+    </div>
+    ${DIAS_CURTO.map((dc,i) => {
+      const d = DIAS_SEMANA[i];
+      const qt = escalaFuncs.filter(f => f.dias[d]).length;
+      return `<div style="background:var(--surface2);border-radius:8px;padding:10px 14px;min-width:60px;text-align:center">
+        <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">${dc}</div>
+        <div style="font-size:20px;font-weight:800;color:var(--text2)">${qt}</div>
+      </div>`;
+    }).join('')}`;
+}
+
+/* ── Abrir modal publicar ── */
+function abrirPublicarEscala() {
+  if(!escalaFuncs.length) { alert('Adicione funcionários na escala primeiro.'); return; }
+
+  // Sugerir próxima segunda-feira
+  const hoje = new Date();
+  const dow = hoje.getDay(); // 0=dom, 1=seg...
+  const diasParaSeg = dow === 1 ? 0 : (dow === 0 ? 1 : 8 - dow);
+  const proxSeg = new Date(hoje);
+  proxSeg.setDate(hoje.getDate() + diasParaSeg);
+  $('escalaDataInicio').value = proxSeg.toISOString().split('T')[0];
+
+  atualizarPreviewPublicacao();
+  abrirModal('modalPublicarEscala');
+}
+
+function atualizarPreviewPublicacao() {
+  const dataInicio = $('escalaDataInicio').value;
+  if(!dataInicio) { $('escalaPublicarPreview').textContent = ''; return; }
+
+  const inicio = new Date(dataInicio + 'T12:00:00');
+  const datas = DIAS_SEMANA.map((d,i) => {
+    const dt = new Date(inicio);
+    dt.setDate(inicio.getDate() + i);
+    return `${d}: ${dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})}`;
+  });
+
+  const funcsComDias = escalaFuncs.filter(f => DIAS_SEMANA.some(d => f.dias[d]));
+  $('escalaPublicarPreview').innerHTML = `
+    <div style="background:var(--surface2);border-radius:8px;padding:12px 14px;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;margin-bottom:8px">Mapeamento de datas</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${datas.map(d => `<span style="font-size:12px;background:var(--accent-lt);color:var(--accent-dk);padding:3px 10px;border-radius:20px;font-weight:600">${d}</span>`).join('')}
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--muted)">
+      ${funcsComDias.length} funcionário(s) serão publicados em ${DIAS_SEMANA.filter(d => escalaFuncs.some(f => f.dias[d])).length} dia(s)
+    </div>`;
+}
+
+// Attach date change listener when modal opens (called from abrirPublicarEscala)
+// The abrirPublicarEscala function sets the value and calls atualizarPreviewPublicacao directly
+
+/* ── Publicar escala no Firebase ── */
+async function confirmarPublicarEscala() {
+  const dataInicio = $('escalaDataInicio').value;
+  if(!dataInicio) { showAlert('escalaPublicarAlert','Selecione a data de início.','error'); return; }
+
+  const btn = document.querySelector('#modalPublicarEscala .btn-primary');
+  btn.disabled = true;
+  btn.textContent = '⏳ Publicando...';
+
+  try {
+    const inicio = new Date(dataInicio + 'T12:00:00');
+
+    // Mapear cada dia da semana para uma data real
+    const dataMap = {}; // {Segunda: '2025-04-16', ...}
+    DIAS_SEMANA.forEach((d, i) => {
+      const dt = new Date(inicio);
+      dt.setDate(inicio.getDate() + i);
+      dataMap[d] = dt.toISOString().split('T')[0];
+    });
+
+    // Para cada dia que tem pelo menos um funcionário
+    const diasUsados = DIAS_SEMANA.filter(d => escalaFuncs.some(f => f.dias[d]));
+
+    // Buscar cadastro do Firebase para completar dados
+    const cadSnap = await db.collection('funcionarios').get();
+    const cadMap = {};
+    cadSnap.docs.forEach(d => cadMap[d.id] = { id: d.id, ...d.data() });
+
+    // Para cada funcionário da escala sem firebaseId, criar no Firebase
+    for(const f of escalaFuncs) {
+      if(!f.firebaseId) {
+        // Verificar se já existe pelo nome
+        const existe = cadSnap.docs.find(d => d.data().nome === f.nome);
+        if(existe) {
+          f.firebaseId = existe.id;
+        } else {
+          // Criar novo funcionário
+          const novoId = 'EMP' + String(Date.now()).slice(-6);
+          await db.collection('funcionarios').doc(novoId).set({
+            id: novoId, nome: f.nome, cargo: f.cargo,
+            pix: f.pix || '', diariaPadrao: f.diaria || DIARIA_PADRAO[f.cargo] || 0,
+            tipo: 'fixo', ativo: true,
+            criadoPor: currentUser.uid,
+            criadoEm: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          f.firebaseId = novoId;
+          await logAuditoria('FUNCIONARIO_CRIADO_VIA_ESCALA', `funcionarios/${novoId}`, {}, { nome: f.nome });
+        }
+      }
+    }
+
+    // Para cada dia, criar/atualizar presencas_diarias
+    let criados = 0, atualizados = 0;
+    for(const diaSem of diasUsados) {
+      const dateStr = dataMap[diaSem];
+      const funcsNoDia = escalaFuncs.filter(f => f.dias[diaSem]);
+
+      // Buscar doc existente
+      const docRef = db.collection('presencas_diarias').doc(dateStr);
+      const snap = await docRef.get();
+
+      // Montar mapa de funcionários para este dia
+      const fm = {};
+      funcsNoDia.forEach(f => {
+        fm[f.firebaseId] = {
+          nome: f.nome,
+          cargo: f.cargo,
+          pix: f.pix || '',
+          diariaPadrao: f.diaria || DIARIA_PADRAO[f.cargo] || 0,
+          presente: true,
+          atrasado: false,
+          consumo: 0,
+          auxCount: 0,
+          origem: 'escala'
+        };
+      });
+
+      if(!snap.exists) {
+        // Criar novo
+        await docRef.set({
+          data: dateStr,
+          status: 'em_aberto',
+          obs: '',
+          funcionarios: fm,
+          registradoPor: currentUser.uid,
+          registradoEm: firebase.firestore.FieldValue.serverTimestamp(),
+          atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+          statusHistorico: [{
+            de: null, para: 'em_aberto',
+            por: currentUser.uid,
+            em: new Date().toISOString(),
+            motivo: 'Criado via publicação de escala'
+          }],
+          origemEscala: escalaDocId
+        });
+        criados++;
+      } else {
+        const existente = snap.data();
+        // Só atualizar se ainda está em_aberto
+        if(existente.status === 'em_aberto' || existente.status === null) {
+          // Merge: manter funcionários já editados, adicionar novos da escala
+          const fmExistente = existente.funcionarios || {};
+          Object.entries(fm).forEach(([id, dados]) => {
+            if(!fmExistente[id]) fmExistente[id] = dados; // só adiciona, não sobrescreve
+          });
+          await docRef.update({
+            funcionarios: fmExistente,
+            atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+            origemEscala: escalaDocId
+          });
+          atualizados++;
+        }
+      }
+    }
+
+    await logAuditoria('ESCALA_PUBLICADA', `escala_semanal/${escalaDocId}`, {}, {
+      semana: dataInicio,
+      diasCriados: criados,
+      diasAtualizados: atualizados
+    });
+
+    showAlert('escalaPublicarAlert',
+      `✅ Publicado! ${criados} dia(s) criado(s), ${atualizados} atualizado(s).`,
+      'success', 0
+    );
+
+    setTimeout(() => { fecharModal('modalPublicarEscala'); }, 2500);
+
+  } catch(e) {
+    showAlert('escalaPublicarAlert', '❌ Erro: ' + e.message, 'error', 0);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✅ Publicar';
+  }
 }
 
 </script>
