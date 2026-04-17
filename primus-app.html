@@ -759,8 +759,7 @@ function showApp() {
   $('gerObs').addEventListener('input', () => gerAutoSave());
   if(currentPerfil === 'gerente') { ativarTab('presenca'); gerCarregarMes(); }
   else { ativarTab('calendario'); carregarCalFin(); }
-  // Pre-load escala state for gerente (silently)
-  if(['gerente','admin'].includes(currentPerfil)) escalaCarregar();
+  // Escala carrega apenas quando o usuário abre a aba
 }
 async function doLogin() {
   const email = $('loginEmail').value.trim();
@@ -822,9 +821,10 @@ function showTab(tab, el) {
 /* ── Calendário do Gerente ── */
 async function gerCarregarMes() {
   const ym = `${gerCalAno}-${String(gerCalMes+1).padStart(2,'0')}`;
+  const ultimoDiaGer = new Date(gerCalAno, gerCalMes+1, 0).getDate();
   try {
     const s = await db.collection('presencas_diarias')
-      .where('data','>=',ym+'-01').where('data','<=',ym+'-31').get();
+      .where('data','>=',ym+'-01').where('data','<=',ym+'-'+String(ultimoDiaGer).padStart(2,'0')).get();
     gerDiasStatus = {};
     s.docs.forEach(d => gerDiasStatus[d.id] = d.data().status || 'em_aberto');
   } catch(_) { gerDiasStatus = {}; }
@@ -1160,9 +1160,10 @@ function toggleGerQR() {
 async function carregarCalFin() {
   const ym = `${finCalAno}-${String(finCalMes+1).padStart(2,'0')}`;
   $('finCalLabel').textContent = `${MESES[finCalMes]} ${finCalAno}`;
+  const ultimoDiaFin = new Date(finCalAno, finCalMes+1, 0).getDate();
   try {
     const s = await db.collection('presencas_diarias')
-      .where('data','>=',ym+'-01').where('data','<=',ym+'-31').get();
+      .where('data','>=',ym+'-01').where('data','<=',ym+'-'+String(ultimoDiaFin).padStart(2,'0')).get();
     finDiasStatus = {};
     s.docs.forEach(d => finDiasStatus[d.id] = d.data().status || 'em_aberto');
   } catch(_) { finDiasStatus = {}; }
@@ -1423,8 +1424,9 @@ function getPeriodo() {
     const dom=new Date(qua); dom.setDate(qua.getDate()+4);
     de=qua.toISOString().split('T')[0]; ate=dom.toISOString().split('T')[0];
   } else if(t==='mes') {
+    const _lastDay = new Date(h.getFullYear(), h.getMonth()+1, 0).getDate();
     de=`${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-01`;
-    ate=`${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-31`;
+    ate=`${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(_lastDay).padStart(2,'0')}`;
   } else {
     de=$('pgtoDe').value; ate=$('pgtoAte').value;
   }
@@ -1452,7 +1454,6 @@ async function renderPagamentos() {
       if(!totals[r.funcId]) {
         const cad = cadMap[r.funcId] || {};
         const pix = r.pix || cad.pix || '';
-        const cad = cadMap[r.funcId] || {};
         // Fixo = registrado (CLT/conta salário), Frequente = diarista
         const isRegistrado = (cad.tipo === 'fixo') || (!cad.tipo && (
           pix.toLowerCase().includes('itaú') || pix.toLowerCase().includes('salário') || pix.toLowerCase().includes('salario')
@@ -1629,7 +1630,11 @@ async function renderResumo() {
   cont.innerHTML='<div class="empty-state"><span class="loading-spinner"></span></div>';
   try {
     let q = db.collection('fechamento_funcionario');
-    if(mes) q=q.where('data','>=',mes+'-01').where('data','<=',mes+'-31');
+    if(mes) {
+      const [_y,_m] = mes.split('-');
+      const _last = new Date(+_y,+_m,0).getDate();
+      q=q.where('data','>=',mes+'-01').where('data','<=',mes+'-'+String(_last).padStart(2,'0'));
+    }
     const snap = await q.get(); const totals={};
     snap.docs.forEach(d => {
       const r=d.data(); if(!r.presente) return;
@@ -1996,12 +2001,15 @@ async function escalaCarregar() {
     // 2. Pre-marcar Qua-Dom para funcionários com escalaFixa=true (só se não há escala salva ainda)
     const DIAS_FIXOS = ['Quarta','Quinta','Sexta','Sábado','Domingo'];
 
-    // 3. Buscar escala salva no Firebase
-    const escSnap = await db.collection(ESCALA_COL)
-      .orderBy('criadoEm','desc').limit(1).get();
+    // 3. Buscar escala salva no Firebase (sem orderBy para evitar índice)
+    const _escRaw = await db.collection(ESCALA_COL).get();
+    const _escSorted = _escRaw.docs
+      .filter(d => d.data().criadoEm)
+      .sort((a,b)=>(b.data().criadoEm?.toMillis?.()||0)-(a.data().criadoEm?.toMillis?.()||0));
+    const _escDoc = _escSorted[0] || null;
 
-    if(!escSnap.empty) {
-      const d = escSnap.docs[0];
+    if(_escDoc) {
+      const d = _escDoc;
       escalaDocId = d.id;
       const data = d.data();
       // escalaDias vem do Firebase: { [id]: { dias: {...} } }
