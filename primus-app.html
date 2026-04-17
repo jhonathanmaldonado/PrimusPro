@@ -286,6 +286,7 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
         <option>Bar</option><option>Aux. Bar</option><option>Caixa</option><option>Recepcionista</option>
         <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div></div>
     <div class="grid2"><div><div class="field-label">Tipo</div><select id="editTipo" class="form-select"><option value="fixo">Fixo (registrado)</option><option value="frequente">Frequente (vai sempre)</option></select></div><div><div class="field-label">Diária Padrão (R$)</div><input type="number" id="editDiaria" class="form-input" step="0.01"></div></div>
+    <div class="grid2"><div><div class="field-label">Escala padrão Qua–Dom</div><select id="editEscalaFixa" class="form-select"><option value="nao">Manual (marcar na escala)</option><option value="sim">✅ Registrado — pré-marcar Qua a Dom</option></select></div><div></div></div>
     <div><div class="field-label">Chave Pix</div><input type="text" id="editPix" class="form-input"></div>
     <div id="editFuncAlert" class="alert"></div>
     <div style="display:flex;gap:8px;margin-top:4px"><button class="btn btn-primary" style="flex:1" onclick="salvarEdicaoFunc()">✅ Salvar</button><button class="btn btn-secondary" onclick="fecharModal('modalEditFunc')">Cancelar</button></div>
@@ -591,6 +592,22 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
         <div style="display:flex;gap:8px;margin-top:8px">
           <button class="btn btn-success" style="flex:1" id="btnConfirmarPublicar" onclick="confirmarPublicarEscala()">✅ Confirmar Publicação</button>
           <button class="btn btn-secondary" onclick="fecharModal('modalEscalaConfirmar')">Cancelar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL CONFLITO DE DIA JÁ PUBLICADO -->
+    <div class="modal-overlay" id="modalEscalaConflito">
+      <div class="modal-box" style="max-width:480px">
+        <div class="modal-title">⚠️ Dia já publicado</div>
+        <div id="escalaConflitoInfo" style="font-size:13px;color:var(--text2);margin-bottom:16px;line-height:1.7"></div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button class="btn btn-danger" onclick="resolverConflito('substituir')">🔄 Substituir — apagar anteriores e colocar os novos</button>
+          <button class="btn btn-primary" onclick="resolverConflito('adicionar')">➕ Adicionar — manter anteriores e acrescentar novos</button>
+          <button class="btn btn-secondary" onclick="resolverConflito('pular')">⏭️ Pular — não alterar este dia</button>
+        </div>
+        <div style="margin-top:10px;font-size:11px;color:var(--muted);text-align:center">
+          Dias fechados ou aguardando nunca são alterados.
         </div>
       </div>
     </div>
@@ -1533,6 +1550,7 @@ async function addFunc() {
       id, nome, cargo:$('cadCargo').value, tipo:$('cadTipo').value,
       pix:$('cadPix').value.trim(),
       diariaPadrao:parseFloat($('cadDiaria').value)||0,
+      escalaFixa: $('cadEscalaFixa').value === 'sim',
       ativo:true, criadoPor:currentUser.uid,
       criadoEm:firebase.firestore.FieldValue.serverTimestamp()
     });
@@ -1558,10 +1576,13 @@ async function renderCadList() {
       const tBadge = f.tipo==='frequente'
         ? `<span style="font-size:10px;color:#1A6FA8;border:1.5px solid #B8D9F0;border-radius:10px;padding:1px 7px;font-weight:700">Frequente</span>`
         : `<span style="font-size:10px;color:var(--muted);border:1.5px solid var(--border);border-radius:10px;padding:1px 7px">Fixo</span>`;
+      const escBadge = f.escalaFixa
+        ? `<span style="font-size:10px;color:var(--success);border:1.5px solid #B8DFC9;border-radius:10px;padding:1px 7px;font-weight:700">📅 Qua–Dom</span>`
+        : `<span style="font-size:10px;color:var(--muted);border:1.5px solid var(--border);border-radius:10px;padding:1px 7px">Manual</span>`;
       return `<div class="diaria-row" style="${!f.ativo?'opacity:.4':''}">
         <div class="diaria-name">${f.nome}${!f.ativo?' <span style="color:var(--danger);font-size:11px">[inativo]</span>':''} ${tBadge}
           <small>${f.pix||'Sem Pix'} · R$ ${f.diariaPadrao||0}/dia</small></div>
-        ${badge(f.cargo)}
+        <div style="display:flex;gap:4px;flex-wrap:wrap">${badge(f.cargo)} ${tBadge} ${escBadge}</div>
         ${podeEdit ? `
           <button class="btn btn-secondary btn-sm" onclick="abrirEditFunc('${d.id}')">✏️</button>
           ${f.ativo?`<button class="btn btn-danger btn-sm" onclick="desativarFunc('${d.id}')">Desativar</button>`:''}
@@ -1576,6 +1597,7 @@ async function abrirEditFunc(id) {
   $('editFuncId').value=id; $('editNome').value=f.nome||'';
   $('editCargo').value=f.cargo||'Garçom'; $('editTipo').value=f.tipo||'fixo';
   $('editPix').value=f.pix||''; $('editDiaria').value=f.diariaPadrao||'';
+  $('editEscalaFixa').value=f.escalaFixa?'sim':'nao';
   abrirModal('modalEditFunc');
 }
 async function salvarEdicaoFunc() {
@@ -1583,7 +1605,8 @@ async function salvarEdicaoFunc() {
   try {
     const dados = {nome:$('editNome').value.trim(),cargo:$('editCargo').value,
       tipo:$('editTipo').value,pix:$('editPix').value.trim(),
-      diariaPadrao:parseFloat($('editDiaria').value)||0};
+      diariaPadrao:parseFloat($('editDiaria').value)||0,
+      escalaFixa: $('editEscalaFixa').value === 'sim'};
     await db.collection('funcionarios').doc(id).update(dados);
     await logAuditoria('FUNCIONARIO_ATUALIZADO',`funcionarios/${id}`,{},{...dados});
     showAlert('editFuncAlert','✅ Salvo!','success');
@@ -1837,7 +1860,10 @@ async function escalaCarregar() {
         return a.nome.localeCompare(b.nome, 'pt-BR');
       });
 
-    // 2. Buscar escala salva no Firebase
+    // 2. Pre-marcar Qua-Dom para funcionários com escalaFixa=true (só se não há escala salva ainda)
+    const DIAS_FIXOS = ['Quarta','Quinta','Sexta','Sábado','Domingo'];
+
+    // 3. Buscar escala salva no Firebase
     const escSnap = await db.collection(ESCALA_COL)
       .orderBy('criadoEm','desc').limit(1).get();
 
@@ -1856,7 +1882,14 @@ async function escalaCarregar() {
         $('escalaBadgePublicada').style.display = 'none';
       }
     } else {
+      // Sem escala salva — pré-marcar Qua-Dom para funcionários registrados
       escalaDocId = null; escalaDias = {};
+      escalaCadastro.forEach(f => {
+        if(f.escalaFixa) {
+          escalaDias[f.id] = {};
+          DIAS_FIXOS.forEach(d => escalaDias[f.id][d] = true);
+        }
+      });
       $('escalaBadgePublicada').style.display = 'none';
     }
   } catch(e) {
@@ -2233,7 +2266,7 @@ async function confirmarPublicarEscala() {
   btn.disabled = true; btn.textContent = '⏳ Publicando...';
 
   try {
-    let criados = 0, atualizados = 0, bloqueados = 0;
+    let criados = 0, atualizados = 0, bloqueados = 0, pulados = 0;
 
     for(const diaSem of diasUsados) {
       const dateStr = dataMap[diaSem];
@@ -2242,13 +2275,33 @@ async function confirmarPublicarEscala() {
       const snap = await docRef.get();
       const st = snap.exists ? snap.data().status : null;
 
+      // Dias bloqueados — nunca alterar
       if(st === 'aguardando_fechamento' || st === 'fechado') { bloqueados++; continue; }
 
       const fmExistente = snap.exists ? (snap.data().funcionarios || {}) : {};
-      const fm = { ...fmExistente };
+      const qtExistente = Object.keys(fmExistente).length;
+      const e = { de: st, para: 'em_aberto', por: currentUser.uid,
+        em: new Date().toISOString(), motivo: 'Publicado via escala semanal' };
+
+      // Dia já tem funcionários — perguntar o que fazer
+      let acao = 'adicionar'; // default para dia novo
+      if(snap.exists && qtExistente > 0) {
+        acao = await perguntarConflito(diaSem, dateStr, qtExistente, funcsNoDia.length);
+        if(acao === 'pular') { pulados++; continue; }
+      }
+
+      // Montar mapa de funcionários conforme ação escolhida
+      let fm;
+      if(acao === 'substituir') {
+        // Apagar anteriores, colocar apenas os novos
+        fm = {};
+      } else {
+        // Manter anteriores
+        fm = { ...fmExistente };
+      }
 
       for(const f of funcsNoDia) {
-        if(fm[f.id]) continue; // já existe, não sobrescreve
+        if(acao === 'adicionar' && fm[f.id]) continue; // já existe, não sobrescreve
         fm[f.id] = {
           nome: f.nome, cargo: f.cargo, cargoPadrao: f.cargo,
           pix: f.pix || '', diariaPadrao: f.diaria || 0,
@@ -2256,9 +2309,6 @@ async function confirmarPublicarEscala() {
           origem: 'escala', publicadoEm: new Date().toISOString()
         };
       }
-
-      const e = { de: st, para: 'em_aberto', por: currentUser.uid,
-        em: new Date().toISOString(), motivo: 'Publicado via escala semanal' };
 
       if(!snap.exists) {
         await docRef.set({
@@ -2296,6 +2346,7 @@ async function confirmarPublicarEscala() {
 
     let msg = `✅ Publicado! ${criados} criado(s), ${atualizados} atualizado(s).`;
     if(bloqueados) msg += ` ${bloqueados} dia(s) bloqueado(s) não alterado(s).`;
+    if(pulados) msg += ` ${pulados} dia(s) pulado(s).`;
     showAlert('escalaPublicarAlert', msg, 'success', 0);
     setTimeout(() => fecharModal('modalEscalaConfirmar'), 2500);
 
@@ -2305,6 +2356,39 @@ async function confirmarPublicarEscala() {
       'error', 0);
   } finally {
     btn.disabled = false; btn.textContent = '✅ Confirmar Publicação';
+  }
+}
+
+
+/* ── Conflito de dia já publicado ── */
+let _resolverConflitoFn = null; // resolve promise
+
+function perguntarConflito(diaSem, dateStr, qtExistente, qtNovos) {
+  return new Promise(resolve => {
+    _resolverConflitoFn = resolve;
+
+    const [ano, mes, dia] = dateStr.split('-');
+    const dataFmt = `${dia}/${mes}/${ano}`;
+
+    $('escalaConflitoInfo').innerHTML = `
+      <div style="background:var(--accent-lt);border-radius:8px;padding:12px 14px;margin-bottom:12px">
+        <div style="font-size:15px;font-weight:800;color:var(--text);margin-bottom:4px">${diaSem} — ${dataFmt}</div>
+        <div style="font-size:13px;color:var(--text2)">
+          Este dia já tem <strong>${qtExistente} funcionário(s)</strong> publicados.<br>
+          A nova escala tem <strong>${qtNovos} funcionário(s)</strong> para este dia.
+        </div>
+      </div>
+      <div style="font-size:13px;color:var(--muted)">O que deseja fazer?</div>`;
+
+    abrirModal('modalEscalaConflito');
+  });
+}
+
+function resolverConflito(acao) {
+  fecharModal('modalEscalaConflito');
+  if(_resolverConflitoFn) {
+    _resolverConflitoFn(acao);
+    _resolverConflitoFn = null;
   }
 }
 
