@@ -432,7 +432,7 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
         <div class="card">
           <div class="card-title">Resumo do Dia</div>
           <table class="result-table">
-            <thead><tr><th>Funcionário</th><th>Cargo</th><th class="right">Diária</th><th class="right">Gorjeta</th><th class="right">Consumo</th><th class="right">Total</th></tr></thead>
+            <thead><tr><th>Funcionário</th><th>Cargo</th><th class="right">Diária</th><th class="right">Gorjeta</th><th class="right">Desc/Cons</th><th class="right">Total</th></tr></thead>
             <tbody id="resultBody"></tbody>
           </table>
         </div>
@@ -1229,10 +1229,29 @@ async function loadFechamento(date) {
     const bloqueado = finDayStatus === 'fechado';
     $('gorjetaTotal').value = '';
     $('diariasList').innerHTML = finPresentes.map(f =>
-      `<div class="diaria-row">
-        <div class="diaria-name">${f.nome}<small>${f.cargo}${f.auxCount>0?` +${f.auxCount} aux.`:''}</small></div>
-        ${badge(f.cargo)}
-        <input type="number" class="diaria-input" id="diaria-${f.id}" value="${f.diariaPadrao||''}" step="0.01" oninput="calcGorjeta()" ${bloqueado?'disabled':''}>
+      `<div style="border-bottom:1.5px solid var(--border);padding:10px 0">
+        <div class="diaria-row" style="border:none;padding:0 0 6px">
+          <div class="diaria-name">${f.nome}${f.atrasado?' <span class="tag-atrasado">⏰</span>':''}<small>${f.cargo}${f.auxCount>0?` +${f.auxCount} aux.`:''}</small></div>
+          ${badge(f.cargo)}
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:11px;color:var(--muted)">Diária</span>
+              <input type="number" class="diaria-input" id="diaria-${f.id}" value="${f.diariaPadrao||''}" step="0.01" oninput="calcResultado()" ${bloqueado?'disabled':''}>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:11px;color:var(--danger)">Desconto</span>
+              <input type="number" class="diaria-input" id="desconto-${f.id}" value="" step="0.01" min="0"
+                placeholder="0,00" oninput="calcResultado()"
+                style="border-color:${f.atrasado?'var(--danger)':'var(--border)'}"
+                ${bloqueado?'disabled':''}>
+            </div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="text" id="motivo-${f.id}" placeholder="Motivo do desconto (opcional)..."
+            style="flex:1;background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;color:var(--text);font-family:inherit"
+            ${bloqueado?'disabled':''}>
+        </div>
       </div>`
     ).join('');
     $('fechContent').style.display = 'block';
@@ -1252,6 +1271,10 @@ async function carregarDiariasSalvas(date) {
       if(s.exists) {
         const el = $(`diaria-${finPresentes[i].id}`);
         if(el) el.value = s.data().diaria ?? '';
+        const elDesc = $(`desconto-${finPresentes[i].id}`);
+        if(elDesc && s.data().desconto) elDesc.value = s.data().desconto;
+        const elMotivo = $(`motivo-${finPresentes[i].id}`);
+        if(elMotivo && s.data().motivoDesconto) elMotivo.value = s.data().motivoDesconto;
         gt = s.data().baseGorjeta || gt;
       }
     });
@@ -1280,16 +1303,18 @@ function calcGorjeta() {
 function calcResultado() {
   let total = 0;
   $('resultBody').innerHTML = finPresentes.map(f => {
-    const d = parseFloat($(`diaria-${f.id}`)?.value||0)||0;
-    const g = finGorjetaMap[f.id]||0;
-    const c = f.consumo||0;
-    const t = d+g-c; total += t;
+    const d  = parseFloat($(`diaria-${f.id}`)?.value||0)||0;
+    const g  = finGorjetaMap[f.id]||0;
+    const c  = f.consumo||0;
+    const dc = parseFloat($(`desconto-${f.id}`)?.value||0)||0;
+    const t  = d+g-c-dc; total += t;
+    const motivo = $(`motivo-${f.id}`)?.value?.trim() || '';
     return `<tr>
-      <td>${f.nome}${f.atrasado?' <span class="tag-atrasado">⏰</span>':''}</td>
+      <td>${f.nome}${f.atrasado?' <span class="tag-atrasado">⏰</span>':''}${motivo?`<div style="font-size:10px;color:var(--danger);margin-top:2px">✂️ ${motivo}</div>`:''}</td>
       <td>${badge(f.cargo)}</td>
       <td class="right">${fmt(d)}</td>
       <td class="right">${fmt(g)}</td>
-      <td class="right val-neg">${c>0?'- '+fmt(c):'—'}</td>
+      <td class="right val-neg">${c>0||dc>0?'- '+fmt(c+dc):'—'}${dc>0&&motivo?`<div style="font-size:10px;color:var(--danger)">✂️ ${fmt(dc)}</div>`:dc>0?`<div style="font-size:10px;color:var(--danger)">desconto: ${fmt(dc)}</div>`:''}</td>
       <td class="right val-pos">${fmt(t)}</td>
     </tr>`;
   }).join('') + `<tr class="total-row"><td colspan="5">Total do Dia</td><td class="right">${fmt(total)}</td></tr>`;
@@ -1318,12 +1343,17 @@ async function salvarFechamento(fechar=false) {
     const rSnapshot = rSnap.exists ? rSnap.data().regras : {};
     const batch = db.batch();
     finPresentes.forEach(f => {
-      const d = parseFloat($(`diaria-${f.id}`)?.value||0)||0;
-      const g = finGorjetaMap[f.id]||0; const c=f.consumo||0; const l=d+g-c;
+      const d  = parseFloat($(`diaria-${f.id}`)?.value||0)||0;
+      const g  = finGorjetaMap[f.id]||0;
+      const c  = f.consumo||0;
+      const dc = parseFloat($(`desconto-${f.id}`)?.value||0)||0;
+      const motivo = $(`motivo-${f.id}`)?.value?.trim()||'';
+      const l  = d+g-c-dc;
       td+=d; tc+=c; tl+=l;
       batch.set(db.collection('fechamento_funcionario').doc(`${finDate}_${f.id}`),{
         data:finDate,funcId:f.id,nomeSnapshot:f.nome,cargoSnapshot:f.cargo,
         presente:true,atrasado:f.atrasado,consumo:c,diaria:d,gorjeta:g,
+        desconto:dc,motivoDesconto:motivo,
         baseGorjeta:gt,percentualCargo:pctGorjeta(f.cargo),
         regrasGorjetaSnapshot:rSnapshot,totalLiquido:l,pix:f.pix||'',
         criadoPor:currentUser.uid,criadoEm:firebase.firestore.FieldValue.serverTimestamp(),versao:1
