@@ -1487,15 +1487,27 @@ async function renderPagamentos() {
         ? '🏦 Conta Salário Itaú'
         : t.pix.toUpperCase()==='DINHEIRO' ? '💵 Dinheiro'
         : t.pix ? '📱 Pix: '+t.pix : '❓ Sem chave';
+      // Serializar dados para o recibo (escapar aspas)
+      const tJson = encodeURIComponent(JSON.stringify(t));
       return `<div class="pgto-card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
-          <div>
+          <div style="flex:1">
             <div class="pgto-name">${t.nome} <span class="badge c-${s}">${t.cargo}</span></div>
             <div class="pgto-pix">${metodo}</div>
             <div class="pgto-detail">${t.dias.length} dia(s) · Diárias: ${fmt(t.diarias)} · Gorjeta: ${fmt(t.gorjeta)}${t.consumo>0?` · <span style="color:var(--danger)">-${fmt(t.consumo)}</span>`:''}</div>
             <div style="font-size:11px;color:var(--muted);margin-top:4px">📅 ${t.dias.sort().map(d=>d.split('-').reverse().slice(0,2).join('/')).join(' · ')}</div>
           </div>
-          <div class="pgto-total">${fmt(t.total)}</div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px">
+            <div class="pgto-total">${fmt(t.total)}</div>
+            <button onclick="gerarRecibo(decodeURIComponent('${tJson}'))"
+              style="background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;
+              padding:5px 12px;font-size:12px;font-weight:600;cursor:pointer;color:var(--text2);
+              font-family:inherit;white-space:nowrap;transition:all .15s"
+              onmouseover="this.style.borderColor='var(--accent)';this.style.color='var(--accent)'"
+              onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--text2)'">
+              🧾 Recibo
+            </button>
+          </div>
         </div></div>`;
     }
 
@@ -2507,6 +2519,213 @@ function resolverConflito(acao) {
     _resolverConflitoFn(acao);
     _resolverConflitoFn = null;
   }
+}
+
+
+/* ════════════════════════════════════════
+   GERADOR DE RECIBO DE PAGAMENTO
+════════════════════════════════════════ */
+
+function valorPorExtenso(valor) {
+  if(valor === 0) return 'zero reais';
+  const inteiro = Math.floor(valor);
+  const centavos = Math.round((valor - inteiro) * 100);
+
+  const unidades = ['','um','dois','três','quatro','cinco','seis','sete','oito','nove',
+    'dez','onze','doze','treze','quatorze','quinze','dezesseis','dezessete','dezoito','dezenove'];
+  const dezenas = ['','','vinte','trinta','quarenta','cinquenta','sessenta','setenta','oitenta','noventa'];
+  const centenas = ['','cem','duzentos','trezentos','quatrocentos','quinhentos',
+    'seiscentos','setecentos','oitocentos','novecentos'];
+
+  function converterGrupo(n) {
+    if(n === 0) return '';
+    if(n === 100) return 'cem';
+    let resultado = '';
+    const c = Math.floor(n/100);
+    const d = Math.floor((n%100)/10);
+    const u = n%10;
+    const dezena = (d*10)+u;
+
+    if(c) resultado += centenas[c];
+    if(c && (d || u)) resultado += ' e ';
+    if(dezena > 0) {
+      if(dezena < 20) resultado += unidades[dezena];
+      else {
+        resultado += dezenas[d];
+        if(u) resultado += ' e ' + unidades[u];
+      }
+    }
+    return resultado;
+  }
+
+  let resultado = '';
+  const milhares = Math.floor(inteiro/1000);
+  const resto = inteiro % 1000;
+
+  if(milhares > 0) {
+    resultado += converterGrupo(milhares) + (milhares === 1 ? ' mil' : ' mil');
+    if(resto > 0) resultado += ' e ';
+  }
+  if(resto > 0) resultado += converterGrupo(resto);
+
+  // Reais
+  if(inteiro === 1) resultado += ' real';
+  else if(inteiro > 1) resultado += ' reais';
+
+  // Centavos
+  if(centavos > 0) {
+    if(inteiro > 0) resultado += ' e ';
+    resultado += converterGrupo(centavos);
+    resultado += centavos === 1 ? ' centavo' : ' centavos';
+  }
+
+  return resultado;
+}
+
+function gerarRecibo(tJson) {
+  const t = typeof tJson === 'string' ? JSON.parse(tJson) : tJson;
+  const hoje = new Date();
+  const dataHoje = hoje.toLocaleDateString('pt-BR',{day:'2-digit',month:'long',year:'numeric'});
+  const extenso = valorPorExtenso(t.total);
+  const diasOrdenados = [...t.dias].sort();
+  const periodoInicio = diasOrdenados[0].split('-').reverse().join('/');
+  const periodoFim    = diasOrdenados[diasOrdenados.length-1].split('-').reverse().join('/');
+  const diasFmt = diasOrdenados.map(d => {
+    const [y,m,dia] = d.split('-');
+    const nomes = ['domingo','segunda-feira','terça-feira','quarta-feira','quinta-feira','sexta-feira','sábado'];
+    const semana = nomes[new Date(+y,+m-1,+dia).getDay()];
+    return `${dia}/${m} (${semana})`;
+  }).join(', ');
+
+  const pixLow = t.pix.toLowerCase();
+  const metodo = pixLow.includes('itaú')||pixLow.includes('salário')||pixLow.includes('salario')
+    ? 'Conta Salário Itaú'
+    : t.pix.toUpperCase()==='DINHEIRO' ? 'Dinheiro em espécie'
+    : t.pix ? 'Pix: ' + t.pix : 'A definir';
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Recibo — ${t.nome}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { font-family:'Inter',sans-serif; background:#fff; color:#1a1916; padding:40px 48px; font-size:13px; }
+
+  .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:28px; padding-bottom:20px; border-bottom:3px solid #C8782A; }
+  .logo-txt { font-size:28px; font-weight:800; color:#C8782A; letter-spacing:-1px; }
+  .logo-sub { font-size:10px; color:#8A837A; text-transform:uppercase; letter-spacing:2px; margin-top:2px; }
+  .recibo-label { text-align:right; }
+  .recibo-titulo { font-size:13px; font-weight:700; text-transform:uppercase; letter-spacing:2px; color:#C8782A; }
+  .recibo-num { font-size:11px; color:#8A837A; margin-top:4px; }
+
+  .valor-box { background:#F5E6D3; border:2px solid #C8782A; border-radius:12px; padding:20px 24px; margin:24px 0; text-align:center; }
+  .valor-num { font-size:36px; font-weight:800; color:#C8782A; letter-spacing:-1px; }
+  .valor-extenso { font-size:13px; color:#A05E1E; margin-top:6px; font-style:italic; }
+
+  .secao { margin-bottom:20px; }
+  .secao-titulo { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:1px; color:#8A837A; margin-bottom:8px; padding-bottom:4px; border-bottom:1px solid #E2DDD5; }
+  .linha { display:flex; justify-content:space-between; padding:5px 0; font-size:13px; border-bottom:1px solid #F0EDE6; }
+  .linha:last-child { border:none; }
+  .linha .lbl { color:#4A4540; }
+  .linha .val { font-weight:600; color:#1a1916; }
+
+  .dias-lista { font-size:13px; color:#1a1916; line-height:1.8; padding:8px 0; }
+
+  .declaracao { background:#F7F4EF; border-radius:8px; padding:16px 20px; margin:24px 0; font-size:13px; line-height:1.8; color:#4A4540; }
+  .declaracao strong { color:#1a1916; }
+
+  .assinatura { margin-top:48px; display:grid; grid-template-columns:1fr 1fr; gap:40px; }
+  .ass-bloco { text-align:center; }
+  .ass-linha { border-top:1.5px solid #1a1916; padding-top:8px; margin-top:48px; font-size:12px; color:#4A4540; }
+  .ass-nome { font-weight:600; font-size:13px; color:#1a1916; }
+  .ass-cargo { font-size:11px; color:#8A837A; margin-top:2px; }
+
+  .footer { margin-top:32px; padding-top:12px; border-top:1px solid #E2DDD5; display:flex; justify-content:space-between; font-size:10px; color:#8A837A; }
+
+  @media print {
+    @page { margin: 15mm 20mm; size: A4; }
+    body { padding: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="logo-txt">Primus</div>
+    <div class="logo-sub">Peixaria · São Gonçalo Beira Rio · Cuiabá/MT</div>
+  </div>
+  <div class="recibo-label">
+    <div class="recibo-titulo">Recibo de Pagamento</div>
+    <div class="recibo-num">Cuiabá, ${dataHoje}</div>
+  </div>
+</div>
+
+<div class="valor-box">
+  <div class="valor-num">R$ ${t.total.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+  <div class="valor-extenso">${extenso.charAt(0).toUpperCase() + extenso.slice(1)}</div>
+</div>
+
+<div class="secao">
+  <div class="secao-titulo">Dados do Colaborador</div>
+  <div class="linha"><span class="lbl">Nome</span><span class="val">${t.nome}</span></div>
+  <div class="linha"><span class="lbl">Função</span><span class="val">${t.cargo}</span></div>
+  <div class="linha"><span class="lbl">Forma de pagamento</span><span class="val">${metodo}</span></div>
+</div>
+
+<div class="secao">
+  <div class="secao-titulo">Detalhamento</div>
+  <div class="linha"><span class="lbl">Período</span><span class="val">${periodoInicio} a ${periodoFim}</span></div>
+  <div class="linha"><span class="lbl">Dias trabalhados</span><span class="val">${t.dias.length} dia(s)</span></div>
+  <div class="linha"><span class="lbl">Total de diárias</span><span class="val">R$ ${t.diarias.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span></div>
+  <div class="linha"><span class="lbl">Gorjeta (taxa de serviço)</span><span class="val">R$ ${t.gorjeta.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span></div>
+  ${t.consumo>0?`<div class="linha"><span class="lbl">(-) Consumo descontado</span><span class="val" style="color:#C0392B">- R$ ${t.consumo.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span></div>`:''}
+  <div class="linha" style="font-weight:700;background:#F7F4EF;padding:8px 6px;border-radius:4px;margin-top:4px">
+    <span class="lbl" style="color:#1a1916;font-weight:700">Total líquido</span>
+    <span class="val" style="color:#C8782A;font-size:15px">R$ ${t.total.toLocaleString('pt-BR',{minimumFractionDigits:2})}</span>
+  </div>
+</div>
+
+<div class="secao">
+  <div class="secao-titulo">Dias Trabalhados</div>
+  <div class="dias-lista">${diasFmt}</div>
+</div>
+
+<div class="declaracao">
+  Declaro que recebi da <strong>Peixaria Primus</strong> a importância de
+  <strong>R$ ${t.total.toLocaleString('pt-BR',{minimumFractionDigits:2})} (${extenso})</strong>
+  referente aos serviços prestados no período de <strong>${periodoInicio}</strong> a <strong>${periodoFim}</strong>,
+  na função de <strong>${t.cargo}</strong>, conforme discriminado acima.
+</div>
+
+<div class="assinatura">
+  <div class="ass-bloco">
+    <div class="ass-linha">
+      <div class="ass-nome">${t.nome}</div>
+      <div class="ass-cargo">${t.cargo}</div>
+    </div>
+  </div>
+  <div class="ass-bloco">
+    <div class="ass-linha">
+      <div class="ass-nome">Peixaria Primus</div>
+      <div class="ass-cargo">Responsável pelo pagamento</div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">
+  <span>Primus Peixaria — São Gonçalo Beira Rio, Cuiabá/MT — CNPJ: __.___.___/____-__</span>
+  <span>Gerado em ${hoje.toLocaleString('pt-BR')}</span>
+</div>
+
+<script>window.onload = () => window.print();<\/script>
+</body>
+</html>`;
+
+  const w = window.open('','_blank');
+  if(w) { w.document.write(html); w.document.close(); }
 }
 
 </script>
