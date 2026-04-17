@@ -1406,28 +1406,57 @@ async function renderPagamentos() {
   const cont = $('pgtoContent');
   cont.innerHTML='<div class="empty-state"><span class="loading-spinner"></span></div>';
   try {
-    const snap = await db.collection('fechamento_funcionario')
-      .where('data','>=',de).where('data','<=',ate).get();
+    // Buscar fechamentos e cadastro de funcionários simultaneamente
+    const [fechSnap, cadSnap] = await Promise.all([
+      db.collection('fechamento_funcionario').where('data','>=',de).where('data','<=',ate).get(),
+      db.collection('funcionarios').get()
+    ]);
+
+    // Montar mapa de cadastro para saber se é registrado (conta salário)
+    const cadMap = {};
+    cadSnap.docs.forEach(d => cadMap[d.id] = d.data());
+
     const totals = {};
-    snap.docs.forEach(d => {
+    fechSnap.docs.forEach(d => {
       const r=d.data(); if(!r.presente) return;
-      if(!totals[r.funcId]) totals[r.funcId]={nome:r.nomeSnapshot,cargo:r.cargoSnapshot,pix:r.pix||'',dias:[],gorjeta:0,diarias:0,consumo:0,total:0};
+      if(!totals[r.funcId]) {
+        const cad = cadMap[r.funcId] || {};
+        const pix = r.pix || cad.pix || '';
+        const isRegistrado = pix.toLowerCase().includes('itaú') || pix.toLowerCase().includes('salário') || pix.toLowerCase().includes('salario');
+        totals[r.funcId] = {
+          nome:r.nomeSnapshot, cargo:r.cargoSnapshot, pix,
+          isRegistrado, dias:[], gorjeta:0, diarias:0, consumo:0, total:0
+        };
+      }
       totals[r.funcId].dias.push(r.data);
-      totals[r.funcId].gorjeta+=r.gorjeta||0; totals[r.funcId].diarias+=r.diaria||0;
-      totals[r.funcId].consumo+=r.consumo||0; totals[r.funcId].total+=r.totalLiquido||0;
+      totals[r.funcId].gorjeta  += r.gorjeta||0;
+      totals[r.funcId].diarias  += r.diaria||0;
+      totals[r.funcId].consumo  += r.consumo||0;
+      totals[r.funcId].total    += r.totalLiquido||0;
     });
+
     const sorted = Object.values(totals).sort((a,b)=>b.total-a.total);
     if(!sorted.length) { cont.innerHTML='<div class="empty-state"><div class="icon">💳</div><p>Nenhum fechamento no período</p></div>'; return; }
-    const totalGeral = sorted.reduce((a,t)=>a+t.total,0);
+
+    // Separar registrados (conta salário) x diaristas
+    const registrados = sorted.filter(t => t.isRegistrado);
+    const diaristas   = sorted.filter(t => !t.isRegistrado);
+
+    const totalGeral      = sorted.reduce((a,t)=>a+t.total,0);
+    const totalRegistrado = registrados.reduce((a,t)=>a+t.total,0);
+    const totalDiarista   = diaristas.reduce((a,t)=>a+t.total,0);
+    const totalPix        = diaristas.reduce((a,t)=>a+(t.pix&&t.pix.toUpperCase()!=='DINHEIRO'?t.total:0),0);
+    const totalDinheiro   = sorted.reduce((a,t)=>a+(t.pix.toUpperCase()==='DINHEIRO'?t.total:0),0);
+
     const lbl = {semana:'Esta Semana',semana_ant:'Semana Anterior',mes:'Este Mês',custom:'Período Personalizado'}[$('pgtoTipo').value];
-    cont.innerHTML = `<div class="card" style="border-color:var(--accent);margin-bottom:16px">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
-        <div><div style="font-size:16px;font-weight:800">📋 ${lbl}</div><div style="font-size:12px;color:var(--muted)">${de} → ${ate} · ${sorted.length} func.</div></div>
-        <div style="font-size:24px;font-weight:800;color:var(--accent)">${fmt(totalGeral)}</div>
-      </div></div>
-    ${sorted.map(t => {
-      const s=setor(t.cargo);
-      const metodo=t.pix.toLowerCase().includes('itaú')||t.pix.toLowerCase().includes('salário')?'🏦 Conta Salário Itaú':t.pix?'📱 Pix: '+t.pix:'❓ Sem chave';
+
+    function renderCard(t) {
+      const s = setor(t.cargo);
+      const pixLow = t.pix.toLowerCase();
+      const metodo = pixLow.includes('itaú')||pixLow.includes('salário')||pixLow.includes('salario')
+        ? '🏦 Conta Salário Itaú'
+        : t.pix.toUpperCase()==='DINHEIRO' ? '💵 Dinheiro'
+        : t.pix ? '📱 Pix: '+t.pix : '❓ Sem chave';
       return `<div class="pgto-card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
           <div>
@@ -1438,7 +1467,65 @@ async function renderPagamentos() {
           </div>
           <div class="pgto-total">${fmt(t.total)}</div>
         </div></div>`;
-    }).join('')}`;
+    }
+
+    function renderGrupoHeader(titulo, subtitulo, total, cor) {
+      return `<div style="display:flex;justify-content:space-between;align-items:center;
+        padding:10px 14px;background:${cor};border-radius:8px;margin:16px 0 8px">
+        <div>
+          <div style="font-size:14px;font-weight:800;color:var(--text)">${titulo}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:2px">${subtitulo}</div>
+        </div>
+        <div style="font-size:20px;font-weight:800;color:var(--accent)">${fmt(total)}</div>
+      </div>`;
+    }
+
+    cont.innerHTML = `
+      <!-- RESUMO GERAL -->
+      <div class="card" style="border-color:var(--accent);margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+          <div>
+            <div style="font-size:16px;font-weight:800">📋 ${lbl}</div>
+            <div style="font-size:12px;color:var(--muted)">${de} → ${ate} · ${sorted.length} func.</div>
+          </div>
+          <div style="font-size:26px;font-weight:800;color:var(--accent)">${fmt(totalGeral)}</div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
+          <div style="background:var(--surface2);border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">🏦 Registrados</div>
+            <div style="font-size:18px;font-weight:800;color:var(--text)">${fmt(totalRegistrado)}</div>
+            <div style="font-size:11px;color:var(--muted)">${registrados.length} func. · conta salário</div>
+          </div>
+          <div style="background:var(--surface2);border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">👤 Diaristas</div>
+            <div style="font-size:18px;font-weight:800;color:var(--text)">${fmt(totalDiarista)}</div>
+            <div style="font-size:11px;color:var(--muted)">${diaristas.length} func.</div>
+          </div>
+          <div style="background:var(--success-lt);border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">📱 Total Pix</div>
+            <div style="font-size:18px;font-weight:800;color:var(--success)">${fmt(totalPix)}</div>
+            <div style="font-size:11px;color:var(--muted)">a transferir</div>
+          </div>
+          <div style="background:var(--accent-lt);border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">💵 Total Dinheiro</div>
+            <div style="font-size:18px;font-weight:800;color:var(--accent-dk)">${fmt(totalDinheiro)}</div>
+            <div style="font-size:11px;color:var(--muted)">a pagar em espécie</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- REGISTRADOS (CONTA SALÁRIO) -->
+      ${registrados.length ? `
+        ${renderGrupoHeader('🏦 Registrados — Conta Salário Itaú', `${registrados.length} funcionário(s) · lançar na folha`, totalRegistrado, 'var(--surface2)')}
+        ${registrados.map(renderCard).join('')}
+      ` : ''}
+
+      <!-- DIARISTAS -->
+      ${diaristas.length ? `
+        ${renderGrupoHeader('👤 Diaristas', `${diaristas.length} funcionário(s) · pagar individualmente`, totalDiarista, 'var(--surface2)')}
+        ${diaristas.map(renderCard).join('')}
+      ` : ''}
+    `;
   } catch(e) { cont.innerHTML=`<div class="empty-state"><p>Erro: ${e.message}</p></div>`; }
 }
 
