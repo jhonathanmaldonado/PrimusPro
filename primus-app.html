@@ -2682,7 +2682,7 @@ function gerarRecibo(tJson) {
 <div class="secao">
   <div class="secao-titulo">Dados do Colaborador</div>
   <div class="linha"><span class="lbl">Nome</span><span class="val">${t.nome}</span></div>
-  <div class="linha"><span class="lbl">Função</span><span class="val">${t.cargo}</span></div>
+  <div class="linha"><span class="lbl">Função</span><span class="val">${t.cargo === 'Segurança' ? 'Fiscal de Pátio' : t.cargo}</span></div>
   <div class="linha"><span class="lbl">Forma de pagamento</span><span class="val">${metodo}</span></div>
 </div>
 
