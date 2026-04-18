@@ -209,6 +209,33 @@ window.fbSalvarD1Status=async(data,payload)=>{
   }catch{return false;}
 };
 window.fbBuscarD1Status=async d=>{try{const s=await getDoc(doc(db,'d1_status',d));return s.exists()?s.data():null;}catch{return null;}};
+/* ── VENDAS DIÁRIAS (salvamento independente) ── */
+window.fbSalvarVendas=async(data,payload)=>{
+  try{
+    await setDoc(doc(db,'vendas_diarias',data),{...payload,salvoEm:new Date().toISOString(),gestorId:window.USER?.uid,gestorNome:window.USER?.nome});
+    fbLog('salvar_vendas',{modulo:'vendas',referencia:data});return true;
+  }catch{return false;}
+};
+window.fbBuscarVendas=async d=>{try{const s=await getDoc(doc(db,'vendas_diarias',d));return s.exists()?s.data():null;}catch{return null;}};
+
+/* ── EVENTOS DIÁRIOS (salvamento independente) ── */
+window.fbSalvarEventos=async(data,payload)=>{
+  try{
+    await setDoc(doc(db,'eventos_diarios',data),{...payload,salvoEm:new Date().toISOString(),gestorId:window.USER?.uid,gestorNome:window.USER?.nome});
+    fbLog('salvar_eventos',{modulo:'eventos',referencia:data});return true;
+  }catch{return false;}
+};
+window.fbBuscarEventos=async d=>{try{const s=await getDoc(doc(db,'eventos_diarios',d));return s.exists()?s.data():null;}catch{return null;}};
+
+/* ── ESTOQUE DIÁRIO (salvamento independente após confirmação da revisão) ── */
+window.fbSalvarEstoque=async(data,payload)=>{
+  try{
+    await setDoc(doc(db,'estoque_diario',data),{...payload,salvoEm:new Date().toISOString(),gestorId:window.USER?.uid,gestorNome:window.USER?.nome});
+    fbLog('salvar_estoque',{modulo:'estoque',referencia:data});return true;
+  }catch{return false;}
+};
+window.fbBuscarEstoque=async d=>{try{const s=await getDoc(doc(db,'estoque_diario',d));return s.exists()?s.data():null;}catch{return null;}};
+
 /* ── LISTA DE COMPRAS ── */
 window.fbSalvarListaCompras=async(data,lista)=>{
   try{await setDoc(doc(db,'listas_compras',data),{...lista,salvoEm:new Date().toISOString(),gestorId:window.USER?.uid,gestorNome:window.USER?.nome});
@@ -649,7 +676,12 @@ canvas{max-height:210px}
       <div class="tw" style="margin-bottom:14px"><table class="tr2"><thead><tr><th>PRODUTO</th><th>QUANTIDADE</th></tr></thead><tbody id="rv-si"></tbody></table></div>
       <div class="st-sep">🍨 SORVETES — FINAL</div>
       <div class="tw" style="margin-bottom:14px"><table class="tr2"><thead><tr><th>PRODUTO</th><th>ABASTECIDO</th><th>FINAL</th></tr></thead><tbody id="rv-sf"></tbody></table></div>
-      <div class="brow"><button class="btn btn-p" onclick="confirmarRev()">✅ Confirmar e ir para D-1</button></div>
+      <div class="brow">
+        <button class="btn btn-p" onclick="confirmarRev()">✅ Confirmar e ir para D-1</button>
+        <button class="btn btn-s" onclick="salvarEstoqueIndep()">💾 Só Salvar (sem D-1)</button>
+      </div>
+      <div class="ld" id="ld-est-save"><div class="sp"></div><span>Salvando estoque...</span></div>
+      <div id="est-salvo" style="display:none;font-size:12px;color:var(--vd);font-weight:600;margin-top:6px">✅ Estoque salvo no Firebase — você pode fechar e voltar depois.</div>
     </div>
     <div class="brow" id="brow-proc"><button class="btn btn-p" id="btn-proc" onclick="processarJSONs()" disabled>📋 Processar JSONs</button></div>
   </div>
@@ -682,6 +714,12 @@ canvas{max-height:210px}
       <button class="btn btn-g" onclick="addEv('brinde')">+ Brinde</button>
       <button class="btn btn-g" onclick="addEv('ajuste')">+ Ajuste</button>
     </div>
+    <div style="margin-top:14px;padding-top:12px;border-top:1.5px solid var(--bo);display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-s" onclick="salvarEventosIndep()">💾 Salvar Eventos</button>
+      <div class="ld" id="ld-ev-save"><div class="sp"></div><span>Salvando...</span></div>
+      <div id="ev-salvo" style="display:none;font-size:12px;color:var(--vd);font-weight:600">✅ Eventos salvos</div>
+      <div id="ev-status" style="font-size:11px;color:#aaa;font-family:'DM Mono',monospace"></div>
+    </div>
   </div>
 </div>
 
@@ -700,7 +738,13 @@ canvas{max-height:210px}
     <div class="bn bn-info">💡 Cole o relatório de vendas exportado do sistema de caixa (formato tabular com abas). Use para <strong>qualquer data</strong>, não apenas hoje.</div>
     <textarea class="ta" id="rel-vend" placeholder="Cole o relatório de vendas..." style="margin-top:12px"></textarea>
     <div id="resp-v" style="display:none;background:#fff8e8;border:1.5px solid var(--am);border-radius:11px;padding:14px;margin-top:12px"><pre id="resp-v-txt" style="font-size:11px;line-height:1.7;white-space:pre-wrap;font-family:'DM Mono',monospace"></pre></div>
-    <div class="brow"><button class="btn btn-p" onclick="processarVendas()">📊 Processar Vendas</button><button class="btn btn-g" id="btn-av4" onclick="goG('consolidacao',document.getElementById('gt-consolidacao'))" style="display:none">Ir para Consolidação →</button></div>
+    <div class="ld" id="ld-vend-save"><div class="sp"></div><span>Salvando vendas...</span></div>
+    <div id="vend-salvo" style="display:none" class="bn bn-ok" style="margin-top:8px">✅ Vendas salvas no Firebase</div>
+    <div class="brow">
+      <button class="btn btn-p" onclick="processarVendas()">📊 Processar</button>
+      <button class="btn btn-s" id="btn-salvar-vendas" onclick="salvarVendasIndep()" style="display:none">💾 Salvar Vendas</button>
+      <button class="btn btn-g" id="btn-av4" onclick="goG('consolidacao',document.getElementById('gt-consolidacao'))" style="display:none">Consolidação →</button>
+    </div>
   </div>
 </div>
 
@@ -1401,6 +1445,8 @@ function confirmarRev(){
   BEB.forEach(p=>{const ch=nrm(p.n);const fr=parseInt(document.querySelector(`[data-sec="bi"][data-prod="${ch}"][data-campo="freezer"]`)?.value)||0;const est=parseInt(document.querySelector(`[data-sec="bi"][data-prod="${ch}"][data-campo="estoque"]`)?.value)||0;e.bi[p.n]={fr,est,tot:fr+est};const frF=parseInt(document.querySelector(`[data-sec="bf"][data-prod="${ch}"][data-campo="freezer"]`)?.value)||0;const estF=parseInt(document.querySelector(`[data-sec="bf"][data-prod="${ch}"][data-campo="estoque"]`)?.value)||0;const rec=parseInt(document.querySelector(`[data-sec="bf"][data-prod="${ch}"][data-campo="recebido"]`)?.value)||0;e.bf[p.n]={fr:frF,est:estF,tot:frF+estF,rec};});
   SORV.forEach(p=>{const ch=nrm(p.n);const qtd=parseInt(document.querySelector(`[data-sec="si"][data-prod="${ch}"][data-campo="qtd"]`)?.value)||0;e.si[p.n]={qtd};const ab=parseInt(document.querySelector(`[data-sec="sf"][data-prod="${ch}"][data-campo="abastecido"]`)?.value)||0;const fin=parseInt(document.querySelector(`[data-sec="sf"][data-prod="${ch}"][data-campo="final"]`)?.value)||0;e.sf[p.n]={ab,fin};});
   document.getElementById('rev-wrap').style.display='none';
+  /* Auto-salvar estoque após confirmar revisão */
+  salvarEstoqueIndep();
   mostrarD1Pro();
 }
 
@@ -1521,8 +1567,24 @@ function parsarRel(txt){
 }
 
 /* ══ CONSOLIDAR ══ */
-function consolidar(){
+async function consolidar(){
   const ld=document.getElementById('ld-cons'),wr=document.getElementById('tabs-wrap');ld.style.display='flex';wr.style.display='none';
+  const data=S.dataAud||document.getElementById('pro-data')?.value||hoje();
+  /* Se não há vendas em memória, tentar carregar do Firebase */
+  if(!S.kpis?.fat||!S.vText){
+    setSB('load','⏳ Carregando vendas...');
+    await carregarVendasSalvas(data);
+    setSB('ok','✅ Firebase');
+  }
+  /* Se não há eventos em memória, tentar carregar do Firebase */
+  if(!S.evs?.length){
+    await carregarEventosSalvos(data);
+  }
+  /* Se não há estoque em memória, tentar carregar do Firebase */
+  if(!S.est?.bi||Object.keys(S.est.bi||{}).length===0){
+    const okEst=await carregarEstoqueSalvo(data);
+    if(!okEst){ld.style.display='none';alert('Sem dados de estoque para '+data+'. Processe o Estoque primeiro.');return;}
+  }
   const evs=S.evs.map(e=>({tipo:e.tipo,prod:document.getElementById('ev-p-'+e.id)?.value||'',qtd:parseInt(document.getElementById('ev-q-'+e.id)?.value)||0}));
   const e=S.est||{};const vmap=parsarVMap(S.vText||'');
   S.tabBeb=BEB.map(p=>{const bi=e.bi?.[p.n]||{},bf=e.bf?.[p.n]||{};const ini=bi.tot||0,fin=bf.tot||0;let rec=bf.rec||0,ab=0,aj=0;evs.forEach(ev=>{if(nrm(ev.prod).includes(nrm(p.n).substring(0,5))||nrm(p.n).includes(nrm(ev.prod).substring(0,5))){if(ev.tipo==='recebimento')rec+=ev.qtd;else if(ev.tipo==='abastecimento')ab+=ev.qtd;else if(ev.tipo==='ajuste')aj+=ev.qtd;else if(ev.tipo==='perda')aj-=ev.qtd;}});const vend=vmap[nrm(p.n)]||0;const esp=ini+rec+ab-vend+aj;const dif=fin-esp;return{prod:p.n,ini,rec,ab,vend,aj,esp,fin,dif,st:dif===0?'batido':dif>0?'sobra':'falta',ks:p.ks||false,g:p.g};}).filter(i=>i.ini>0||i.fin>0||i.vend>0);
@@ -1720,6 +1782,115 @@ function exportarPDF(){
   function ci(id){const c=document.getElementById(id);try{return c?`<img src="${c.toDataURL('image/png')}" style="width:100%;max-height:200px;object-fit:contain">`:'<p style="color:#ccc">Sem dados</p>';}catch{return '';}}
   const html=`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><title>Conferencia_${dia}_${mes}_${ano}</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:'DM Sans',sans-serif;background:#fff;color:#1a1714;font-size:12px}@page{size:A4 landscape;margin:10mm}@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.pb{page-break-before:always}}.hd{background:#7C0047;color:white;padding:16px 20px;border-radius:10px;margin-bottom:14px;border-bottom:4px solid #FAB900}.hd h1{font-family:sans-serif;font-weight:900;font-size:20px}.kg{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px}.kc{border:1px solid #e8e3dc;border-top:3px solid #FAB900;border-radius:9px;padding:10px 12px}.kl{font-size:9px;color:#aaa;text-transform:uppercase;margin-bottom:3px}.kv{font-weight:900;font-size:17px}.cg{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}.cb{border:1px solid #e8e3dc;border-radius:9px;padding:11px}.cbt{font-weight:800;font-size:11px;margin-bottom:8px}.sec{border:1px solid #e8e3dc;border-radius:9px;margin-bottom:12px;overflow:hidden}.sh{background:#1a1714;color:white;padding:9px 13px;font-weight:800;font-size:12px}.sb{padding:12px}</style></head><body><div class="hd"><p style="font-size:10px;opacity:.5">RELATÓRIO — PEIXARIA PRIMUS</p><h1>${dExib}</h1><p style="margin-top:3px;font-size:10px;opacity:.5">Gestor: ${window.USER?.nome} · ${new Date().toLocaleString('pt-BR')}</p></div><div class="kg"><div class="kc"><div class="kl">FATURAMENTO</div><div class="kv">${fat}</div></div><div class="kc"><div class="kl">ITENS</div><div class="kv">${it}</div></div><div class="kc"><div class="kl">TICKET</div><div class="kv">${tk}</div></div><div class="kc"><div class="kl">BEBIDAS</div><div class="kv">${beb}</div></div><div class="kc"><div class="kl">SORVETES</div><div class="kv">${sv}</div></div><div class="kc"><div class="kl">DESCONTOS</div><div class="kv">${desc}</div></div></div><div class="cg"><div class="cb"><div class="cbt">📊 Por Categoria</div>${ci('ch-cat')}</div><div class="cb"><div class="cbt">🏆 Top Produtos</div>${ci('ch-top')}</div><div class="cb"><div class="cbt">🐟 Top Pratos</div>${ci('ch-prat')}</div><div class="cb"><div class="cbt">👤 Por Vendedor</div>${ci('ch-vend')}</div></div><div class="sec"><div class="sh">👥 RANKING</div><div class="sb">${rkHtml}</div></div><div class="sec pb"><div class="sh">🍺 BEBIDAS</div><div class="sb">${montaTab(S.tabBeb)}</div></div><div class="sec pb"><div class="sh">🍨 SORVETES</div><div class="sb">${montaTab(S.tabSorv)}</div></div><script>window.onload=()=>setTimeout(()=>window.print(),600)<\/script></body></html>`;
   const blob=new Blob([html],{type:'text/html;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`Conferencia_${dia}_${mes}_${ano}.html`;a.click();
+}
+
+/* ══════════════════════════════════════════
+   SALVAMENTO INDEPENDENTE POR MÓDULO
+══════════════════════════════════════════ */
+
+/* ── Estoque: salvar sem passar para D-1 ── */
+async function salvarEstoqueIndep(){
+  const data=document.getElementById('pro-data')?.value;
+  if(!data){alert('Informe a data antes de salvar.');return;}
+  const ld=document.getElementById('ld-est-save');
+  if(ld)ld.classList.add('show');
+  const payload={bi:S.est?.bi||{},bf:S.est?.bf||{},si:S.est?.si||{},sf:S.est?.sf||{},data};
+  const ok=await window.fbSalvarEstoque(data,payload);
+  if(ld)ld.classList.remove('show');
+  const el=document.getElementById('est-salvo');
+  if(el)el.style.display=ok?'block':'none';
+  setSB(ok?'ok':'err',ok?'✅ Estoque salvo':'❌ Erro ao salvar');
+  setTimeout(()=>setSB('ok','✅ Firebase'),3000);
+}
+
+/* Carregar estoque salvo para uma data específica */
+async function carregarEstoqueSalvo(data){
+  const snap=await window.fbBuscarEstoque(data);
+  if(!snap)return false;
+  S.est={bi:snap.bi||{},bf:snap.bf||{},si:snap.si||{},sf:snap.sf||{}};
+  return true;
+}
+
+/* ── Eventos: salvar lista de eventos ── */
+async function salvarEventosIndep(){
+  const data=document.getElementById('pro-data')?.value;
+  if(!data){alert('Defina a data no Estoque antes de salvar eventos.');return;}
+  const ld=document.getElementById('ld-ev-save');
+  if(ld)ld.classList.add('show');
+  const evsList=S.evs.map(e=>({tipo:e.tipo,prod:document.getElementById('ev-p-'+e.id)?.value||'',qtd:parseInt(document.getElementById('ev-q-'+e.id)?.value)||0}));
+  const ok=await window.fbSalvarEventos(data,{data,eventos:evsList});
+  if(ld)ld.classList.remove('show');
+  const el=document.getElementById('ev-salvo');if(el){el.style.display=ok?'block':'none';}
+  const st=document.getElementById('ev-status');if(st)st.textContent=ok?`Salvo em ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}`:''
+  setSB(ok?'ok':'err',ok?'✅ Eventos salvos':'❌ Erro ao salvar');
+  setTimeout(()=>setSB('ok','✅ Firebase'),3000);
+}
+
+/* Carregar eventos salvos de uma data */
+async function carregarEventosSalvos(data){
+  const snap=await window.fbBuscarEventos(data);
+  if(!snap||!snap.eventos?.length)return false;
+  document.getElementById('ev-list').innerHTML='';
+  S.evs=[];S.evN=0;
+  document.getElementById('sem-ev').style.display='none';
+  snap.eventos.forEach(ev=>{addEv(ev.tipo);const n=S.evN;setTimeout(()=>{const p=document.getElementById('ev-p-'+n);const q=document.getElementById('ev-q-'+n);if(p)p.value=ev.prod;if(q)q.value=ev.qtd||0;},50);});
+  return true;
+}
+
+/* ── Vendas: salvar relatório processado ── */
+async function salvarVendasIndep(){
+  const data=document.getElementById('vend-data')?.value||document.getElementById('pro-data')?.value;
+  if(!data){alert('Informe a data do relatório antes de salvar.');return;}
+  if(!S.kpis?.fat){alert('Processe o relatório de vendas antes de salvar.');return;}
+  const ld=document.getElementById('ld-vend-save');
+  if(ld)ld.classList.add('show');
+  const payload={data,textoOriginal:S.vText,kpis:S.kpis,vends:S.vends,resumo:S.vProc};
+  const ok=await window.fbSalvarVendas(data,payload);
+  if(ld)ld.classList.remove('show');
+  const el=document.getElementById('vend-salvo');if(el)el.style.display=ok?'block':'none';
+  setSB(ok?'ok':'err',ok?'✅ Vendas salvas':'❌ Erro ao salvar');
+  setTimeout(()=>setSB('ok','✅ Firebase'),3000);
+}
+
+/* Carregar vendas salvas de uma data */
+async function carregarVendasSalvas(data){
+  const snap=await window.fbBuscarVendas(data);
+  if(!snap)return false;
+  S.kpis=snap.kpis||{};S.vends=snap.vends||[];S.vProc=snap.resumo||'';S.vText=snap.textoOriginal||'';
+  if(snap.textoOriginal)document.getElementById('rel-vend').value=snap.textoOriginal;
+  if(snap.resumo){document.getElementById('resp-v-txt').textContent=snap.resumo;document.getElementById('resp-v').style.display='block';}
+  if(snap.kpis){
+    document.getElementById('kv-fat').textContent='R$ '+(snap.kpis.fat||'--');
+    document.getElementById('kv-it').textContent=snap.kpis.itens||'--';
+    document.getElementById('kv-tk').textContent='R$ '+(snap.kpis.ticket||'--');
+    document.getElementById('kv-desc').textContent='R$ '+(snap.kpis.desc||'--');
+  }
+  /* Mostrar botões de ação */
+  document.getElementById('btn-salvar-vendas').style.display='inline-flex';
+  document.getElementById('btn-av4').style.display='inline-flex';
+  return true;
+}
+
+/* ══ Auto-carregar ao abrir as abas ══ */
+async function abrirAbaEventos(){
+  const data=document.getElementById('pro-data')?.value;
+  if(!data)return;
+  const st=document.getElementById('ev-status');
+  if(st)st.textContent='⏳ Buscando eventos salvos...';
+  const ok=await carregarEventosSalvos(data);
+  if(st)st.textContent=ok?`📦 Eventos carregados do Firebase (${data})`:'Nenhum evento salvo para esta data.';
+}
+
+async function abrirAbaVendas(){
+  const data=document.getElementById('vend-data')?.value||document.getElementById('pro-data')?.value;
+  if(!data)return;
+  /* Tentar carregar vendas salvas */
+  const ok=await carregarVendasSalvas(data);
+  const info=document.getElementById('vend-data-info');
+  if(info){
+    const extra=ok?' · ✅ Vendas já salvas para esta data':'';
+    info.textContent=data?(fmtDataLonga(data)+' ('+diasAtras(data)+')'+extra):'';
+  }
 }
 
 /* ══ INIT ══ */
