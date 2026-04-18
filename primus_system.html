@@ -739,10 +739,9 @@ canvas{max-height:210px}
     <textarea class="ta" id="rel-vend" placeholder="Cole o relatório de vendas..." style="margin-top:12px"></textarea>
     <div id="resp-v" style="display:none;background:#fff8e8;border:1.5px solid var(--am);border-radius:11px;padding:14px;margin-top:12px"><pre id="resp-v-txt" style="font-size:11px;line-height:1.7;white-space:pre-wrap;font-family:'DM Mono',monospace"></pre></div>
     <div class="ld" id="ld-vend-save"><div class="sp"></div><span>Salvando vendas...</span></div>
-    <div id="vend-salvo" style="display:none" class="bn bn-ok" style="margin-top:8px">✅ Vendas salvas no Firebase</div>
+    <div id="vend-salvo" style="display:none;margin-top:8px" class="bn bn-ok">✅ Vendas salvas no Firebase</div>
     <div class="brow">
-      <button class="btn btn-p" onclick="processarVendas()">📊 Processar</button>
-      <button class="btn btn-s" id="btn-salvar-vendas" onclick="salvarVendasIndep()" style="display:none">💾 Salvar Vendas</button>
+      <button class="btn btn-p" onclick="processarVendas()">📊 Processar e Salvar</button>
       <button class="btn btn-g" id="btn-av4" onclick="goG('consolidacao',document.getElementById('gt-consolidacao'))" style="display:none">Consolidação →</button>
     </div>
   </div>
@@ -1460,16 +1459,50 @@ function confirmarRev(){
 /* ══════════════════════════════════════════
    D-1 PRO
 ══════════════════════════════════════════ */
+/* Busca FINAL de ontem em contagens (funcionários) ou estoque_diario (gestor) */
+async function buscarFinalOntem(ontem){
+  /* Primeiro tenta contagem aprovada dos funcionários */
+  const cont=await window.fbBuscarContagem(ontem,'FINAL');
+  if(cont&&cont.produtos)return{fonte:'contagem',data:cont};
+  /* Se não achou, tenta estoque_diario salvo pelo gestor */
+  const est=await window.fbBuscarEstoque(ontem);
+  if(est&&est.bf&&Object.keys(est.bf).length>0)return{fonte:'estoque_diario',data:est};
+  return null;
+}
+async function buscarSorvOntem(ontem){
+  const cont=await window.fbBuscarContagem(ontem,'SORVETES');
+  if(cont&&cont.produtos)return{fonte:'contagem',data:cont};
+  const est=await window.fbBuscarEstoque(ontem);
+  if(est&&est.sf&&Object.keys(est.sf).length>0)return{fonte:'estoque_diario',data:est};
+  return null;
+}
+
 async function mostrarD1Pro(){
   avProStep('d1');const c=document.getElementById('c-ed1');c.style.display='block';setTimeout(()=>c.scrollIntoView({behavior:'smooth',block:'start'}),100);
   const data=document.getElementById('pro-data').value;if(!data)return;
   const ontem=dm1(data);
   const ld=document.getElementById('ld-d1'),wr=document.getElementById('d1p-wrap');ld.classList.add('show');wr.style.display='none';
-  const[finO,sorvO,justs]=await Promise.all([window.fbBuscarContagem(ontem,'FINAL'),window.fbBuscarContagem(ontem,'SORVETES'),window.fbBuscarJustificativas(data)]);
+  const[finRes,sorvRes,justs]=await Promise.all([buscarFinalOntem(ontem),buscarSorvOntem(ontem),window.fbBuscarJustificativas(data)]);
   ld.classList.remove('show');
+  const finO=finRes?.data||null;
+  const sorvO=sorvRes?.data||null;
+  const fonteLabel=finRes?` (fonte: ${finRes.fonte})`:'';
   const e=S.est;
-  const cB=BEB.map(p=>{const fo=(finO?.produtos?.[p.n]?.total)||0;const ih=(e.bi?.[p.n]?.tot)||0;return{p:p.n,fo,ih,dif:ih-fo,j:justs[p.n]||null};});
-  const cS=SORV.map(p=>{const fo=(sorvO?.produtos?.[p.n]?.final?.final)||0;const ih=(e.si?.[p.n]?.qtd)||0;return{p:p.n,fo,ih,dif:ih-fo,j:justs[p.n]||null};});
+  /* Extrair FINAL de ontem dependendo da fonte */
+  const getFinalBeb=(prod)=>{
+    if(!finO)return 0;
+    if(finRes.fonte==='contagem')return finO.produtos?.[prod]?.total||0;
+    if(finRes.fonte==='estoque_diario')return finO.bf?.[prod]?.tot||0;
+    return 0;
+  };
+  const getFinalSorv=(prod)=>{
+    if(!sorvO)return 0;
+    if(sorvRes.fonte==='contagem')return sorvO.produtos?.[prod]?.final?.final||0;
+    if(sorvRes.fonte==='estoque_diario')return sorvO.sf?.[prod]?.fin||0;
+    return 0;
+  };
+  const cB=BEB.map(p=>{const fo=getFinalBeb(p.n);const ih=(e.bi?.[p.n]?.tot)||0;return{p:p.n,fo,ih,dif:ih-fo,j:justs[p.n]||null};});
+  const cS=SORV.map(p=>{const fo=getFinalSorv(p.n);const ih=(e.si?.[p.n]?.qtd)||0;return{p:p.n,fo,ih,dif:ih-fo,j:justs[p.n]||null};});
   const alts=[...cB,...cS].filter(i=>i.dif!==0).length;
   const bans=document.getElementById('d1p-bans');
   if(!finO&&!sorvO)bans.innerHTML=`<div class="bn bn-warn">⚠️ Sem dados de FINAL para ${ontem}. Revise e prossiga com cautela.</div>`;
@@ -1532,13 +1565,47 @@ async function carregarD1Ded(){
   const data=document.getElementById('d1-ref').value;if(!data){alert('Informe a data.');return;}
   const ontem=dm1(data);const ld=document.getElementById('ld-d1d'),wr=document.getElementById('d1d-wrap'),bans=document.getElementById('d1d-bans');
   ld.classList.add('show');wr.style.display='none';bans.innerHTML='';
-  const[ih,fo,sh,so,justs]=await Promise.all([window.fbBuscarContagem(data,'INICIO'),window.fbBuscarContagem(ontem,'FINAL'),window.fbBuscarContagem(data,'SORVETES'),window.fbBuscarContagem(ontem,'SORVETES'),window.fbBuscarJustificativas(data)]);
+  /* Busca INÍCIO de hoje nas contagens (funcionários) ou estoque_diario (gestor) */
+  const[ihCont,foRes,shCont,soRes,estHoje,justs]=await Promise.all([
+    window.fbBuscarContagem(data,'INICIO'),
+    buscarFinalOntem(ontem),
+    window.fbBuscarContagem(data,'SORVETES'),
+    buscarSorvOntem(ontem),
+    window.fbBuscarEstoque(data),
+    window.fbBuscarJustificativas(data)
+  ]);
   ld.classList.remove('show');
-  if(!ih&&!fo){bans.innerHTML='<div class="bn bn-warn">⚠️ Sem dados suficientes.</div>';return;}
-  const cB=BEB.map(p=>{const f=(fo?.produtos?.[p.n]?.total)||0;const i=(ih?.produtos?.[p.n]?.total)||0;return{p:p.n,fo:f,ih:i,dif:i-f,j:justs[p.n]||null};});
-  const cS=SORV.map(p=>{const f=(so?.produtos?.[p.n]?.final?.final)||0;const i=(sh?.produtos?.[p.n]?.inicio?.qtd)||0;return{p:p.n,fo:f,ih:i,dif:i-f,j:justs[p.n]||null};});
+  const fo=foRes?.data||null;
+  const so=soRes?.data||null;
+  /* INÍCIO de hoje: prioridade contagem funcionário, depois estoque_diario */
+  const ih=ihCont||estHoje||null;
+  const sh=shCont||estHoje||null;
+  if(!ih&&!fo){bans.innerHTML=`<div class="bn bn-warn">⚠️ Sem dados para ${data} ou ${ontem}.</div>`;return;}
+  const getInicioHojeBeb=(prod)=>{
+    if(ihCont)return ihCont.produtos?.[prod]?.total||0;
+    if(estHoje)return estHoje.bi?.[prod]?.tot||0;
+    return 0;
+  };
+  const getInicioHojeSorv=(prod)=>{
+    if(shCont)return shCont.produtos?.[prod]?.inicio?.qtd||0;
+    if(estHoje)return estHoje.si?.[prod]?.qtd||0;
+    return 0;
+  };
+  const getFinalOntemBeb=(prod)=>{
+    if(!fo)return 0;
+    if(foRes.fonte==='contagem')return fo.produtos?.[prod]?.total||0;
+    return fo.bf?.[prod]?.tot||0;
+  };
+  const getFinalOntemSorv=(prod)=>{
+    if(!so)return 0;
+    if(soRes.fonte==='contagem')return so.produtos?.[prod]?.final?.final||0;
+    return so.sf?.[prod]?.fin||0;
+  };
+  const cB=BEB.map(p=>{const f=getFinalOntemBeb(p.n);const i=getInicioHojeBeb(p.n);return{p:p.n,fo:f,ih:i,dif:i-f,j:justs[p.n]||null};});
+  const cS=SORV.map(p=>{const f=getFinalOntemSorv(p.n);const i=getInicioHojeSorv(p.n);return{p:p.n,fo:f,ih:i,dif:i-f,j:justs[p.n]||null};});
   const alts=[...cB,...cS].filter(i=>i.dif!==0).length;
-  bans.innerHTML=alts?`<div class="bn bn-err">🔴 ${alts} divergência(s) · ${ontem} → ${data}</div>`:`<div class="bn bn-ok">✅ Nenhuma divergência!</div>`;
+  const fontes=`(${foRes?foRes.fonte:'sem dados'} → ${ih?'ok':'sem início'})`;
+  bans.innerHTML=alts?`<div class="bn bn-err">🔴 ${alts} divergência(s) · ${ontem} → ${data} ${fontes}</div>`:`<div class="bn bn-ok">✅ Nenhuma divergência! ${fontes}</div>`;
   renD1DedTab('d1d-b',cB);renD1DedTab('d1d-s',cS);wr.style.display='block';
 }
 function renD1DedTab(id,dados){
@@ -1561,6 +1628,8 @@ function processarVendas(){
   document.getElementById('kv-fat').textContent='R$ '+r.kpis.fat;document.getElementById('kv-it').textContent=r.kpis.itens;document.getElementById('kv-tk').textContent='R$ '+r.kpis.ticket;document.getElementById('kv-desc').textContent='R$ '+r.kpis.desc;
   document.getElementById('resp-v-txt').textContent=r.resumo;document.getElementById('resp-v').style.display='block';
   document.getElementById('btn-av4').style.display='inline-flex';
+  /* Salvar automaticamente no Firebase */
+  salvarVendasIndep();
 }
 function parsarRel(txt){
   const ls=txt.split('\n').map(l=>l.trim()).filter(l=>l);const vends=[],prods=[];let fat='0,00',itens='0',desc='0,00',modo='';
@@ -1882,7 +1951,6 @@ async function carregarVendasSalvas(data){
     document.getElementById('kv-desc').textContent='R$ '+(snap.kpis.desc||'--');
   }
   /* Mostrar botões de ação */
-  document.getElementById('btn-salvar-vendas').style.display='inline-flex';
   document.getElementById('btn-av4').style.display='inline-flex';
   return true;
 }
