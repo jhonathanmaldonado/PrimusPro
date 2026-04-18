@@ -92,10 +92,20 @@ body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,sans-s
 /* CALENDAR */
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px;text-align:center;}
 .cal-sem{font-size:11px;color:var(--muted);font-weight:700;padding:4px 0;}
-.cal-day{border-radius:var(--radius-sm);padding:8px 2px;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s;user-select:none;border:1.5px solid transparent;}
-.cal-day:hover{filter:brightness(.94);}
-.cal-day.hoje{border-color:var(--accent)!important;font-weight:800;}
+.cal-day{border-radius:var(--radius-sm);padding:8px 2px;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s;user-select:none;border:2px solid #DDD8D0;}
+.cal-day:hover{filter:brightness(.92);transform:scale(1.04);}
+.cal-day.hoje{border-color:var(--accent)!important;border-width:2.5px!important;font-weight:800;}
 .cal-day.selecionado{outline:2.5px solid var(--accent);outline-offset:1px;}
+/* Bordas coloridas por status */
+.cal-day.st-em_aberto{border-color:#1A6FA8!important;border-width:2.5px!important;}
+.cal-day.st-aguardando_fechamento{border-color:#C8782A!important;border-width:2.5px!important;}
+.cal-day.st-fechado{border-color:#276749!important;border-width:2.5px!important;}
+.cal-day.st-reaberto{border-color:#C0392B!important;border-width:3px!important;}
+/* Bordas por status */
+.cal-day.st-em_aberto{border-color:#1A6FA8;border-width:2px;}
+.cal-day.st-aguardando_fechamento{border-color:var(--accent-dk);border-width:2px;}
+.cal-day.st-fechado{border-color:var(--success);border-width:2px;}
+.cal-day.st-reaberto{border-color:var(--danger);border-width:2.5px;}
 /* BADGES */
 .badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;text-transform:uppercase;white-space:nowrap;}
 .c-garcom{color:#A05E1E;background:var(--accent-lt);}
@@ -237,25 +247,48 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
 
 <!-- MODAL EXTRA -->
 <div class="modal-overlay" id="modalExtra"><div class="modal-box">
-  <div class="modal-title">➕ Funcionário Extra do Dia</div>
-  <div class="form-group"><div class="field-label">Nome completo</div><input type="text" id="extNome" class="form-input" placeholder="Nome"></div>
-  <div class="form-group"><div class="field-label">Função no dia</div><select id="extCargo" class="form-select" onchange="preencherDiariaExtra()"><option>Gerente</option><option>Garçom</option><option>Cumim</option><option>Cozinheiro</option>
+  <div class="modal-title">➕ Extra do Dia — Da Lista de Cadastrados</div>
+  <div style="font-size:12px;color:var(--muted);margin-bottom:14px;padding:8px 12px;background:var(--surface2);border-radius:6px;border-left:3px solid var(--accent)">
+    Só é possível adicionar funcionários já cadastrados no sistema.<br>
+    Se precisar de alguém novo: <strong>cadastre primeiro em Funcionários</strong> e volte aqui.
+  </div>
+  <div class="form-group">
+    <div class="field-label">Selecione o funcionário</div>
+    <select id="extFuncSelect" class="form-select" onchange="preencherDadosExtra()">
+      <option value="">— Carregando cadastro... —</option>
+    </select>
+  </div>
+  <div id="extDetalhes" style="display:none">
+    <div class="form-group"><div class="field-label">Função no dia <span style="font-size:10px;color:var(--muted);font-weight:400">(cargo cadastrado — pode alterar)</span></div>
+      <select id="extCargo" class="form-select" onchange="preencherDiariaExtra()">
+        <option>Gerente</option><option>Garçom</option><option>Cumim</option><option>Cozinheiro</option>
         <option>Bar</option><option>Aux. Bar</option><option>Caixa</option><option>Recepcionista</option>
-        <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div>
-  <div class="form-group"><div class="field-label">Chave Pix</div><input type="text" id="extPix" class="form-input" placeholder="CPF, celular, e-mail ou conta Itaú"></div>
-  <div class="form-group"><div class="field-label">Diária (R$) <span id="extHint" style="color:var(--muted);font-weight:400;text-transform:none;font-size:11px"></span></div><input type="number" id="extDiaria" class="form-input" step="0.01"></div>
-  <div id="segAuxWrap" style="display:none" class="form-group">
-    <div class="field-label">Auxiliares de Segurança (R$120 cada)</div>
-    <div style="display:flex;align-items:center;gap:14px">
-      <button type="button" onclick="ajustarAuxExtra(-1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-size:20px;width:40px;height:40px;cursor:pointer;font-weight:700">−</button>
-      <span id="auxExtCount" style="font-size:24px;font-weight:800;min-width:28px;text-align:center">2</span>
-      <button type="button" onclick="ajustarAuxExtra(1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-size:20px;width:40px;height:40px;cursor:pointer;font-weight:700">+</button>
-      <span id="auxExtTotal" style="font-size:13px;color:var(--muted);font-weight:600"></span>
+        <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option>
+      </select>
+    </div>
+    <div class="form-group"><div class="field-label">Chave Pix <span id="extPixInfo" style="font-size:10px;color:var(--muted);font-weight:400"></span></div>
+      <input type="text" id="extPix" class="form-input" placeholder="Já preenchido do cadastro">
+    </div>
+    <div class="form-group">
+      <div class="field-label">Diária (R$) <span id="extHint" style="color:var(--muted);font-weight:400;text-transform:none;font-size:11px"></span></div>
+      <input type="number" id="extDiaria" class="form-input" step="0.01">
+    </div>
+    <div id="segAuxWrap" style="display:none" class="form-group">
+      <div class="field-label">Auxiliares de Segurança (R$120 cada)</div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <button type="button" onclick="ajustarAuxExtra(-1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-size:20px;width:40px;height:40px;cursor:pointer;font-weight:700">−</button>
+        <span id="auxExtCount" style="font-size:24px;font-weight:800;min-width:28px;text-align:center">2</span>
+        <button type="button" onclick="ajustarAuxExtra(1)" style="background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-size:20px;width:40px;height:40px;cursor:pointer;font-weight:700">+</button>
+        <span id="auxExtTotal" style="font-size:13px;color:var(--muted);font-weight:600"></span>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:6px">
+      <button class="btn btn-primary" style="flex:1" onclick="confirmarExtra()">✅ Adicionar</button>
+      <button class="btn btn-secondary" onclick="fecharModal('modalExtra')">Cancelar</button>
     </div>
   </div>
-  <div style="display:flex;gap:8px;margin-top:6px">
-    <button class="btn btn-primary" style="flex:1" onclick="confirmarExtra()">✅ Adicionar</button>
-    <button class="btn btn-secondary" onclick="fecharModal('modalExtra')">Cancelar</button>
+  <div id="extVazio" style="display:none;text-align:center;padding:14px">
+    <button class="btn btn-secondary" onclick="fecharModal('modalExtra')">Fechar</button>
   </div>
 </div></div>
 
@@ -380,7 +413,7 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
           <div id="grpFreq" class="grupo-section"><div class="grupo-header">🔄 Frequentes</div><div class="emp-list" id="listFreq"></div><div id="emptyFreq" style="font-size:13px;color:var(--muted);padding:8px 0;display:none">Nenhum frequente cadastrado</div></div>
           <div id="grpExtras" class="grupo-section"><div class="grupo-header">➕ Extras do Dia</div><div class="emp-list" id="listExtras"></div></div>
           <div id="btnAddExtra" style="margin-top:10px;display:none" class="no-print">
-            <button class="btn btn-secondary btn-block" style="border-style:dashed" onclick="abrirModal('modalExtra');preencherDiariaExtra()">➕ Adicionar Extra do Dia</button>
+            <button class="btn btn-secondary btn-block" style="border-style:dashed" onclick="abrirModalExtra();preencherDiariaExtra()">➕ Adicionar Extra do Dia</button>
           </div>
         </div>
         <div class="card"><div class="card-title">Observações do Dia</div><textarea id="gerObs" placeholder="Ocorrências, avisos, informações para o Jhonathan..."></textarea></div>
@@ -433,6 +466,15 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
           <div class="gorjeta-grid">
             <div><div class="field-label">Total da Gorjeta</div><div class="money-wrap"><span>R$</span><input type="number" class="money-input" id="gorjetaTotal" placeholder="0,00" step="0.01" oninput="calcGorjeta()"></div></div>
             <div><div class="field-label">Divisão por Setor</div><div class="gorjeta-chips" id="gorjetaChips"></div></div>
+            <div id="passportKidsWrap" style="display:none;grid-column:1/-1;margin-top:4px;padding:10px 14px;background:#EEF7F2;border:1.5px solid #B8DFC9;border-radius:8px">
+              <div class="field-label" style="color:var(--success);margin-bottom:8px">🎟️ Passaport Kids — Gorjeta das Monitoras</div>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <div><span style="font-size:11px;color:var(--muted);display:block;margin-bottom:3px">Valor por passaport (R$)</span>
+                  <input type="number" id="passportKidsValor" class="diaria-input" placeholder="Ex: 5,00" step="0.01" min="0" style="width:110px" oninput="calcGorjeta()">
+                </div>
+                <div style="font-size:12px;color:var(--muted)">← Preencha o valor e depois informe quantos cada monitora vendeu abaixo.</div>
+              </div>
+            </div>
           </div>
         </div>
         <div class="card"><div class="card-title">Diárias</div><div id="diariasList"></div></div>
@@ -661,6 +703,10 @@ const CARGO_SETOR = {
   'Gerente':'gerente','Aux. Bar':'bar','Limpeza':'outros','Recepcionista':'outros',
   'Monitora':'outros','Aux. Cozinha':'cozinha','Caixa':'outros','Segurança':'outros'
 };
+/* Gorjeta fixa por cargo (independente do rateio percentual) */
+const GORJETA_FIXA_CARGO = {
+  'Recepcionista': 20
+};
 const DIARIA_PADRAO = {
   'Gerente':0,'Garçom':80,'Cumim':100,'Cozinheiro':0,'Bar':0,'Aux. Bar':80,
   'Caixa':150,'Recepcionista':120,'Monitora':120,'Aux. Cozinha':140,'Limpeza':120,'Segurança':200
@@ -766,7 +812,8 @@ function showApp() {
   $('loginScreen').style.display = 'none';
   $('appScreen').style.display = 'block';
   $('gerObs').addEventListener('input', () => gerAutoSave());
-  if(currentPerfil === 'gerente') { ativarTab('presenca'); gerCarregarMes(); }
+  if(currentPerfil === 'admin') { ativarTab('calendario'); finCarregarMes(); }
+  else if(currentPerfil === 'gerente') { ativarTab('presenca'); gerCarregarMes(); }
   else { ativarTab('calendario'); carregarCalFin(); }
   // Escala carrega apenas quando o usuário abre a aba
 }
@@ -796,8 +843,9 @@ function configurarAbas() {
   const isDir = ['diretoria','admin'].includes(currentPerfil);
   const isAdm = currentPerfil === 'admin';
   const mapa  = {
-    presenca:isGer, escala:isGer, calendario:isFin, fechamento:isFin, pagamentos:isFin,
-    historico:isFin, resumo:isFin, cadastro:isGer||isDir, usuarios:isAdm
+    presenca:isGer||isAdm, escala:isGer||isAdm, calendario:isFin||isAdm,
+    fechamento:isFin||isAdm, pagamentos:isFin||isAdm,
+    historico:isFin||isAdm, resumo:isFin||isAdm, cadastro:isGer||isDir||isAdm, usuarios:isAdm
   };
   Object.entries(mapa).forEach(([tab,vis]) =>
     document.querySelector(`[data-tab="${tab}"]`)?.classList.toggle('hidden',!vis)
@@ -861,7 +909,8 @@ function renderGerCal() {
     else if(st==='aguardando_fechamento'){bg='#F5E6D3';color='#A05E1E';}
     else if(st==='fechado'){bg='#E8F5EE';color='#276749';}
     else if(st==='reaberto'){bg='#FDECEA';color='#C0392B';}
-    html += `<div class="cal-day${isH?' hoje':''}${isS?' selecionado':''}" style="background:${bg};color:${color}" onclick="gerSelecionarDia('${ds}')">${d}</div>`;
+    const stClass = st ? ` st-${st}` : '';
+    html += `<div class="cal-day${isH?' hoje':''}${isS?' selecionado':''}${stClass}" style="background:${bg};color:${color};text-align:center;font-weight:${st?'700':'500'}" onclick="gerSelecionarDia('${ds}')">${d}</div>`;
   }
   grid.innerHTML = html;
 }
@@ -1041,10 +1090,66 @@ function confirmarCargo() {
   fecharModal('modalCargo'); renderGerList(); gerAutoSave();
 }
 
-/* ── Extra do Dia ── */
+/* ── Extra do Dia — apenas do cadastro ── */
+let extCadastroCache = []; // Cache dos funcionários cadastrados
+let extFuncSelecionado = null; // Funcionário selecionado no dropdown
+
+async function abrirModalExtra() {
+  // Resetar estado
+  extFuncSelecionado = null;
+  $('extDetalhes').style.display = 'none';
+  $('extVazio').style.display = 'none';
+  const sel = $('extFuncSelect');
+  sel.innerHTML = '<option value="">⏳ Carregando...</option>';
+  abrirModalExtra();
+
+  try {
+    // Buscar cadastro do Firestore (apenas ativos)
+    const snap = await db.collection('funcionarios').where('ativo','==',true).orderBy('nome').get();
+    extCadastroCache = snap.docs.map(d => ({id:d.id,...d.data()}));
+
+    // Filtrar quem já está na lista do dia (excluir presentes)
+    const idsPresentes = new Set(gerFuncionarios.map(f => f.id));
+    const disponiveis = extCadastroCache.filter(f => !idsPresentes.has(f.id));
+
+    if(!disponiveis.length) {
+      sel.innerHTML = '<option value="">— Todos os cadastrados já estão na lista —</option>';
+      $('extVazio').style.display = 'block';
+      $('extVazio').innerHTML = `
+        <p style="color:var(--muted);font-size:13px;margin-bottom:12px">
+          Todos os funcionários cadastrados já estão na lista do dia.<br>
+          Para adicionar alguém novo, cadastre primeiro em <strong>Funcionários</strong>.
+        </p>
+        <button class="btn btn-secondary" onclick="fecharModal('modalExtra')">Fechar</button>`;
+      return;
+    }
+
+    sel.innerHTML = '<option value="">— Selecione um funcionário —</option>' +
+      disponiveis.map(f => `<option value="${f.id}">${f.nome} · ${f.cargo}</option>`).join('');
+  } catch(e) {
+    sel.innerHTML = `<option value="">❌ Erro ao carregar: ${e.message}</option>`;
+  }
+}
+
+function preencherDadosExtra() {
+  const id = $('extFuncSelect').value;
+  if(!id) { $('extDetalhes').style.display='none'; return; }
+  extFuncSelecionado = extCadastroCache.find(f => f.id === id);
+  if(!extFuncSelecionado) return;
+
+  // Preencher campos com dados do cadastro
+  $('extCargo').value = extFuncSelecionado.cargo || 'Garçom';
+  $('extPix').value = extFuncSelecionado.pix || '';
+  $('extPixInfo').textContent = extFuncSelecionado.pix ? '(do cadastro)' : '(sem pix cadastrado)';
+  preencherDiariaExtra();
+  $('extDetalhes').style.display = 'block';
+}
+
 function preencherDiariaExtra() {
   const c = $('extCargo').value;
-  const d = DIARIA_PADRAO[c] || 0;
+  // Diária: usa cadastro do funcionário se disponível, senão padrão do cargo
+  const dCad = extFuncSelecionado?.diariaPadrao;
+  const d = (dCad != null && dCad > 0) ? dCad : (DIARIA_PADRAO[c] || 0);
   const segW = $('segAuxWrap');
   if(c === 'Segurança') {
     segW.style.display = 'block'; gerAuxExtra = 2;
@@ -1053,6 +1158,7 @@ function preencherDiariaExtra() {
   $('extHint').textContent = c==='Gerente'?'(sem diária)':d?`(padrão: R$ ${d})`:'';
   $('extDiaria').value = c==='Gerente' ? '' : d || '';
 }
+
 function ajustarAuxExtra(delta) {
   gerAuxExtra = Math.max(0, Math.min(4, gerAuxExtra + delta));
   $('auxExtCount').textContent = gerAuxExtra;
@@ -1064,17 +1170,19 @@ function atualizarTotalSegExtra() {
   $('extDiaria').value = t;
 }
 function confirmarExtra() {
-  const nome   = $('extNome').value.trim();
+  if(!extFuncSelecionado) { alert('Selecione um funcionário.'); return; }
   const cargo  = $('extCargo').value;
-  const pix    = $('extPix').value.trim();
+  const pix    = $('extPix').value.trim() || extFuncSelecionado.pix || '';
   const diaria = parseFloat($('extDiaria').value) || 0;
-  if(!nome) { alert('Informe o nome.'); return; }
   gerFuncionarios.push({
-    id:'EXTRA_'+Date.now(), nome, cargo, pix, diariaPadrao:diaria,
-    isExtra:true, isFrequente:false, presente:true, atrasado:false,
-    consumo:0, auxCount:cargo==='Segurança'?gerAuxExtra:0
+    id: extFuncSelecionado.id,      // Usa o ID real do cadastro
+    nome: extFuncSelecionado.nome,
+    cargo, pix, diariaPadrao: diaria,
+    isExtra: true, isFrequente: false, presente: true, atrasado: false,
+    consumo: 0, auxCount: cargo==='Segurança'?gerAuxExtra:0
   });
-  $('extNome').value=''; $('extPix').value='';
+  extFuncSelecionado = null;
+  $('extDetalhes').style.display = 'none';
   fecharModal('modalExtra'); renderGerList(); gerAutoSave();
 }
 
@@ -1199,7 +1307,8 @@ function renderCalFin() {
     else if(st==='aguardando_fechamento'){bg='#F5E6D3';color='#A05E1E';}
     else if(st==='fechado'){bg='#E8F5EE';color='#276749';}
     else if(st==='reaberto'){bg='#FDECEA';color='#C0392B';}
-    html += `<div class="cal-day${isH?' hoje':''}${isS?' selecionado':''}" style="background:${bg};color:${color}" onclick="finSelecionarDia('${ds}')" title="${fmtDate(ds)}${st?' — '+STATUS_LABEL[st]:''}">${d}</div>`;
+    const stClassF = st ? ` st-${st}` : '';
+    html += `<div class="cal-day${isH?' hoje':''}${isS?' selecionado':''}${stClassF}" style="background:${bg};color:${color};text-align:center;font-weight:${st?'700':'500'}" onclick="finSelecionarDia('${ds}')" title="${fmtDate(ds)}${st?' — '+STATUS_LABEL[st]:''}">${d}</div>`;
   }
   grid.innerHTML = html;
 }
@@ -1238,10 +1347,27 @@ async function loadFechamento(date) {
       }));
     const bloqueado = finDayStatus === 'fechado';
     $('gorjetaTotal').value = '';
-    $('diariasList').innerHTML = finPresentes.map(f =>
-      `<div style="border-bottom:1.5px solid var(--border);padding:10px 0">
+    /* Mostrar bloco passportKids se houver monitoras */
+    const temMonitora = finPresentes.some(f => f.cargo === 'Monitora');
+    const pkWrap = $('passportKidsWrap');
+    if(pkWrap) pkWrap.style.display = temMonitora ? 'block' : 'none';
+
+    $('diariasList').innerHTML = finPresentes.map(f => {
+      const isMonitora = f.cargo === 'Monitora';
+      const isRecep = f.cargo === 'Recepcionista';
+      const gorjetaFixaInfo = GORJETA_FIXA_CARGO[f.cargo]
+        ? `<span style="font-size:11px;color:var(--success);font-weight:700">+R$${GORJETA_FIXA_CARGO[f.cargo]} gorjeta fixa</span>`
+        : '';
+      const passportRow = isMonitora ? `
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px;padding:6px 10px;background:#EEF7F2;border-radius:6px;border:1px solid #B8DFC9">
+          <span style="font-size:12px;color:var(--success);white-space:nowrap">🎟️ Passaport Kids vendidos:</span>
+          <input type="number" class="diaria-input" id="passportKids-${f.id}" value="" min="0" step="1" placeholder="0"
+            style="width:72px;border-color:#B8DFC9" oninput="calcGorjeta()" ${bloqueado?'disabled':''}>
+          <span style="font-size:11px;color:var(--muted)">(× valor definido acima)</span>
+        </div>` : '';
+      return `<div style="border-bottom:1.5px solid var(--border);padding:10px 0">
         <div class="diaria-row" style="border:none;padding:0 0 6px">
-          <div class="diaria-name">${f.nome}${f.atrasado?' <span class="tag-atrasado">⏰</span>':''}<small>${f.cargo}${f.auxCount>0?` +${f.auxCount} aux.`:''}</small></div>
+          <div class="diaria-name">${f.nome}${f.atrasado?' <span class="tag-atrasado">⏰</span>':''}<small>${f.cargo}${f.auxCount>0?` +${f.auxCount} aux.`:''}</small>${gorjetaFixaInfo}</div>
           ${badge(f.cargo)}
           <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
             <div style="display:flex;align-items:center;gap:6px">
@@ -1257,13 +1383,14 @@ async function loadFechamento(date) {
             </div>
           </div>
         </div>
-        <div style="display:flex;gap:6px;align-items:center">
+        ${passportRow}
+        <div style="display:flex;gap:6px;align-items:center;margin-top:${isMonitora?'6':'0'}px">
           <input type="text" id="motivo-${f.id}" placeholder="Motivo do desconto (opcional)..."
             style="flex:1;background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;color:var(--text);font-family:inherit"
             ${bloqueado?'disabled':''}>
         </div>
-      </div>`
-    ).join('');
+      </div>`;
+    }).join('');
     $('fechContent').style.display = 'block';
     $('fechEmpty').style.display   = 'none';
     await carregarDiariasSalvas(date);
@@ -1276,19 +1403,31 @@ async function carregarDiariasSalvas(date) {
     const snaps = await Promise.all(finPresentes.map(f =>
       db.collection('fechamento_funcionario').doc(`${date}_${f.id}`).get()
     ));
-    let gt = 0;
+    let gt = 0; let passportVlrRestaurado = 0;
     snaps.forEach((s,i) => {
       if(s.exists) {
-        const el = $(`diaria-${finPresentes[i].id}`);
+        const f = finPresentes[i];
+        const el = $(`diaria-${f.id}`);
         if(el) el.value = s.data().diaria ?? '';
-        const elDesc = $(`desconto-${finPresentes[i].id}`);
+        const elDesc = $(`desconto-${f.id}`);
         if(elDesc && s.data().desconto) elDesc.value = s.data().desconto;
-        const elMotivo = $(`motivo-${finPresentes[i].id}`);
+        const elMotivo = $(`motivo-${f.id}`);
         if(elMotivo && s.data().motivoDesconto) elMotivo.value = s.data().motivoDesconto;
+        /* Restaurar passportKids das monitoras */
+        if(f.cargo === 'Monitora' && s.data().passportKidsQtd) {
+          const elKids = $('passportKids-'+f.id);
+          if(elKids) elKids.value = s.data().passportKidsQtd;
+          passportVlrRestaurado = s.data().passportKidsValorUnit || passportVlrRestaurado;
+        }
         gt = s.data().baseGorjeta || gt;
       }
     });
     if(gt) $('gorjetaTotal').value = gt;
+    /* Restaurar valor por passaport */
+    if(passportVlrRestaurado) {
+      const elVlr = $('passportKidsValor');
+      if(elVlr) elVlr.value = passportVlrRestaurado;
+    }
     calcGorjeta();
   } catch(_) {}
 }
@@ -1300,13 +1439,28 @@ function calcGorjeta() {
   Object.entries(groups).forEach(([c,m]) => {
     const pct = pctGorjeta(c);
     const pp  = m.length ? (total*pct)/m.length : 0;
-    m.forEach(f => finGorjetaMap[f.id] = pp);
+    m.forEach(f => {
+      /* Gorjeta base do rateio percentual */
+      let g = pp;
+      /* Gorjeta fixa por cargo (ex: Recepcionista R$20) */
+      if(GORJETA_FIXA_CARGO[f.cargo]) g += GORJETA_FIXA_CARGO[f.cargo];
+      /* Gorjeta extra de Monitora: Passaport Kids (valor digitado no campo) */
+      if(f.cargo === 'Monitora') {
+        const kids = parseFloat($('passportKids-'+f.id)?.value || 0) || 0;
+        const vlrKid = parseFloat($('passportKidsValor')?.value || 0) || 0;
+        g += kids * vlrKid;
+      }
+      finGorjetaMap[f.id] = g;
+    });
   });
   const seen = {};
   finPresentes.forEach(f => seen[f.cargo]=(seen[f.cargo]||0)+1);
   $('gorjetaChips').innerHTML = Object.entries(seen).map(([c,cnt]) => {
-    const pct = pctGorjeta(c); if(!pct) return '';
-    return `<div class="chip"><strong>${c}</strong> ${(pct*100).toFixed(0)}% → ${fmt(total*pct)} ÷ ${cnt}</div>`;
+    const pct = pctGorjeta(c); if(!pct && !GORJETA_FIXA_CARGO[c]) return '';
+    let label = '';
+    if(pct) label += `${(pct*100).toFixed(0)}% → ${fmt(total*pct)} ÷ ${cnt}`;
+    if(GORJETA_FIXA_CARGO[c]) label += (label?' + ':'')+`R$${GORJETA_FIXA_CARGO[c]}/pessoa`;
+    return `<div class="chip"><strong>${c}</strong> ${label}</div>`;
   }).filter(Boolean).join('');
   calcResultado();
 }
@@ -1358,11 +1512,15 @@ async function salvarFechamento(fechar=false) {
       const c  = f.consumo||0;
       const dc = parseFloat($(`desconto-${f.id}`)?.value||0)||0;
       const motivo = $(`motivo-${f.id}`)?.value?.trim()||'';
+      const passportKidsQtd   = f.cargo==='Monitora' ? (parseFloat($('passportKids-'+f.id)?.value||0)||0) : 0;
+      const passportKidsVlr   = f.cargo==='Monitora' ? (parseFloat($('passportKidsValor')?.value||0)||0) : 0;
+      const gorjetaFixa       = GORJETA_FIXA_CARGO[f.cargo]||0;
       const l  = d+g-c-dc;
       td+=d; tc+=c; tl+=l;
       batch.set(db.collection('fechamento_funcionario').doc(`${finDate}_${f.id}`),{
         data:finDate,funcId:f.id,nomeSnapshot:f.nome,cargoSnapshot:f.cargo,
         presente:true,atrasado:f.atrasado,consumo:c,diaria:d,gorjeta:g,
+        gorjetaFixa,passportKidsQtd,passportKidsValorUnit:passportKidsVlr,
         desconto:dc,motivoDesconto:motivo,
         baseGorjeta:gt,percentualCargo:pctGorjeta(f.cargo),
         regrasGorjetaSnapshot:rSnapshot,totalLiquido:l,pix:f.pix||'',
