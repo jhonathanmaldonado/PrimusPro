@@ -36,15 +36,16 @@ window.onAuthChange=function(user){
   /* Atualizar badge */
   var pb=document.getElementById('pbadge');
   if(pb){
-    var pLabel=user.perfil||'(sem perfil)';
-    pb.textContent=(user.perfil==='gestor'?'🔑':'👤')+' '+user.nome+' ['+pLabel+'] · Sair';
+    pb.textContent=(user.perfil==='gestor'?'🔑 ':user.perfil==='admin'?'🔑 ':'👤 ')+user.nome+' · Sair';
     pb.className='pbadge '+user.perfil;
+    pb.style.cssText='font-size:11px;font-family:"DM Mono",monospace;padding:4px 12px;border-radius:20px;cursor:pointer;background:rgba(250,185,0,.25);color:var(--am);font-weight:700;white-space:nowrap;';
   }
   /* Nav: mostrar a correta imediatamente */
   var ng=document.getElementById('nav-g');
   var nf=document.getElementById('nav-f');
   var cc=document.getElementById('cnt-ctrl');
-  if(user.perfil==='gestor'){
+  var isGestor=(user.perfil==='gestor'||user.perfil==='admin');
+  if(isGestor){
     if(ng)ng.style.display='flex';
     if(nf)nf.style.display='none';
     if(cc)cc.style.display='none';
@@ -950,8 +951,19 @@ async function fazerLogin(){
   if(!r.ok){
     err.textContent=r.msg;err.style.display='block';
   } else {
-    /* Login manual: aplicar imediatamente sem esperar o listener */
+    /* Login manual: aplicar auth e completar navegação */
     aplicarAuth(window.USER);
+    /* Aguardar o DOM processar e então completar navegação */
+    setTimeout(function(){
+      var u=window.USER;
+      if(!u)return;
+      var isG=(u.perfil==='gestor'||u.perfil==='admin');
+      if(isG){
+        if(typeof ativarG==='function'){ativarG('dash',document.getElementById('gt-dash'));carregarDash();}
+      } else {
+        if(typeof ativarF==='function'){ativarF('cnt',document.getElementById('ft-cnt'));}
+      }
+    },50);
   }
 }
 
@@ -1612,7 +1624,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   function completarNavegacao(user){
     if(!user){document.getElementById('lov').classList.add('show');return;}
     setSB('ok','✅ Firebase');
-    if(user.perfil==='gestor'){
+    var isGestor=(user.perfil==='gestor'||user.perfil==='admin');
+    if(isGestor){
       ativarG('dash',document.getElementById('gt-dash'));
       carregarDash();
     } else {
