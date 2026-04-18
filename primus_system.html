@@ -43,12 +43,10 @@ window.onAuthChange=function(user){
   /* Nav: mostrar a correta imediatamente */
   var ng=document.getElementById('nav-g');
   var nf=document.getElementById('nav-f');
-  var cc=document.getElementById('cnt-ctrl');
   var isGestor=(user.perfil==='gestor'||user.perfil==='admin');
   if(isGestor){
     if(ng)ng.style.display='flex';
     if(nf)nf.style.display='none';
-    if(cc)cc.style.display='none';
   } else {
     if(nf)nf.style.display='flex';
     if(ng)ng.style.display='none';
@@ -243,6 +241,19 @@ body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--pr);min-h
 .lbtn:hover{opacity:.88}
 .lerr{color:var(--vm);font-size:12px;margin-top:8px;display:none}
 .hdr{position:sticky;top:0;z-index:200;box-shadow:0 4px 20px rgba(0,0,0,.18)}
+/* Quando contagem ativa: cnt-ctrl sai do header e fica no topo do conteúdo */
+.cnt-ctrl-inline{background:var(--vi);border-bottom:3px solid var(--am);margin-bottom:10px}
+.cnt-ctrl-inline .tipo-grid{padding:8px 14px;gap:7px}
+.cnt-ctrl-inline .tbtn{padding:8px 5px;font-size:10px}
+.cnt-ctrl-inline .tbtn .ico{font-size:16px;margin-bottom:2px}
+.cnt-ctrl-inline .dbar{padding:5px 14px}
+.cnt-ctrl-inline .ubar{padding:4px 14px;font-size:10px}
+/* Barra compacta de re-seleção no header quando tipo está selecionado */
+.tipo-mini-bar{display:none;background:var(--vi);padding:5px 14px;align-items:center;gap:10px;border-top:1px solid rgba(255,255,255,.1)}
+.tipo-mini-bar.show{display:flex}
+.tipo-mini-chip{background:rgba(0,0,0,.25);border:1.5px solid var(--am);border-radius:20px;padding:3px 12px;font-size:10px;font-family:'Raleway',sans-serif;font-weight:700;color:var(--am);white-space:nowrap}
+.tipo-mini-btn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.3);border-radius:20px;padding:3px 10px;font-size:10px;color:rgba(255,255,255,.8);cursor:pointer;white-space:nowrap}
+.tipo-mini-btn:hover{background:rgba(255,255,255,.2)}
 .hdr-top{background:var(--vi);padding:10px 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:5px solid var(--am)}
 .logo-row{display:flex;align-items:center;gap:10px}
 .logo-box{width:36px;height:36px;background:var(--am);border-radius:9px;display:flex;align-items:center;justify-content:center;font-family:'Raleway',sans-serif;font-weight:900;font-size:13px;color:var(--vi);flex-shrink:0}
@@ -560,24 +571,15 @@ canvas{max-height:210px}
     <button class="ntab active" id="ft-cnt" onclick="goF('cnt',this)">📋 Contagem</button>
     <button class="ntab" id="ft-meus" onclick="goF('meus',this)">📂 Minhas Contagens</button>
   </nav>
-  <!-- CONTROLES CONTAGEM -->
-  <div id="cnt-ctrl" style="display:none">
-    <div class="cnt-ctrl">
-      <div class="tipo-grid">
-        <button class="tbtn" id="bt-ini" onclick="selecionarTipo('ini')"><span class="ico">🌅</span>Bebidas<br>INÍCIO</button>
-        <button class="tbtn" id="bt-fin" onclick="selecionarTipo('fin')"><span class="ico">🌙</span>Bebidas<br>FINAL</button>
-        <button class="tbtn" id="bt-sorv" onclick="selecionarTipo('sorv')"><span class="ico">🍨</span>Sorvetes &<br>Embalagens</button>
-      </div>
+  <!-- MINI-BARRA no header: mostra tipo ativo + botão trocar (apenas quando tipo selecionado) -->
+  <div id="tipo-mini-bar" class="tipo-mini-bar" style="display:none">
+    <span id="tipo-mini-chip" class="tipo-mini-chip">—</span>
+    <div style="display:flex;align-items:center;gap:8px;flex:1">
+      <span class="ptxt" id="ptxt" style="font-family:'DM Mono',monospace;font-size:11px;color:#FFD566">0/0</span>
+      <div style="flex:1;height:4px;background:rgba(255,255,255,.15);border-radius:2px;overflow:hidden"><div class="pfill" id="pfill" style="width:0%;height:100%;background:var(--am);border-radius:2px;transition:width .4s"></div></div>
+      <span id="ppct" style="font-family:'Raleway',sans-serif;font-weight:800;font-size:12px;color:var(--am)">0%</span>
     </div>
-    <div class="dbar">
-      <div style="display:flex;align-items:center;gap:8px"><label>📅 DATA</label><input type="date" class="dinp" id="cnt-data"></div>
-    </div>
-    <div class="ubar" id="ubar">👤 <span id="cnt-user-nm">—</span> &nbsp;·&nbsp; Contagem autenticada</div>
-    <div class="pbar" id="pbar" style="display:none">
-      <span class="ptxt" id="ptxt">0/0</span>
-      <div class="ptrack"><div class="pfill" id="pfill" style="width:0%"></div></div>
-      <span class="ppct" id="ppct">0%</span>
-    </div>
+    <button class="tipo-mini-btn" onclick="mostrarSeletorTipo()">⇄ Trocar</button>
   </div>
 </div>
 
@@ -864,6 +866,24 @@ canvas{max-height:210px}
 
 <!-- ════ VIEWS FUNCIONÁRIO ════ -->
 <div id="vw-cnt" class="view" style="display:none;padding:0;padding-bottom:100px">
+  <!-- SELETOR DE TIPO — fica no topo do conteúdo, NÃO no header sticky -->
+  <div id="cnt-selector" style="background:var(--vi);border-bottom:3px solid var(--am)">
+    <div class="tipo-grid" style="padding:12px 16px;max-width:580px;margin:0 auto">
+      <button class="tbtn" id="bt-ini" onclick="selecionarTipo('ini')"><span class="ico">🌅</span>Bebidas<br>INÍCIO</button>
+      <button class="tbtn" id="bt-fin" onclick="selecionarTipo('fin')"><span class="ico">🌙</span>Bebidas<br>FINAL</button>
+      <button class="tbtn" id="bt-sorv" onclick="selecionarTipo('sorv')"><span class="ico">🍨</span>Sorvetes &<br>Embalagens</button>
+    </div>
+    <div class="dbar" style="padding:6px 16px">
+      <div style="display:flex;align-items:center;gap:8px"><label style="font-size:10px;color:#FFD566;font-family:'DM Mono',monospace;font-weight:700">📅 DATA</label><input type="date" class="dinp" id="cnt-data"></div>
+    </div>
+    <div class="ubar" id="ubar" style="padding:5px 16px;font-size:10px;color:#FFD566;background:rgba(0,0,0,.2)">👤 <span id="cnt-user-nm">—</span> &nbsp;·&nbsp; Contagem autenticada</div>
+  </div>
+  <!-- BARRA DE PROGRESSO — fica aberta, visível ao rolar -->
+  <div id="pbar" style="display:none;background:white;padding:7px 16px;display:none;align-items:center;gap:10px;border-bottom:1.5px solid var(--bo);position:sticky;top:var(--hdr-h,120px);z-index:50">
+    <span class="ptxt" id="ptxt2">0/0</span>
+    <div style="flex:1;height:6px;background:var(--bo);border-radius:3px;overflow:hidden"><div id="pfill2" style="height:100%;width:0%;background:linear-gradient(90deg,var(--vi),var(--am));border-radius:3px;transition:width .4s"></div></div>
+    <span id="ppct2" style="font-family:'Raleway',sans-serif;font-weight:800;font-size:13px;color:var(--vi)">0%</span>
+  </div>
   <div class="cnt-body" id="cnt-main">
     <div class="empty" style="padding:60px 20px"><div class="ico">📋</div><h2 style="font-family:'Raleway',sans-serif;font-weight:800;font-size:18px;color:var(--pr);margin-bottom:8px">Selecione o tipo de contagem</h2><p>Escolha acima qual folha preencher</p></div>
   </div>
@@ -974,7 +994,7 @@ function ativarG(aba,btn){
   const v=document.getElementById('vw-'+aba);
   if(v){v.style.display='block';requestAnimationFrame(()=>v.classList.add('active'));}
   if(btn)btn.classList.add('active');
-  document.getElementById('cnt-ctrl').style.display='none';
+  const _mb=document.getElementById('tipo-mini-bar');if(_mb)_mb.style.display='none';
   document.getElementById('fab-w').style.display='none';
   document.getElementById('fab-hint').style.display='none';
 }
@@ -984,9 +1004,19 @@ function ativarF(aba,btn){
   const v=document.getElementById('vw-'+aba);
   if(v){v.style.display='block';requestAnimationFrame(()=>v.classList.add('active'));}
   if(btn)btn.classList.add('active');
-  document.getElementById('cnt-ctrl').style.display=aba==='cnt'?'block':'none';
-  if(aba==='cnt'&&tipo){document.getElementById('fab-w').style.display='flex';document.getElementById('fab-hint').style.display='block';}
-  else{document.getElementById('fab-w').style.display='none';document.getElementById('fab-hint').style.display='none';}
+  /* Mini-barra no header (substituiu cnt-ctrl) */
+  const miniBar=document.getElementById('tipo-mini-bar');
+  if(aba==='cnt'&&tipo){
+    if(miniBar)miniBar.style.display='flex';
+    document.getElementById('fab-w').style.display='flex';
+    document.getElementById('fab-hint').style.display='block';
+  } else {
+    if(miniBar)miniBar.style.display='none';
+    document.getElementById('fab-w').style.display='none';
+    document.getElementById('fab-hint').style.display='none';
+    /* Ao voltar para cnt sem tipo, mostrar seletor */
+    if(aba==='cnt'){const sel=document.getElementById('cnt-selector');if(sel)sel.style.display='block';}
+  }
   if(aba==='meus')carregarMeus();
 }
 function goG(aba,btn){
@@ -1103,10 +1133,29 @@ function selecionarTipo(t){
   tipo=t;
   ['ini','fin','sorv'].forEach(x=>document.getElementById('bt-'+x).classList.toggle('active',x===t));
   renderCnt();
-  document.getElementById('pbar').style.display='flex';
+  /* Mostrar mini-barra no header com o tipo selecionado */
+  const tipoLabel={ini:'🌅 Bebidas INÍCIO',fin:'🌙 Bebidas FINAL',sorv:'🍨 Sorvetes & Embalagens'};
+  const miniBar=document.getElementById('tipo-mini-bar');
+  const miniChip=document.getElementById('tipo-mini-chip');
+  if(miniBar)miniBar.style.display='flex';
+  if(miniChip)miniChip.textContent=tipoLabel[t]||t;
+  /* Ocultar seletor grande após escolha para dar mais espaço */
+  const sel=document.getElementById('cnt-selector');
+  if(sel)sel.style.display='none';
+  /* Mostrar barra de progresso interna */
+  const pb=document.getElementById('pbar');if(pb)pb.style.display='flex';
   document.getElementById('fab-w').style.display='flex';
   document.getElementById('fab-hint').style.display='block';
   updProg();
+}
+function mostrarSeletorTipo(){
+  /* Botão "Trocar" na mini-barra — reabre o seletor */
+  const sel=document.getElementById('cnt-selector');
+  if(sel)sel.style.display='block';
+  const miniBar=document.getElementById('tipo-mini-bar');
+  if(miniBar)miniBar.style.display='none';
+  /* Rolar para o topo para ver o seletor */
+  window.scrollTo({top:0,behavior:'smooth'});
 }
 function renderCnt(){
   const m=document.getElementById('cnt-main');m.innerHTML='';
@@ -1168,7 +1217,15 @@ function updProg(){
   const lista=tipo==='sorv'?SORV:BEB;const tot=lista.length;
   const preen=lista.filter(i=>{const id=slg(i.n);const d=CD[id];if(!d)return false;return tipo==='sorv'?d.qtd!==undefined:(d.fr!==undefined||d.est!==undefined);}).length;
   const pct=tot>0?Math.round(preen/tot*100):0;
-  document.getElementById('ptxt').textContent=`${preen}/${tot}`;document.getElementById('pfill').style.width=pct+'%';document.getElementById('ppct').textContent=pct+'%';
+  const pctStr=pct+'%';const txt=`${preen}/${tot}`;
+  /* Atualizar mini-barra no header */
+  const el1=document.getElementById('ptxt');if(el1)el1.textContent=txt;
+  const el2=document.getElementById('pfill');if(el2)el2.style.width=pctStr;
+  const el3=document.getElementById('ppct');if(el3)el3.textContent=pctStr;
+  /* Atualizar barra interna no conteúdo */
+  const el4=document.getElementById('ptxt2');if(el4)el4.textContent=txt;
+  const el5=document.getElementById('pfill2');if(el5)el5.style.width=pctStr;
+  const el6=document.getElementById('ppct2');if(el6)el6.textContent=pctStr;
 }
 function cntMontarJSON(data){
   const lista=tipo==='sorv'?SORV:BEB;const tn={ini:'INICIO',fin:'FINAL',sorv:'SORVETES'};
