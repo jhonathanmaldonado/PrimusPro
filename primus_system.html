@@ -620,12 +620,16 @@ canvas{max-height:210px}
 <div id="vw-pro" class="view" style="display:none"><!-- legado --></div>
 <div id="vw-estoque" class="view" style="display:none">
   <div class="card" id="c-e1">
-    <div class="ch"><div class="ci">📋</div><div><div class="ct">ETAPA 1 — Contagem Física</div><div class="cs">Carrega do Firebase ou suba JSONs</div></div></div>
+    <div class="ch"><div class="ci">📋</div><div><div class="ct">Contagem Física do Dia</div><div class="cs">Escolha a data → carrega do Firebase ou suba os JSONs manualmente</div></div></div>
     <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:14px">
-      <div><label style="font-size:10px;font-family:'DM Mono',monospace;color:#999;display:block;margin-bottom:5px">DATA</label><input type="date" id="pro-data" class="inp"></div>
+      <div>
+        <label style="font-size:10px;font-family:'DM Mono',monospace;color:#999;display:block;margin-bottom:5px">📅 DATA DA AUDITORIA</label>
+        <input type="date" id="pro-data" class="inp" oninput="sincronizarDataEstoque(this.value)">
+      </div>
       <button class="btn btn-p" onclick="carregarFB()">☁️ Carregar do Firebase</button>
+      <div id="pro-data-info" style="font-size:12px;color:#888;font-family:'DM Mono',monospace;padding-bottom:4px"></div>
     </div>
-    <div class="bn bn-info">💡 Busca contagens <strong>aprovadas</strong> do dia. Contagens não aprovadas exigem confirmação explícita.</div>
+    <div class="bn bn-info">💡 Escolha <strong>qualquer data</strong> — hoje ou dias anteriores. O sistema busca as contagens aprovadas ou você sobe os JSONs manualmente.</div>
     <div class="ug" style="margin-top:14px">
       <div class="us" id="us-ini"><input type="file" accept=".json" onchange="handleJSON(this,'bebIni')"><div style="font-size:10px;background:var(--azbg);color:var(--az);display:inline-block;padding:3px 9px;border-radius:20px;margin-bottom:6px">🍺 INÍCIO</div><div style="font-size:24px;margin-bottom:5px">📄</div><div style="font-family:'Raleway',sans-serif;font-weight:700;font-size:12px">INICIO.json</div><div id="ok-ini" class="us-ok">✅ Carregado</div></div>
       <div class="us" id="us-fin"><input type="file" accept=".json" onchange="handleJSON(this,'bebFin')"><div style="font-size:10px;background:var(--azbg);color:var(--az);display:inline-block;padding:3px 9px;border-radius:20px;margin-bottom:6px">🍺 FINAL</div><div style="font-size:24px;margin-bottom:5px">📄</div><div style="font-family:'Raleway',sans-serif;font-weight:700;font-size:12px">FINAL.json</div><div id="ok-fin" class="us-ok">✅ Carregado</div></div>
@@ -684,8 +688,17 @@ canvas{max-height:210px}
 <!-- VENDAS -->
 <div id="vw-vendas" class="view" style="display:none">
   <div class="card" id="c-e3">
-    <div class="ch"><div class="ci">💰</div><div><div class="ct">Relatório de Vendas</div><div class="cs">Cole o relatório do sistema de caixa</div></div></div>
-    <textarea class="ta" id="rel-vend" placeholder="Cole o relatório de vendas..."></textarea>
+    <div class="ch"><div class="ci">💰</div><div><div class="ct">Relatório de Vendas</div><div class="cs">Pode ser de qualquer data — hoje ou dias anteriores</div></div></div>
+    <!-- Seletor de data independente para Vendas -->
+    <div style="display:flex;align-items:flex-end;gap:12px;flex-wrap:wrap;margin-bottom:14px;padding-bottom:14px;border-bottom:1.5px solid var(--bo)">
+      <div>
+        <label style="font-size:10px;font-family:'DM Mono',monospace;color:#999;display:block;margin-bottom:5px">📅 DATA DO RELATÓRIO</label>
+        <input type="date" id="vend-data" class="inp" oninput="sincronizarDataVendas(this.value)">
+      </div>
+      <div id="vend-data-info" style="font-size:12px;color:#888;font-family:'DM Mono',monospace;padding-bottom:4px"></div>
+    </div>
+    <div class="bn bn-info">💡 Cole o relatório de vendas exportado do sistema de caixa (formato tabular com abas). Use para <strong>qualquer data</strong>, não apenas hoje.</div>
+    <textarea class="ta" id="rel-vend" placeholder="Cole o relatório de vendas..." style="margin-top:12px"></textarea>
     <div id="resp-v" style="display:none;background:#fff8e8;border:1.5px solid var(--am);border-radius:11px;padding:14px;margin-top:12px"><pre id="resp-v-txt" style="font-size:11px;line-height:1.7;white-space:pre-wrap;font-family:'DM Mono',monospace"></pre></div>
     <div class="brow"><button class="btn btn-p" onclick="processarVendas()">📊 Processar Vendas</button><button class="btn btn-g" id="btn-av4" onclick="goG('consolidacao',document.getElementById('gt-consolidacao'))" style="display:none">Ir para Consolidação →</button></div>
   </div>
@@ -952,6 +965,29 @@ const DIAS_ANALISE=14;
 const slg=s=>s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]/g,'_');
 const nrm=s=>s.toLowerCase().replace(/\+/g,' ').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();
 const hoje=()=>new Date().toISOString().split('T')[0];
+const fmtDataLonga=d=>{try{return new Date(d+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});}catch{return d;}};
+const diasAtras=d=>{const diff=Math.round((new Date(hoje()+'T12:00:00')-new Date(d+'T12:00:00'))/(1000*60*60*24));if(diff===0)return'hoje';if(diff===1)return'ontem';if(diff<0)return`em ${Math.abs(diff)} dia(s)`;return`há ${diff} dias`;};
+
+function sincronizarDataEstoque(val){
+  /* Ao mudar a data no Estoque, sincroniza Vendas automaticamente */
+  const vi=document.getElementById('pro-data-info');
+  if(vi)vi.textContent=val?`${fmtDataLonga(val)} (${diasAtras(val)})`:'';
+  /* Sincronizar campo de data de Vendas */
+  const vd=document.getElementById('vend-data');
+  if(vd&&!vd._editado)vd.value=val; /* só sincroniza se Vendas não foi editada manualmente */
+  const vdi=document.getElementById('vend-data-info');
+  if(vdi&&vd&&!vd._editado)vdi.textContent=val?`${fmtDataLonga(val)} (${diasAtras(val)})`:'';
+  /* Atualizar data em S para uso na consolidação */
+  if(val)S.dataAud=val;
+}
+
+function sincronizarDataVendas(val){
+  /* Ao mudar a data em Vendas manualmente, marca como editada (independente do Estoque) */
+  const vd=document.getElementById('vend-data');
+  if(vd)vd._editado=true;
+  const vi=document.getElementById('vend-data-info');
+  if(vi)vi.textContent=val?`${fmtDataLonga(val)} (${diasAtras(val)})`:'';
+}
 const dm1=d=>{const dt=new Date(d+'T12:00:00');dt.setDate(dt.getDate()-1);return dt.toISOString().split('T')[0];};
 const fmt=d=>new Date(d+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'short'});
 const setSB=(c,t)=>{const b=document.getElementById('sbadge');b.className='sbadge'+(c?' '+c:'');b.textContent=t;};
@@ -1026,7 +1062,17 @@ function goG(aba,btn){
   if(aba==='logs')carregarLogs();
   if(aba==='fila')carregarFila();
   if(aba==='compras')gerarListaCompras();
-  if(aba==='estoque'&&!document.getElementById('pro-data').value)document.getElementById('pro-data').value=hoje();
+  if(aba==='estoque'){
+    const pd=document.getElementById('pro-data');
+    if(!pd.value){pd.value=hoje();sincronizarDataEstoque(pd.value);}
+  }
+  if(aba==='vendas'){
+    /* Sincronizar data de Vendas com a data do Estoque */
+    const pdVal=document.getElementById('pro-data')?.value||hoje();
+    const vd=document.getElementById('vend-data');
+    if(vd&&!vd.value){vd.value=pdVal;sincronizarDataVendas(pdVal);vd._editado=false;}
+    else if(vd){sincronizarDataVendas(vd.value);}
+  }
   if(aba==='d1'&&!document.getElementById('d1-ref').value)document.getElementById('d1-ref').value=hoje();
   if(aba==='cfg')document.getElementById('cfg-user').textContent=window.USER?.nome+' ('+window.USER?.email+')';
   if(aba==='dash'){document.getElementById('dash-dt').textContent=new Date().toLocaleDateString('pt-BR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});carregarDash();}
@@ -1454,7 +1500,10 @@ function rmEv(n){document.getElementById('ev-'+n)?.remove();S.evs=S.evs.filter(e
 
 /* ══ VENDAS ══ */
 function processarVendas(){
-  const v=document.getElementById('rel-vend').value.trim();if(!v){alert('Cole o relatório.');return;}
+  const v=document.getElementById('rel-vend').value.trim();if(!v){alert('Cole o relatório de vendas.');return;}
+  /* Usar data de Vendas se definida, senão usar data do Estoque */
+  const dataVendas=document.getElementById('vend-data')?.value||document.getElementById('pro-data')?.value||hoje();
+  S.dataAud=dataVendas;
   S.vText=v;const r=parsarRel(v);S.vProc=r.resumo;S.vends=r.vends;S.kpis=r.kpis;
   document.getElementById('kv-fat').textContent='R$ '+r.kpis.fat;document.getElementById('kv-it').textContent=r.kpis.itens;document.getElementById('kv-tk').textContent='R$ '+r.kpis.ticket;document.getElementById('kv-desc').textContent='R$ '+r.kpis.desc;
   document.getElementById('resp-v-txt').textContent=r.resumo;document.getElementById('resp-v').style.display='block';
@@ -1492,7 +1541,9 @@ function fBtn(btn,id,st){btn.closest('.fts').querySelectorAll('.fb').forEach(b=>
 /* ══ CONFIRMAR AUDITORIA ══ */
 async function confirmarAuditoria(){
   const ld=document.getElementById('ld-fin');ld.classList.add('show');
-  const data=document.getElementById('pro-data').value||hoje();S.dataAud=data;
+  /* Usa data já definida por processarVendas ou Estoque, com fallback */
+  const data=S.dataAud||document.getElementById('vend-data')?.value||document.getElementById('pro-data')?.value||hoje();
+  S.dataAud=data;
   const pay={data,tabBeb:S.tabBeb,tabSorv:S.tabSorv,kpis:S.kpis,vends:S.vends,evs:S.evs.map(e=>({tipo:e.tipo,prod:document.getElementById('ev-p-'+e.id)?.value||'',qtd:parseInt(document.getElementById('ev-q-'+e.id)?.value)||0}))};
   const ok=await window.fbSalvarAuditoria(data,pay);
   setSB(ok?'ok':'err',ok?'✅ Auditoria salva':'⚠️ Erro');ld.classList.remove('show');
@@ -1674,7 +1725,8 @@ function exportarPDF(){
 /* ══ INIT ══ */
 document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('cnt-data').value=hoje();
-  document.getElementById('pro-data').value=hoje();
+  /* pro-data e vend-data começam VAZIOS — gestor escolhe a data da auditoria */
+  /* d1-ref começa com hoje como referência inicial */
   document.getElementById('d1-ref').value=hoje();
   document.getElementById('l-email').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('l-pw').focus();});
 
