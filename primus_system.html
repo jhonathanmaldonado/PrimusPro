@@ -936,7 +936,7 @@ canvas{max-height:210px}
     <div class="ubar" id="ubar" style="padding:5px 16px;font-size:10px;color:#FFD566;background:rgba(0,0,0,.2)">👤 <span id="cnt-user-nm">—</span> &nbsp;·&nbsp; Contagem autenticada</div>
   </div>
   <!-- BARRA DE PROGRESSO — fica aberta, visível ao rolar -->
-  <div id="pbar" style="display:none;background:white;padding:7px 16px;display:none;align-items:center;gap:10px;border-bottom:1.5px solid var(--bo);position:sticky;top:var(--hdr-h,120px);z-index:50">
+  <div id="pbar" style="display:none;background:white;padding:7px 16px;align-items:center;gap:10px;border-bottom:1.5px solid var(--bo);position:sticky;top:var(--hdr-h,120px);z-index:50">
     <span class="ptxt" id="ptxt2">0/0</span>
     <div style="flex:1;height:6px;background:var(--bo);border-radius:3px;overflow:hidden"><div id="pfill2" style="height:100%;width:0%;background:linear-gradient(90deg,var(--vi),var(--am));border-radius:3px;transition:width .4s"></div></div>
     <span id="ppct2" style="font-family:'Raleway',sans-serif;font-weight:800;font-size:13px;color:var(--vi)">0%</span>
@@ -1123,8 +1123,15 @@ function goG(aba,btn){
   /* Abas do fluxo de auditoria — mostrar cards já visíveis */
   if(aba==='eventos'){const e=document.getElementById('c-e2');if(e)e.style.display='block';}
   if(aba==='vendas'){const e=document.getElementById('c-e3');if(e)e.style.display='block';}
-  if(aba==='consolidacao'){const e=document.getElementById('c-e4');if(e)e.style.display='block';}
-  if(aba==='validacao'){const e=document.getElementById('c-e5');if(e)e.style.display='block';}
+  if(aba==='consolidacao'){
+    const e=document.getElementById('c-e4');if(e)e.style.display='block';
+    /* Garantir que S.dataAud está definido ao abrir Consolidação diretamente */
+    if(!S.dataAud){S.dataAud=document.getElementById('vend-data')?.value||document.getElementById('pro-data')?.value||hoje();}
+  }
+  if(aba==='validacao'){
+    const e=document.getElementById('c-e5');if(e)e.style.display='block';
+    if(!S.dataAud){S.dataAud=document.getElementById('vend-data')?.value||document.getElementById('pro-data')?.value||hoje();}
+  }
 }
 function goF(aba,btn){ativarF(aba,btn);}
 
@@ -1830,10 +1837,19 @@ async function salvarEventosIndep(){
 async function carregarEventosSalvos(data){
   const snap=await window.fbBuscarEventos(data);
   if(!snap||!snap.eventos?.length)return false;
+  /* Limpar lista atual */
   document.getElementById('ev-list').innerHTML='';
   S.evs=[];S.evN=0;
   document.getElementById('sem-ev').style.display='none';
-  snap.eventos.forEach(ev=>{addEv(ev.tipo);const n=S.evN;setTimeout(()=>{const p=document.getElementById('ev-p-'+n);const q=document.getElementById('ev-q-'+n);if(p)p.value=ev.prod;if(q)q.value=ev.qtd||0;},50);});
+  /* Recriar cada evento preenchendo os campos diretamente (sem setTimeout) */
+  snap.eventos.forEach(ev=>{
+    addEv(ev.tipo);
+    const n=S.evN; /* addEv já incrementou S.evN */
+    const p=document.getElementById('ev-p-'+n);
+    const q=document.getElementById('ev-q-'+n);
+    if(p)p.value=ev.prod||'';
+    if(q)q.value=ev.qtd||0;
+  });
   return true;
 }
 
