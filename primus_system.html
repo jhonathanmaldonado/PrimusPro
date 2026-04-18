@@ -50,12 +50,13 @@ onAuthStateChanged(auth,async u=>{
     if(snap.exists()&&snap.data().ativo)window.USER={uid:u.uid,email:u.email,...snap.data()};
     else{await signOut(auth);window.USER=null;}
   }else if(!u){window.USER=null;}
-  /* Garante que onAuthChange seja chamado mesmo se o script normal ainda nao carregou */
+  /* Publica o resultado — o script normal consome assim que onAuthChange for definido */
+  window._authResolvido = true;
+  window._authUser = window.USER;
   if(typeof window.onAuthChange==='function'){
     window.onAuthChange(window.USER);
-  } else {
-    window._pendingAuthUser=window.USER;
   }
+  /* Caso onAuthChange ainda não exista, será chamado quando for definido (ver script normal) */
 });
 
 /* ── USUARIOS ── */
@@ -874,7 +875,7 @@ const fmt=d=>new Date(d+'T12:00:00').toLocaleDateString('pt-BR',{day:'2-digit',m
 const setSB=(c,t)=>{const b=document.getElementById('sbadge');b.className='sbadge'+(c?' '+c:'');b.textContent=t;};
 
 /* ══ AUTH CALLBACK ══ */
-window.onAuthChange=function(user){
+function aplicarAuth(user){
   if(user){
     document.getElementById('lov').classList.remove('show');
     document.getElementById('hdr').style.display='block';
@@ -899,7 +900,8 @@ window.onAuthChange=function(user){
     document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
     setSB('','☁️');
   }
-};
+}
+window.onAuthChange=aplicarAuth;
 
 async function fazerLogin(){
   const e=document.getElementById('l-email').value.trim();
@@ -910,7 +912,12 @@ async function fazerLogin(){
   document.getElementById('l-btn').textContent='Entrando...';document.getElementById('l-btn').disabled=true;
   const r=await window.fbLogin(e,s);
   document.getElementById('l-btn').textContent='Entrar';document.getElementById('l-btn').disabled=false;
-  if(!r.ok){err.textContent=r.msg;err.style.display='block';}
+  if(!r.ok){
+    err.textContent=r.msg;err.style.display='block';
+  } else {
+    /* Login manual: aplicar imediatamente sem esperar o listener */
+    aplicarAuth(window.USER);
+  }
 }
 
 /* ══ NAVEGAÇÃO ══ */
@@ -1559,10 +1566,26 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('pro-data').value=hoje();
   document.getElementById('d1-ref').value=hoje();
   document.getElementById('l-email').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('l-pw').focus();});
-  /* Se o Firebase disparou antes do DOM, processar agora */
-  if('_pendingAuthUser' in window){
-    window.onAuthChange(window._pendingAuthUser);
-    delete window._pendingAuthUser;
+  /* Se o Firebase já resolveu antes do DOM estar pronto, aplicar agora */
+  if(window._authResolvido){
+    aplicarAuth(window._authUser);
+  } else {
+    /* Ficamos observando — o módulo chamará onAuthChange quando terminar */
+    /* Mas como o módulo é async (getDoc), pode demorar mais que o DOMContentLoaded */
+    /* Usar polling leve por até 8 segundos */
+    let tentativas=0;
+    const intervalo=setInterval(()=>{
+      tentativas++;
+      if(window._authResolvido){
+        clearInterval(intervalo);
+        aplicarAuth(window._authUser);
+      } else if(tentativas>80){ /* 8s sem resposta */
+        clearInterval(intervalo);
+        /* Mostrar login — Firebase não respondeu */
+        document.getElementById('lov').classList.add('show');
+        setSB('err','⚠️ Sem conexão');
+      }
+    },100);
   }
 });
 </script>
