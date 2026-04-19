@@ -1,0 +1,24 @@
+{
+  "name": "Primus Peixaria",
+  "short_name": "Primus Fila",
+  "description": "Gestão de fila de espera - Primus Peixaria",
+  "start_url": "./primus_fila_v5.html",
+  "display": "standalone",
+  "background_color": "#FAF8F4",
+  "theme_color": "#7B1C2E",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "./fila-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./fila-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
