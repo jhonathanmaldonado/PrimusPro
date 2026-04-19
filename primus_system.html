@@ -1369,8 +1369,7 @@ async function cntSalvar(acao){
     const d=CD[id]||{};return (d.fr||0)+(d.est||0)>0;
   });
   if(!temDados&&acao==='enviado'){
-    if(!confirm('⚠️ Nenhum produto preenchido.
-Enviar mesmo assim?'))return;
+    if(!confirm('⚠️ Nenhum produto preenchido.\nEnviar mesmo assim?'))return;
   }
   const jd=cntMontarJSON(data);
   const statusDesejado=acao==='enviado'?'enviado':'rascunho_novo';
@@ -1383,17 +1382,10 @@ Enviar mesmo assim?'))return;
       setSB('ok',labels[statusFinal]||'✅ Salvo');
       setTimeout(()=>setSB('ok','✅ Firebase'),3000);
       if(statusFinal==='enviado'||statusFinal==='corrigido')
-        alert('✅ '+labels[statusFinal]+'
-Aguarde a aprovação do gestor.');
+        alert('✅ '+labels[statusFinal]+'\nAguarde a aprovação do gestor.');
     } else {
       setSB('err','❌ Erro ao salvar');
-      alert('Erro ao salvar contagem.
-
-Verifique:
-• Conexão com internet
-• Se você está autenticado
-
-Tente novamente.');
+      alert('Erro ao salvar contagem.\n\nVerifique:\n• Conexão com internet\n• Se você está autenticado\n\nTente novamente.');
     }
   } catch(e){
     console.error('cntSalvar error:',e);
@@ -1489,12 +1481,7 @@ async function carregarFB(){
         return;
       }
       setSB('err','⚠️ Sem dados');ld.classList.remove('show');
-      alert('Nenhum dado encontrado para '+data+'.
-
-Soluções:
-• Subir os JSONs manualmente
-• Verificar a data
-• Salvar estoque primeiro na aba Estoque');
+      alert('Nenhum dado encontrado para '+data+'.\n\nSoluções:\n• Subir os JSONs manualmente\n• Verificar a data\n• Salvar estoque primeiro na aba Estoque');
       return;
     }
     if(!alertas.length)setSB('ok','✅ Carregado (aprovado)');
