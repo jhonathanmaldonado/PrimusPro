@@ -1229,6 +1229,18 @@ async function gerSalvar(apenasObs=false, silencioso=false) {
       gerDiasStatus[gerCurrentDate]='em_aberto'; renderGerCal(); renderGerStatus();
     } else {
       await db.collection('presencas_diarias').doc(gerCurrentDate).update(payload);
+      // Se dia reaberto e salvou presença, apaga fechamentos antigos para forçar recálculo
+      if(gerDayStatus === 'reaberto' && !apenasObs) {
+        try {
+          const batch = db.batch();
+          gerFuncionarios.forEach(f => {
+            batch.delete(db.collection('fechamento_funcionario').doc(`${gerCurrentDate}_${f.id}`));
+          });
+          // Apagar também o fechamento_diario do dia
+          batch.delete(db.collection('fechamento_diario').doc(gerCurrentDate));
+          await batch.commit();
+        } catch(_) {}
+      }
     }
     await logAuditoria('PRESENCA_SALVA',`presencas_diarias/${gerCurrentDate}`,{},{status:gerDayStatus||'em_aberto'});
     setSyncStatus('saved');
