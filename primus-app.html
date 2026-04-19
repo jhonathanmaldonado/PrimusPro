@@ -988,14 +988,17 @@ function renderGerStatus() {
   pill.innerHTML = gerDayStatus
     ? `<span class="status-pill status-${gerDayStatus}">${STATUS_LABEL[gerDayStatus]}</span>`
     : `<span class="status-pill status-em_aberto">🔵 Novo dia</span>`;
-  const podeEditar = !gerDayStatus || gerDayStatus === 'em_aberto';
+  const podeEditar = !gerDayStatus || gerDayStatus === 'em_aberto' || gerDayStatus === 'reaberto';
   const soPodeObs  = gerDayStatus === 'aguardando_fechamento';
   const bloqueado  = gerDayStatus === 'fechado';
   const banner = $('gerBanner');
   if(bloqueado) {
     banner.innerHTML = '🔒 Dia fechado. Apenas Diretoria pode reabrir.';
     banner.className = 'bloqueado-banner lock'; banner.style.display = 'block';
-  } else if(soPadeObs) {
+  } else if(gerDayStatus === 'reaberto') {
+    banner.innerHTML = '🔴 Dia reaberto. Edições liberadas.';
+    banner.className = 'bloqueado-banner warn'; banner.style.display = 'block';
+  } else if(soPodeObs) {
     banner.innerHTML = '📤 Enviado para o financeiro. <strong>Presença e consumo bloqueados.</strong>';
     banner.className = 'bloqueado-banner warn'; banner.style.display = 'block';
   } else { banner.style.display = 'none'; }
@@ -1026,7 +1029,7 @@ function setFiltro(f) {
   renderGerList();
 }
 function renderGrupoGer(lista) {
-  const podeEditar = !gerDayStatus || gerDayStatus === 'em_aberto';
+  const podeEditar = !gerDayStatus || gerDayStatus === 'em_aberto' || gerDayStatus === 'reaberto';
   return lista.map(f => {
     const idx = gerFuncionarios.indexOf(f);
     const isSeg = f.cargo === 'Segurança';
