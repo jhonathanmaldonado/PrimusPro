@@ -449,17 +449,33 @@
       <!-- Dashboard -->
         <div id="sat-dashboard" style="display:none;">
           <div class="sat-kpi-row" id="sat-kpi-grid"></div>
-          <div class="card">
-            <div class="card-title" style="margin-bottom:10px;">Motivos de Insatisfação</div>
+          <div class="card" style="margin-bottom:10px;">
+            <div class="card-title" style="margin-bottom:10px;">📊 Notas por Aspecto</div>
+            <div id="sat-notas-aspecto"></div>
+          </div>
+          <div class="card" style="margin-bottom:10px;">
+            <div class="card-title" style="margin-bottom:10px;">🔄 Frequência de Visitas</div>
+            <div id="sat-frequencia"></div>
+          </div>
+          <div class="card" style="margin-bottom:10px;">
+            <div class="card-title" style="margin-bottom:10px;">💰 Avaliação Custo x Benefício</div>
+            <div id="sat-custo"></div>
+          </div>
+          <div class="card" style="margin-bottom:10px;">
+            <div class="card-title" style="margin-bottom:10px;">❌ Motivos de Insatisfação</div>
             <div id="sat-motivos-list"></div>
           </div>
-          <div class="card" style="margin-top:10px;">
-            <div class="card-title" style="margin-bottom:10px;">Elogios Recentes</div>
+          <div class="card" style="margin-bottom:10px;">
+            <div class="card-title" style="margin-bottom:10px;">↩️ Intenção de Retorno e Indicação</div>
+            <div id="sat-retorno-list"></div>
+          </div>
+          <div class="card" style="margin-bottom:10px;">
+            <div class="card-title" style="margin-bottom:10px;">💚 Elogios Recentes</div>
             <div id="sat-elogios-list"></div>
           </div>
-          <div class="card" style="margin-top:10px;">
-            <div class="card-title" style="margin-bottom:10px;">Intenção de Retorno</div>
-            <div id="sat-retorno-list"></div>
+          <div class="card" style="margin-bottom:10px;">
+            <div class="card-title" style="margin-bottom:10px;">💬 Comentários Recentes</div>
+            <div id="sat-comentarios-list"></div>
           </div>
         </div>
       </div><!-- /sat-gestor-area -->
@@ -651,10 +667,19 @@ document.getElementById('senha-input').addEventListener('keydown', e => { if (e.
 
 // ── LISTENERS ──
 function iniciarListeners() {
-  const q = query(collection(db, 'fila'), orderBy('horario', 'asc'));
+  // Filtra apenas registros do dia atual
+  const agora = new Date();
+  const inicioDia = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 0, 0, 0);
+  const fimDia    = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 23, 59, 59);
+
+  const q = query(
+    collection(db, 'fila'),
+    where('horario', '>=', inicioDia),
+    where('horario', '<=', fimDia),
+    orderBy('horario', 'asc')
+  );
   unsubFila = onSnapshot(q, snap => {
     filaCache = snap.docs.map(d => ({ docId: d.id, ...d.data() }));
-    // Recalcula posição visual só para ativos
     let pos = 1;
     filaCache.forEach(c => {
       if (['aguardando', 'chamado'].includes(c.status)) { c._pos = pos++; }
@@ -1268,8 +1293,15 @@ window.setSatTab = (tab, el) => {
 
 // ── Carrega pesquisas do Firebase ──
 async function carregarPesquisas() {
-  const snap = await getDocs(query(collection(db, 'pesquisas_satisfacao'), orderBy('dataHoraResposta', 'desc'), limit(100)));
-  satPesquisasCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  try {
+    const snap = await getDocs(query(collection(db, 'pesquisas_satisfacao'), orderBy('dataHoraResposta', 'desc'), limit(200)));
+    satPesquisasCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch(e) {
+    console.error('Erro ao carregar pesquisas:', e);
+    if (e.code === 'permission-denied') {
+      toast('⚠️ Adicione a regra pesquisas_satisfacao no Firestore!');
+    }
+  }
 }
 
 // renderSatPendentes removida — fluxo A descontinuado
@@ -1302,67 +1334,120 @@ function renderSatRespondidas() {
 // ── Dashboard ──
 function renderSatDashboard() {
   const total    = satPesquisasCache.length;
-  const daFila   = satPesquisasCache.filter(p => !p.avulsa).length;
-  const avulsas  = satPesquisasCache.filter(p =>  p.avulsa).length;
   if (!total) {
     document.getElementById('sat-kpi-grid').innerHTML = '<div style="grid-column:span 2;color:var(--text3);font-size:13px;text-align:center;padding:20px;">Nenhuma pesquisa respondida ainda</div>';
-    document.getElementById('sat-motivos-list').innerHTML = '';
-    document.getElementById('sat-elogios-list').innerHTML = '';
-    document.getElementById('sat-retorno-list').innerHTML = '';
+    ['sat-motivos-list','sat-elogios-list','sat-retorno-list'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.innerHTML = '';
+    });
     return;
   }
-  const mediaNotas = (satPesquisasCache.reduce((a,p) => a + (p.notaInicial||0), 0) / total).toFixed(1);
-  const altas  = satPesquisasCache.filter(p => p.notaInicial >= 4).length;
-  const baixas = satPesquisasCache.filter(p => p.notaInicial <= 2).length;
-  const voltaria = satPesquisasCache.filter(p => p.voltaria === 'sim').length;
-  const indicaria = satPesquisasCache.filter(p => p.indicaria === 'sim').length;
-  const pctVoltaria  = Math.round(voltaria  / total * 100);
-  const pctIndicaria = Math.round(indicaria / total * 100);
-  const atendidosHoje = filaCache.filter(c => c.status === 'atendido').length;
-  const pctResposta = atendidosHoje > 0 ? Math.round(total / atendidosHoje * 100) : 0;
+
+  const daFila  = satPesquisasCache.filter(p => !p.avulsa).length;
+  const avulsas = satPesquisasCache.filter(p =>  p.avulsa).length;
+
+  // Notas
+  const mediaNotas = (satPesquisasCache.reduce((a,p) => a+(p.notaInicial||0), 0) / total).toFixed(1);
+  const altas      = satPesquisasCache.filter(p => p.notaInicial >= 4).length;
+  const medias     = satPesquisasCache.filter(p => p.notaInicial === 3).length;
+  const baixas     = satPesquisasCache.filter(p => p.notaInicial <= 2).length;
+  const pctSat     = Math.round(altas / total * 100);
+  const pctInsat   = Math.round(baixas / total * 100);
 
   // Médias por aspecto
-  const comComida = satPesquisasCache.filter(p => p.notaComida);
+  const comComida  = satPesquisasCache.filter(p => p.notaComida);
   const mediaComida = comComida.length ? (comComida.reduce((a,p)=>a+(p.notaComida||0),0)/comComida.length).toFixed(1) : '—';
-  const comAtend = satPesquisasCache.filter(p => p.notaAtendimento);
+  const comAtend   = satPesquisasCache.filter(p => p.notaAtendimento);
   const mediaAtend = comAtend.length ? (comAtend.reduce((a,p)=>a+(p.notaAtendimento||0),0)/comAtend.length).toFixed(1) : '—';
 
+  // Intenção
+  const voltaria  = { sim:0, talvez:0, nao:0 };
+  const indicaria = { sim:0, talvez:0, nao:0 };
+  satPesquisasCache.forEach(p => {
+    if (p.voltaria)  voltaria[p.voltaria]   = (voltaria[p.voltaria]  ||0)+1;
+    if (p.indicaria) indicaria[p.indicaria] = (indicaria[p.indicaria]||0)+1;
+  });
+  const pctVoltaria  = Math.round((voltaria.sim  ||0) / total * 100);
+  const pctIndicaria = Math.round((indicaria.sim ||0) / total * 100);
+
+  // Frequência de visitas
+  const freq = {};
+  satPesquisasCache.forEach(p => { if (p.frequenciaVisitas) freq[p.frequenciaVisitas] = (freq[p.frequenciaVisitas]||0)+1; });
+
+  // Áreas mais citadas
+  const areas = {};
+  satPesquisasCache.forEach(p => { if (p.areaPrincipal) areas[p.areaPrincipal] = (areas[p.areaPrincipal]||0)+1; });
+
+  // ── KPIs ──
   document.getElementById('sat-kpi-grid').innerHTML = `
-    <div class="sat-kpi"><div class="sat-kpi-label">Nota Geral</div><div class="sat-kpi-val">${mediaNotas}</div><div class="sat-kpi-sub">média geral / 5</div></div>
+    <div class="sat-kpi"><div class="sat-kpi-label">Nota Geral</div><div class="sat-kpi-val">${mediaNotas}</div><div class="sat-kpi-sub">média / 5.0</div></div>
     <div class="sat-kpi"><div class="sat-kpi-label">Pesquisas</div><div class="sat-kpi-val">${total}</div><div class="sat-kpi-sub">${daFila} fila · ${avulsas} mesa</div></div>
-    <div class="sat-kpi"><div class="sat-kpi-label">Nota Comida</div><div class="sat-kpi-val">${mediaComida}</div><div class="sat-kpi-sub">média / 5</div></div>
-    <div class="sat-kpi"><div class="sat-kpi-label">Nota Atendimento</div><div class="sat-kpi-val">${mediaAtend}</div><div class="sat-kpi-sub">média / 5</div></div>
-    <div class="sat-kpi"><div class="sat-kpi-label">Satisfeitos</div><div class="sat-kpi-val">${altas}</div><div class="sat-kpi-sub">${Math.round(altas/total*100)}% nota 4-5</div></div>
-    <div class="sat-kpi"><div class="sat-kpi-label">Insatisfeitos</div><div class="sat-kpi-val">${baixas}</div><div class="sat-kpi-sub">${Math.round(baixas/total*100)}% nota 1-2</div></div>`;
+    <div class="sat-kpi"><div class="sat-kpi-label">Satisfeitos</div><div class="sat-kpi-val" style="color:var(--green);">${pctSat}%</div><div class="sat-kpi-sub">${altas} notas 4-5</div></div>
+    <div class="sat-kpi"><div class="sat-kpi-label">Insatisfeitos</div><div class="sat-kpi-val" style="color:var(--danger);">${pctInsat}%</div><div class="sat-kpi-sub">${baixas} notas 1-2</div></div>
+    <div class="sat-kpi"><div class="sat-kpi-label">Nota Comida</div><div class="sat-kpi-val">${mediaComida}</div><div class="sat-kpi-sub">média / 5.0</div></div>
+    <div class="sat-kpi"><div class="sat-kpi-label">Nota Atendimento</div><div class="sat-kpi-val">${mediaAtend}</div><div class="sat-kpi-sub">média / 5.0</div></div>
+    <div class="sat-kpi"><div class="sat-kpi-label">Voltariam</div><div class="sat-kpi-val" style="color:var(--green);">${pctVoltaria}%</div><div class="sat-kpi-sub">${voltaria.sim||0} de ${total}</div></div>
+    <div class="sat-kpi"><div class="sat-kpi-label">Indicariam</div><div class="sat-kpi-val" style="color:var(--green);">${pctIndicaria}%</div><div class="sat-kpi-sub">${indicaria.sim||0} de ${total}</div></div>`;
 
-  // Motivos de insatisfação
-  const motivos = {};
-  satPesquisasCache.filter(p => p.motivoPrincipal && p.notaInicial <= 3)
-    .forEach(p => { motivos[p.motivoPrincipal] = (motivos[p.motivoPrincipal]||0) + 1; });
-  const motivosHtml = Object.entries(motivos).sort((a,b)=>b[1]-a[1]).map(([m,n]) =>
-    `<div class="sat-motivo-row"><span style="font-size:13px;color:var(--text2);">${m}</span><span style="font-family:'Playfair Display',serif;font-weight:700;color:var(--danger);">${n}</span></div>`
-  ).join('') || '<div style="color:var(--text3);font-size:13px;padding:8px 0;">Nenhum motivo registrado</div>';
-  document.getElementById('sat-motivos-list').innerHTML = motivosHtml;
+  // ── Áreas mais citadas ──
+  const areasHtml = Object.entries(areas).sort((a,b)=>b[1]-a[1]).map(([a,n]) => {
+    const pct = Math.round(n/total*100);
+    return `<div class="sat-motivo-row">
+      <span style="font-size:13px;color:var(--text2);">${a}</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:80px;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;">
+          <div style="width:${pct}%;height:100%;background:var(--wine);border-radius:3px;"></div>
+        </div>
+        <span style="font-family:'Playfair Display',serif;font-weight:700;font-size:13px;color:var(--wine);width:28px;">${n}</span>
+        <span style="font-size:11px;color:var(--text3);">${pct}%</span>
+      </div>
+    </div>`;
+  }).join('') || '<div style="color:var(--text3);font-size:13px;padding:8px 0;">Nenhum dado ainda</div>';
+  document.getElementById('sat-motivos-list').innerHTML = areasHtml;
 
-  // Elogios
-  const elogios = satPesquisasCache.filter(p => p.elogio && p.elogio.trim()).slice(0,5);
-  document.getElementById('sat-elogios-list').innerHTML = elogios.length
-    ? elogios.map(p => `<div class="sat-elogio-card">"${p.elogio}"<div class="sat-elogio-meta">— ${p.nome}</div></div>`).join('')
-    : '<div style="color:var(--text3);font-size:13px;">Nenhum elogio ainda</div>';
+  // ── Frequência de visitas ──
+  const freqHtml = Object.entries(freq).sort((a,b)=>b[1]-a[1]).map(([f,n]) => {
+    const pct = Math.round(n/total*100);
+    return `<div class="sat-motivo-row">
+      <span style="font-size:13px;color:var(--text2);">${f}</span>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div style="width:80px;height:6px;background:var(--surface2);border-radius:3px;overflow:hidden;">
+          <div style="width:${pct}%;height:100%;background:var(--gold);border-radius:3px;"></div>
+        </div>
+        <span style="font-family:'Playfair Display',serif;font-weight:700;font-size:13px;color:var(--gold2);width:28px;">${n}</span>
+        <span style="font-size:11px;color:var(--text3);">${pct}%</span>
+      </div>
+    </div>`;
+  }).join('') || '<div style="color:var(--text3);font-size:13px;padding:8px 0;">Nenhum dado ainda</div>';
 
-  // Intenção de retorno
-  const ret = {sim:0,talvez:0,nao:0};
-  satPesquisasCache.forEach(p => { if(p.voltaria) ret[p.voltaria] = (ret[p.voltaria]||0)+1; });
-  const ind = {sim:0,talvez:0,nao:0};
-  satPesquisasCache.forEach(p => { if(p.indicaria) ind[p.indicaria] = (ind[p.indicaria]||0)+1; });
-  document.getElementById('sat-retorno-list').innerHTML = `
-    <div class="rel-row"><span class="rel-label">Voltaria — Sim</span><span class="rel-val green">${ret.sim} (${Math.round((ret.sim||0)/total*100)}%)</span></div>
-    <div class="rel-row"><span class="rel-label">Voltaria — Talvez</span><span class="rel-val warn">${ret.talvez||0}</span></div>
-    <div class="rel-row"><span class="rel-label">Voltaria — Não</span><span class="rel-val red">${ret.nao||0}</span></div>
-    <div class="rel-row"><span class="rel-label">Indicaria — Sim</span><span class="rel-val green">${ind.sim} (${Math.round((ind.sim||0)/total*100)}%)</span></div>
-    <div class="rel-row"><span class="rel-label">Indicaria — Talvez</span><span class="rel-val warn">${ind.talvez||0}</span></div>
-    <div class="rel-row"><span class="rel-label">Indicaria — Não</span><span class="rel-val red">${ind.nao||0}</span></div>`;
+  // ── Sugestões recentes ──
+  const sugestoes = satPesquisasCache.filter(p => p.sugestao && p.sugestao.trim()).slice(0,5);
+  const sugestoesHtml = sugestoes.length
+    ? sugestoes.map(p => `<div class="sat-elogio-card">"${p.sugestao}"<div class="sat-elogio-meta">— ${p.nome} · nota ${p.notaInicial}/5</div></div>`).join('')
+    : '<div style="color:var(--text3);font-size:13px;">Nenhuma sugestão ainda</div>';
+
+  // ── Intenção detalhada ──
+  const retornoHtml = `
+    <div class="rel-row"><span class="rel-label">Voltariam — Sim</span><span class="rel-val green">${voltaria.sim||0} (${pctVoltaria}%)</span></div>
+    <div class="rel-row"><span class="rel-label">Voltariam — Talvez</span><span class="rel-val warn">${voltaria.talvez||0} (${Math.round((voltaria.talvez||0)/total*100)}%)</span></div>
+    <div class="rel-row"><span class="rel-label">Voltariam — Não</span><span class="rel-val red">${voltaria.nao||0} (${Math.round((voltaria.nao||0)/total*100)}%)</span></div>
+    <div style="height:8px;"></div>
+    <div class="rel-row"><span class="rel-label">Indicariam — Sim</span><span class="rel-val green">${indicaria.sim||0} (${pctIndicaria}%)</span></div>
+    <div class="rel-row"><span class="rel-label">Indicariam — Talvez</span><span class="rel-val warn">${indicaria.talvez||0} (${Math.round((indicaria.talvez||0)/total*100)}%)</span></div>
+    <div class="rel-row"><span class="rel-label">Indicariam — Não</span><span class="rel-val red">${indicaria.nao||0} (${Math.round((indicaria.nao||0)/total*100)}%)</span></div>`;
+
+  // Renderiza nas divs do HTML
+  document.getElementById('sat-elogios-list').innerHTML  = sugestoesHtml;
+  document.getElementById('sat-retorno-list').innerHTML  = retornoHtml;
+
+  // Títulos definidos no HTML
+
+  // Injeta frequência na div correta
+  const freqEl = document.getElementById('sat-freq-list');
+  if (freqEl) freqEl.innerHTML = freqHtml;
+
 }
+
 
 // ── Ver detalhe pesquisa ──
 window.verDetalhe = id => {
@@ -1396,177 +1481,286 @@ window.verDetalhe = id => {
 // PESQUISA — MODO CLIENTE
 // ══════════════════════════════════════════
 
-// ── PERGUNTAS ADAPTATIVAS — 6 etapas ──
-// Etapa 0: Nota geral (estrelas) → define caminho baixo/medio/alto
-// Etapas 1-5: variam por caminho cobrindo comida, atendimento, espera, ambiente, custo e retorno
+// ══════════════════════════════════════════
+// ÁRVORE DE DECISÃO — PESQUISA PRIMUS
+// P1: nota geral → define caminho
+// P2: problema/destaque principal
+// P3: aprofundamento condicional por área escolhida em P2
+// P4: nota comida (estrelas)
+// P5: nota atendimento (estrelas)
+// P6: frequência de visitas
+// P7: voltaria/indicaria + texto livre
+// ══════════════════════════════════════════
 
 const PERGUNTAS = {
 
-  // ── PERGUNTA 1 — igual para todos ──
+  // ── P1 — igual para todos ──
   p1: {
     tipo: 'estrelas',
     texto: 'Como foi sua experiência hoje na Primus?',
     chave: 'notaInicial'
   },
 
-  // ══ CAMINHO BAIXO (nota 1-2) ══
-  baixo_p2: {
-    tipo: 'opcoes',
-    texto: 'Qual foi o principal problema hoje?',
-    chave: 'motivoPrincipal',
+  // ══════════════════════════════
+  // CAMINHO INSATISFEITO (1-2)
+  // ══════════════════════════════
+  ins_p2: {
+    tipo: 'opcoes', chave: 'areaPrincipal',
+    texto: 'Qual foi o maior problema hoje?',
     opcoes: [
-      { emoji:'🤝', label:'Atendimento da equipe', valor:'atendimento' },
-      { emoji:'⏱', label:'Tempo de espera', valor:'tempo de espera' },
-      { emoji:'🍽', label:'Comida ou cardápio', valor:'comida' },
-      { emoji:'🏠', label:'Ambiente ou espaço', valor:'ambiente' },
-      { emoji:'💰', label:'Preço x qualidade', valor:'custo x benefício' },
-      { emoji:'📝', label:'Outro', valor:'outro' }
+      { emoji:'🤝', label:'Atendimento',      valor:'atendimento' },
+      { emoji:'⏱', label:'Tempo de espera',  valor:'espera'      },
+      { emoji:'🍽', label:'Comida',           valor:'comida'      },
+      { emoji:'🏠', label:'Ambiente',         valor:'ambiente'    },
+      { emoji:'💰', label:'Preço',            valor:'preco'       }
     ]
   },
-  baixo_p3: {
-    tipo: 'estrelas_aspecto',
-    texto: 'Como você avalia a comida e o cardápio?',
-    chave: 'notaComida',
-    subtexto: 'Sabor, apresentação e variedade'
-  },
-  baixo_p4: {
-    tipo: 'estrelas_aspecto',
-    texto: 'Como você avalia o atendimento da equipe?',
-    chave: 'notaAtendimento',
-    subtexto: 'Simpatia, atenção e agilidade'
-  },
-  baixo_p5: {
-    tipo: 'opcoes',
-    texto: 'O preço cobrado foi justo pelo que recebeu?',
-    chave: 'avaliacaoCusto',
+  // P3 ramifica por área escolhida em P2
+  ins_p3_atendimento: {
+    tipo: 'opcoes', chave: 'motivoDetalhe',
+    texto: 'O que faltou no atendimento?',
     opcoes: [
-      { emoji:'✅', label:'Sim, valeu cada centavo', valor:'justo' },
-      { emoji:'😐', label:'Mais ou menos', valor:'razoável' },
-      { emoji:'❌', label:'Não, caro demais', valor:'caro' }
+      { emoji:'😊', label:'Atenção e simpatia',        valor:'atenção e simpatia'        },
+      { emoji:'⚡', label:'Agilidade',                 valor:'agilidade'                 },
+      { emoji:'📋', label:'Conhecimento do cardápio',  valor:'conhecimento do cardápio'  },
+      { emoji:'🗂', label:'Organização da equipe',     valor:'organização'               }
     ]
   },
-  baixo_p6: {
-    tipo: 'opcoes',
+  ins_p3_espera: {
+    tipo: 'opcoes', chave: 'motivoDetalhe',
+    texto: 'Quanto tempo você esperou?',
+    opcoes: [
+      { emoji:'✅', label:'Menos de 15 min',  valor:'menos de 15 min'  },
+      { emoji:'🟡', label:'15 a 30 min',      valor:'15 a 30 min'      },
+      { emoji:'🟠', label:'30 a 60 min',      valor:'30 a 60 min'      },
+      { emoji:'🔴', label:'Mais de 1 hora',   valor:'mais de 1 hora'   }
+    ]
+  },
+  ins_p3_comida: {
+    tipo: 'opcoes', chave: 'motivoDetalhe',
+    texto: 'O que decepcionou na comida?',
+    opcoes: [
+      { emoji:'😔', label:'Sabor',                    valor:'sabor'                    },
+      { emoji:'🌡', label:'Temperatura',              valor:'temperatura'              },
+      { emoji:'🍽', label:'Apresentação',             valor:'apresentação'             },
+      { emoji:'📏', label:'Porção pequena',           valor:'porção pequena'           },
+      { emoji:'⏳', label:'Demorou muito para sair',  valor:'demorou para sair'        }
+    ]
+  },
+  ins_p3_ambiente: {
+    tipo: 'opcoes', chave: 'motivoDetalhe',
+    texto: 'O que incomodou no ambiente?',
+    opcoes: [
+      { emoji:'🔊', label:'Barulho',     valor:'barulho'     },
+      { emoji:'🧹', label:'Limpeza',    valor:'limpeza'     },
+      { emoji:'🪑', label:'Conforto',   valor:'conforto'    },
+      { emoji:'💡', label:'Iluminação', valor:'iluminação'  }
+    ]
+  },
+  ins_p3_preco: {
+    tipo: 'opcoes', chave: 'motivoDetalhe',
+    texto: 'Como avalia o custo x benefício?',
+    opcoes: [
+      { emoji:'💸', label:'Muito caro pelo que oferece',       valor:'muito caro'              },
+      { emoji:'😐', label:'Preço ok, mas qualidade baixa',     valor:'preço ok qualidade baixa'},
+      { emoji:'🤔', label:'Esperava mais pelo valor pago',     valor:'esperava mais'           }
+    ]
+  },
+  ins_p4: { tipo:'estrelas_aspecto', chave:'notaComida',      texto:'Como avalia a comida e o cardápio?',    subtexto:'Sabor, apresentação e variedade' },
+  ins_p5: { tipo:'estrelas_aspecto', chave:'notaAtendimento', texto:'Como avalia o atendimento da equipe?',  subtexto:'Simpatia, atenção e agilidade'   },
+  ins_p6: {
+    tipo: 'opcoes', chave: 'frequenciaVisitas',
+    texto: 'Com que frequência você vem à Primus?',
+    opcoes: [
+      { emoji:'🆕', label:'É minha primeira vez',       valor:'primeira vez'    },
+      { emoji:'📅', label:'2 a 3 vezes por mês',        valor:'2-3x por mês'    },
+      { emoji:'⭐', label:'Toda semana',                 valor:'toda semana'     },
+      { emoji:'🕐', label:'Menos de 1 vez por mês',     valor:'menos de 1x/mês' }
+    ]
+  },
+  ins_p7: {
+    tipo: 'opcoes_texto', chave: 'voltaria', chaveTexto: 'sugestao',
     texto: 'Você voltaria à Primus?',
-    chave: 'voltaria',
+    textoPlaceholder: 'Alguma dica ou sugestão para melhorarmos? (opcional)',
     opcoes: [
-      { emoji:'✅', label:'Sim, com certeza', valor:'sim' },
-      { emoji:'🤔', label:'Talvez', valor:'talvez' },
-      { emoji:'❌', label:'Não voltaria', valor:'nao' }
+      { emoji:'✅', label:'Sim, com certeza',  valor:'sim'    },
+      { emoji:'🤔', label:'Talvez',            valor:'talvez' },
+      { emoji:'❌', label:'Não voltaria',      valor:'nao'    }
     ]
   },
 
-  // ══ CAMINHO MÉDIO (nota 3) ══
-  medio_p2: {
-    tipo: 'opcoes',
-    texto: 'O que poderia ter sido melhor?',
-    chave: 'motivoPrincipal',
+  // ══════════════════════════════
+  // CAMINHO REGULAR (3)
+  // ══════════════════════════════
+  reg_p2: {
+    tipo: 'opcoes', chave: 'areaPrincipal',
+    texto: 'O que ficou a desejar hoje?',
     opcoes: [
-      { emoji:'🤝', label:'Atendimento mais atencioso', valor:'atendimento' },
-      { emoji:'⏱', label:'Menos tempo de espera', valor:'tempo de espera' },
-      { emoji:'🍽', label:'Comida mais saborosa', valor:'comida' },
-      { emoji:'🏠', label:'Ambiente mais agradável', valor:'ambiente' },
-      { emoji:'💰', label:'Melhor custo x benefício', valor:'custo x benefício' },
-      { emoji:'📝', label:'Outro', valor:'outro' }
+      { emoji:'🤝', label:'Atendimento',      valor:'atendimento' },
+      { emoji:'⏱', label:'Tempo de espera',  valor:'espera'      },
+      { emoji:'🍽', label:'Comida',           valor:'comida'      },
+      { emoji:'🏠', label:'Ambiente',         valor:'ambiente'    },
+      { emoji:'💰', label:'Preço',            valor:'preco'       }
     ]
   },
-  medio_p3: {
-    tipo: 'estrelas_aspecto',
-    texto: 'Como você avalia a comida e o cardápio?',
-    chave: 'notaComida',
-    subtexto: 'Sabor, apresentação e variedade'
-  },
-  medio_p4: {
-    tipo: 'estrelas_aspecto',
-    texto: 'Como você avalia o atendimento da equipe?',
-    chave: 'notaAtendimento',
-    subtexto: 'Simpatia, atenção e agilidade'
-  },
-  medio_p5: {
-    tipo: 'opcoes',
-    texto: 'O preço cobrado foi justo pelo que recebeu?',
-    chave: 'avaliacaoCusto',
+  // P3 reutiliza os mesmos sub-nós de insatisfeito
+  reg_p3_atendimento: 'ins_p3_atendimento',
+  reg_p3_espera:      'ins_p3_espera',
+  reg_p3_comida:      'ins_p3_comida',
+  reg_p3_ambiente:    'ins_p3_ambiente',
+  reg_p3_preco:       'ins_p3_preco',
+
+  reg_p4: { tipo:'estrelas_aspecto', chave:'notaComida',      texto:'Como avalia a comida e o cardápio?',   subtexto:'Sabor, apresentação e variedade' },
+  reg_p5: { tipo:'estrelas_aspecto', chave:'notaAtendimento', texto:'Como avalia o atendimento da equipe?', subtexto:'Simpatia, atenção e agilidade'   },
+  reg_p6: {
+    tipo: 'opcoes', chave: 'frequenciaVisitas',
+    texto: 'Com que frequência você vem à Primus?',
     opcoes: [
-      { emoji:'✅', label:'Sim, valeu cada centavo', valor:'justo' },
-      { emoji:'😐', label:'Mais ou menos', valor:'razoável' },
-      { emoji:'❌', label:'Não, caro demais', valor:'caro' }
+      { emoji:'🆕', label:'É minha primeira vez',    valor:'primeira vez'    },
+      { emoji:'📅', label:'2 a 3 vezes por mês',     valor:'2-3x por mês'    },
+      { emoji:'⭐', label:'Toda semana',              valor:'toda semana'     },
+      { emoji:'🕐', label:'Menos de 1 vez por mês',  valor:'menos de 1x/mês' }
     ]
   },
-  medio_p6: {
-    tipo: 'texto',
-    texto: 'Como poderíamos melhorar sua próxima visita? (opcional)',
-    chave: 'comentario',
-    opcional: true
+  reg_p7: {
+    tipo: 'opcoes_texto', chave: 'voltaria', chaveTexto: 'sugestao',
+    texto: 'O que faria você dar nota 5 na próxima visita?',
+    textoPlaceholder: 'Alguma dica ou sugestão para melhorarmos? (opcional)',
+    opcoes: [
+      { emoji:'🍽', label:'Comida melhor',            valor:'comida melhor'        },
+      { emoji:'🤝', label:'Atendimento mais ágil',    valor:'atendimento mais ágil'},
+      { emoji:'⏱', label:'Menos espera',             valor:'menos espera'         },
+      { emoji:'🏠', label:'Ambiente mais agradável',  valor:'ambiente melhor'      },
+      { emoji:'💰', label:'Preço menor',              valor:'preço menor'          }
+    ]
   },
 
-  // ══ CAMINHO ALTO (nota 4-5) ══
-  alto_p2: {
-    tipo: 'opcoes',
+  // ══════════════════════════════
+  // CAMINHO SATISFEITO (4-5)
+  // ══════════════════════════════
+  sat_p2: {
+    tipo: 'opcoes', chave: 'areaPrincipal',
     texto: 'O que mais se destacou hoje?',
-    chave: 'motivoPrincipal',
     opcoes: [
-      { emoji:'🤝', label:'Atendimento da equipe', valor:'atendimento' },
-      { emoji:'🍽', label:'Comida e cardápio', valor:'comida' },
-      { emoji:'🏠', label:'Ambiente e espaço', valor:'ambiente' },
-      { emoji:'⚡', label:'Rapidez no atendimento', valor:'rapidez' },
-      { emoji:'💰', label:'Ótimo custo x benefício', valor:'custo x benefício' },
-      { emoji:'🌟', label:'Tudo foi perfeito!', valor:'tudo' }
+      { emoji:'🤝', label:'Atendimento da equipe',    valor:'atendimento'     },
+      { emoji:'🍽', label:'Comida e cardápio',        valor:'comida'          },
+      { emoji:'🏠', label:'Ambiente e espaço',        valor:'ambiente'        },
+      { emoji:'⚡', label:'Rapidez no atendimento',  valor:'espera'          },
+      { emoji:'💰', label:'Ótimo custo x benefício', valor:'preco'           },
+      { emoji:'🌟', label:'Tudo foi perfeito!',       valor:'tudo'            }
     ]
   },
-  alto_p3: {
-    tipo: 'estrelas_aspecto',
-    texto: 'Como você avalia a comida e o cardápio?',
-    chave: 'notaComida',
-    subtexto: 'Sabor, apresentação e variedade'
+  sat_p3_atendimento: {
+    tipo: 'opcoes', chave: 'motivoDetalhe',
+    texto: 'O que mais gostou no atendimento?',
+    opcoes: [
+      { emoji:'😊', label:'Simpatia da equipe',        valor:'simpatia'                },
+      { emoji:'⚡', label:'Agilidade',                 valor:'agilidade'               },
+      { emoji:'💚', label:'Atenção e cuidado',         valor:'atenção e cuidado'       },
+      { emoji:'📋', label:'Conhecimento do cardápio',  valor:'conhecimento cardápio'   }
+    ]
   },
-  alto_p4: {
-    tipo: 'estrelas_aspecto',
-    texto: 'Como você avalia o atendimento da equipe?',
-    chave: 'notaAtendimento',
-    subtexto: 'Simpatia, atenção e agilidade'
+  sat_p3_espera: {
+    tipo: 'opcoes', chave: 'motivoDetalhe',
+    texto: 'Como foi o tempo de espera?',
+    opcoes: [
+      { emoji:'🚀', label:'Muito rápido, surpreendeu!',    valor:'muito rápido'          },
+      { emoji:'✅', label:'Dentro do esperado',            valor:'dentro do esperado'    },
+      { emoji:'🙂', label:'Um pouco longo, mas valeu',     valor:'longo mas valeu'       }
+    ]
   },
-  alto_p5: {
-    tipo: 'opcoes',
+  sat_p3_comida: {
+    tipo: 'opcoes', chave: 'motivoDetalhe',
+    texto: 'O que mais gostou na comida?',
+    opcoes: [
+      { emoji:'😋', label:'Sabor único',             valor:'sabor'           },
+      { emoji:'✨', label:'Apresentação linda',      valor:'apresentação'    },
+      { emoji:'📖', label:'Variedade do cardápio',   valor:'variedade'       },
+      { emoji:'🍗', label:'Porção generosa',         valor:'porção generosa' }
+    ]
+  },
+  sat_p3_ambiente: {
+    tipo: 'opcoes', chave: 'motivoDetalhe',
+    texto: 'O que agradou no ambiente?',
+    opcoes: [
+      { emoji:'✨', label:'Organização e limpeza', valor:'organização e limpeza' },
+      { emoji:'🪑', label:'Conforto',              valor:'conforto'              },
+      { emoji:'🎨', label:'Decoração',             valor:'decoração'             },
+      { emoji:'📍', label:'Localização',           valor:'localização'           }
+    ]
+  },
+  sat_p3_preco: {
+    tipo: 'opcoes', chave: 'motivoDetalhe',
+    texto: 'Como avalia o custo x benefício?',
+    opcoes: [
+      { emoji:'🏆', label:'Excelente — valeu muito',      valor:'excelente custo benefício' },
+      { emoji:'✅', label:'Bom — justo pelo que oferece', valor:'bom custo benefício'       }
+    ]
+  },
+  sat_p3_tudo: {
+    tipo: 'opcoes', chave: 'motivoDetalhe',
+    texto: 'Incrível! O que mais marcou sua visita?',
+    opcoes: [
+      { emoji:'🤝', label:'A equipe maravilhosa',    valor:'equipe'    },
+      { emoji:'🍽', label:'A comida excepcional',    valor:'comida'    },
+      { emoji:'🏠', label:'O ambiente acolhedor',    valor:'ambiente'  },
+      { emoji:'⚡', label:'O atendimento rápido',    valor:'rapidez'   },
+      { emoji:'💰', label:'O preço justo',           valor:'preço'     }
+    ]
+  },
+  sat_p4: { tipo:'estrelas_aspecto', chave:'notaComida',      texto:'Como avalia a comida e o cardápio?',   subtexto:'Sabor, apresentação e variedade' },
+  sat_p5: { tipo:'estrelas_aspecto', chave:'notaAtendimento', texto:'Como avalia o atendimento da equipe?', subtexto:'Simpatia, atenção e agilidade'   },
+  sat_p6: {
+    tipo: 'opcoes', chave: 'frequenciaVisitas',
+    texto: 'Com que frequência você vem à Primus?',
+    opcoes: [
+      { emoji:'🆕', label:'É minha primeira vez',    valor:'primeira vez'    },
+      { emoji:'📅', label:'2 a 3 vezes por mês',     valor:'2-3x por mês'    },
+      { emoji:'⭐', label:'Toda semana',              valor:'toda semana'     },
+      { emoji:'🕐', label:'Menos de 1 vez por mês',  valor:'menos de 1x/mês' }
+    ]
+  },
+  sat_p7: {
+    tipo: 'opcoes_texto', chave: 'indicaria', chaveTexto: 'sugestao',
     texto: 'Você indicaria a Primus para amigos e família?',
-    chave: 'indicaria',
+    textoPlaceholder: 'Quer deixar alguma dica ou sugestão? (opcional) 💚',
     opcoes: [
-      { emoji:'✅', label:'Sim, com certeza!', valor:'sim' },
-      { emoji:'🤔', label:'Talvez', valor:'talvez' },
-      { emoji:'❌', label:'Não indicaria', valor:'nao' }
+      { emoji:'✅', label:'Sim, com certeza!',  valor:'sim'    },
+      { emoji:'🤔', label:'Talvez',             valor:'talvez' },
+      { emoji:'❌', label:'Não indicaria',      valor:'nao'    }
     ]
-  },
-  alto_p6: {
-    tipo: 'texto',
-    texto: 'Quer deixar um elogio ou sugestão? 💚 (opcional)',
-    chave: 'elogio',
-    opcional: true
   }
 };
 
-function getSequencia(caminho) {
-  if (caminho === 'baixo') return ['p1','baixo_p2','baixo_p3','baixo_p4','baixo_p5','baixo_p6'];
-  if (caminho === 'medio') return ['p1','medio_p2','medio_p3','medio_p4','medio_p5','medio_p6'];
-  if (caminho === 'alto')  return ['p1','alto_p2','alto_p3','alto_p4','alto_p5','alto_p6'];
-  return ['p1'];
+// Resolve referências de alias (reg_p3_xxx aponta para ins_p3_xxx)
+function resolverPergunta(chave) {
+  const p = PERGUNTAS[chave];
+  if (typeof p === 'string') return PERGUNTAS[p]; // alias
+  return p;
 }
 
-window.iniciarPesquisa = async (filaDocId, clienteId, nome, tel) => {
-  // Verifica se já respondeu
-  const existente = satPesquisasCache.find(p => p.filaDocId === filaDocId);
-  if (existente) { toast('⚠️ Pesquisa já respondida para este atendimento'); return; }
+// Retorna a sequência de chaves para o caminho e área escolhida
+function getSequencia(caminho, areaPrincipal) {
+  const prefixo = caminho === 'baixo' ? 'ins' : caminho === 'medio' ? 'reg' : 'sat';
+  // P3 depende da área escolhida em P2
+  const area = areaPrincipal || 'atendimento';
+  const p3chave = `${prefixo}_p3_${area}`;
+  // Se não existe sub-nó para essa área, usa atendimento como fallback
+  const p3 = PERGUNTAS[p3chave] || PERGUNTAS[`${prefixo}_p3_atendimento`];
+  return [
+    'p1',
+    `${prefixo}_p2`,
+    p3chave,
+    `${prefixo}_p4`,
+    `${prefixo}_p5`,
+    `${prefixo}_p6`,
+    `${prefixo}_p7`
+  ];
+}
 
-  mcEstado = {
-    filaDocId, clienteId, nome, tel,
-    etapa: 0, notaInicial: null, caminho: null,
-    respostas: {}, perguntasFeitas: ['p1']
-  };
-
-  document.getElementById('modo-cliente').classList.add('open');
-  renderMcLGPD();
-};
 
 function renderMcEtapa() {
-  const seq      = getSequencia(mcEstado.caminho);
+  const seq      = getSequencia(mcEstado.caminho, mcEstado.respostas.areaPrincipal);
   const chaveAtual = seq[mcEstado.etapa];
   const pergunta = PERGUNTAS[chaveAtual];
   const total    = seq.length;
@@ -1625,6 +1819,20 @@ function renderMcEtapa() {
     footer.innerHTML = `<button class="mc-btn-prox" id="mc-btn-prox" onclick="proximaPergunta()">${btnLabel}</button>`;
     if (pergunta.opcional) document.getElementById('mc-btn-prox').disabled = false;
   }
+  else if (pergunta.tipo === 'opcoes_texto') {
+    // Múltipla escolha + campo de texto opcional na mesma tela
+    body.innerHTML = progressHtml + `
+      <div class="mc-pergunta">${pergunta.texto}</div>
+      <div class="mc-opcoes" style="margin-bottom:16px;">
+        ${pergunta.opcoes.map(o => `
+          <button class="mc-opcao" onclick="selecionarOpcao('${o.valor}',this,'${pergunta.chave}')" data-val="${o.valor}">
+            <span class="mc-opcao-emoji">${o.emoji}</span>${o.label}
+          </button>`).join('')}
+      </div>
+      <div style="font-size:12px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">💬 Dica ou sugestão (opcional)</div>
+      <textarea class="mc-textarea" id="mc-texto-opcional" placeholder="${pergunta.textoPlaceholder||'Escreva aqui...'}" style="min-height:80px;"></textarea>`;
+    footer.innerHTML = `<button class="mc-btn-prox" id="mc-btn-prox" onclick="proximaPergunta()" disabled>${btnLabel}</button>`;
+  }
 }
 
 window.selecionarEstrela = n => {
@@ -1642,7 +1850,7 @@ window.selecionarOpcao = (valor, el, chave) => {
   document.querySelectorAll('.mc-opcao').forEach(b => b.classList.remove('sel'));
   el.classList.add('sel');
   // Usa chave passada como parâmetro ou pega da pergunta atual
-  const seq = getSequencia(mcEstado.caminho);
+  const seq = getSequencia(mcEstado.caminho, mcEstado.respostas.areaPrincipal);
   const chaveReal = chave || PERGUNTAS[seq[mcEstado.etapa]]?.chave;
   if (chaveReal) mcEstado.respostas[chaveReal] = valor;
   document.getElementById('mc-btn-prox').disabled = false;
@@ -1662,7 +1870,7 @@ window.selecionarEstrelasAspecto = (n, chave) => {
 
 window.mcTextoInput = () => {
   const val = document.getElementById('mc-texto').value.trim();
-  const seq = getSequencia(mcEstado.caminho);
+  const seq = getSequencia(mcEstado.caminho, mcEstado.respostas.areaPrincipal);
   const chave = PERGUNTAS[seq[mcEstado.etapa]].chave;
   mcEstado.respostas[chave] = val;
   document.getElementById('mc-btn-prox').disabled = false;
@@ -1675,13 +1883,18 @@ window.proximaPergunta = async () => {
     mcEstado.caminho = nota <= 2 ? 'baixo' : nota === 3 ? 'medio' : 'alto';
   }
 
-  const seq      = getSequencia(mcEstado.caminho);
+  const seq      = getSequencia(mcEstado.caminho, mcEstado.respostas.areaPrincipal);
   const pergAtual = PERGUNTAS[seq[mcEstado.etapa]];
 
   // Salva campo texto antes de avançar
   if (pergAtual && pergAtual.tipo === 'texto') {
     const el = document.getElementById('mc-texto');
     if (el) mcEstado.respostas[pergAtual.chave] = el.value.trim();
+  }
+  // Salva texto opcional do opcoes_texto
+  if (pergAtual && pergAtual.tipo === 'opcoes_texto') {
+    const el = document.getElementById('mc-texto-opcional');
+    if (el && el.value.trim()) mcEstado.respostas[pergAtual.chaveTexto] = el.value.trim();
   }
 
   mcEstado.etapa++;
@@ -1725,7 +1938,8 @@ async function salvarPesquisa() {
     indicaria:       mcEstado.respostas.indicaria       || null,
     // Texto livre
     comentario:      mcEstado.respostas.comentario      || null,
-    elogio:          mcEstado.respostas.elogio          || null,
+    elogio:            mcEstado.respostas.elogio            || null,
+    frequenciaVisitas: mcEstado.respostas.frequenciaVisitas || null,
     pesquisaRespondida: true
   };
   await setDoc(doc(db, 'pesquisas_satisfacao', pesquisaId), dados);
