@@ -461,7 +461,6 @@
 
   <div class="tabs">
     <div class="tab active" onclick="goTab('fila')" data-tab="fila"><span class="tab-icon">🎟️</span>Fila</div>
-    <div class="tab" onclick="goTab('chamada')" data-tab="chamada"><span class="tab-icon">📣</span>Chamada</div>
     <div class="tab" onclick="goTab('satisfacao')" data-tab="satisfacao"><span class="tab-icon">⭐</span>Satisfação</div>
     <div class="tab" onclick="goTab('parquinho')" data-tab="parquinho"><span class="tab-icon">🎠</span>Parquinho</div>
     <div class="tab gestor-only" onclick="goTab('clientes')" data-tab="clientes" style="display:none"><span class="tab-icon">👥</span>Clientes</div>
@@ -484,12 +483,7 @@
     </div>
 
     <!-- CHAMADA -->
-    <div class="section" id="sec-chamada">
-      <div class="sec-hdr"><div class="sec-hdr-text">Chamada</div><div class="sec-hdr-line"></div></div>
-      <div id="chamada-list"></div>
-    </div>
-
-    <!-- CLIENTES -->
+    <div class="s    <!-- CLIENTES -->
     <div class="section" id="sec-clientes">
       <div class="sec-hdr"><div class="sec-hdr-text">Clientes</div><div class="sec-hdr-line"></div></div>
       <div class="field" style="margin-bottom:12px;"><input type="text" id="busca-cliente" placeholder="🔍 Buscar por nome ou telefone…" oninput="buscarClientes()"></div>
@@ -806,9 +800,18 @@ window.doLogin = () => {
   const satGestor = document.getElementById('sat-gestor-area');
   if (satGestor) satGestor.style.display = isGestor ? 'block' : 'none';
 
-  // Aba Parquinho visível para monitora e gestor; oculta para recepção
-  const tabPq = document.querySelector('[data-tab="parquinho"]');
-  if (tabPq) tabPq.style.display = (isGestor || isMonitora) ? '' : 'none';
+  // Visibilidade das abas por perfil
+  document.querySelectorAll('.tab').forEach(tab => {
+    const t = tab.dataset.tab;
+    let visivel = false;
+    if (isGestor)   visivel = true; // gestor vê tudo (gestor-only já controlado acima)
+    if (isMonitora) visivel = (t === 'parquinho'); // monitora só vê parquinho
+    if (!isGestor && !isMonitora) {
+      // recepção: fila + satisfação + parquinho não (parquinho só monitora/gestor)
+      visivel = ['fila', 'satisfacao'].includes(t);
+    }
+    tab.style.display = visivel ? '' : 'none';
+  });
 
   // Sub-tab Relatório do parquinho — só gestor
   const pqTabRel = document.getElementById('pqtab-relatorio');
@@ -857,7 +860,6 @@ function iniciarListeners() {
       else { c._pos = null; }
     });
     renderFila();
-    renderChamada();
     setSyncDot(true);
   }, () => setSyncDot(false));
 }
@@ -920,7 +922,6 @@ async function resetarFila() {
     // Limpa cache local
     filaCache = [];
     renderFila();
-    renderChamada();
     toast('🌙 Fila do dia encerrada e arquivada');
     console.log(`Fila resetada e arquivada em historico/${dataStr}`);
     // Reseta o Parquinho junto
@@ -940,7 +941,7 @@ function startClock() {
   if (clockInterval)   clearInterval(clockInterval);
   if (refreshInterval) clearInterval(refreshInterval);
   clockInterval   = setInterval(tick, 30000);
-  refreshInterval = setInterval(() => { renderFila(); renderChamada(); }, 60000);
+  refreshInterval = setInterval(() => { renderFila(); }, 60000);
 }
 
 // ── TABS ──
@@ -1229,72 +1230,6 @@ function enviarWhatsApp(c, modelo) {
 }
 
 // ── CHAMADA ──
-function renderChamada() {
-  const list = document.getElementById('chamada-list');
-  const tol  = configCache.tolerancia || 5;
-  const aguardando     = filaCache.filter(c => c.status === 'aguardando');
-  const chamadosOk     = filaCache.filter(c => c.status === 'chamado' && Math.floor((Date.now() - ts2ms(c.chamadoEm)) / 60000) < tol);
-  const chamadosVencidos = filaCache.filter(c => c.status === 'chamado' && Math.floor((Date.now() - ts2ms(c.chamadoEm)) / 60000) >= tol);
-  let html = '';
-
-  if (aguardando.length) {
-    const pr = aguardando[0];
-    html += `<div class="card" style="margin-bottom:12px;border-left:4px solid var(--gold);">
-      <div class="card-title" style="margin-bottom:10px;">Próximo da Fila</div>
-      <div style="display:flex;align-items:center;gap:12px;">
-        <div style="width:46px;height:46px;border-radius:12px;background:var(--wine);display:flex;align-items:center;justify-content:center;font-family:'Playfair Display',serif;font-weight:900;font-size:20px;color:#fff;">${pr._pos || 1}</div>
-        <div style="flex:1;">
-          <div style="font-weight:600;font-size:17px;">${pr.nome}</div>
-          <div style="font-size:13px;color:var(--text2);">👥 ${pr.pessoas} pessoas · ⏱ ${tempoEspera(pr.horario)}</div>
-        </div>
-      </div>
-      <div style="margin-top:12px;display:flex;gap:8px;">
-        <button class="btn btn-primary" onclick="chamarCliente('${pr.docId}')">📣 Chamar via WhatsApp</button>
-        <button class="btn btn-green btn-sm" onclick="marcarAtendido('${pr.docId}')">✅ Atendido</button>
-      </div>
-    </div>`;
-  }
-
-  if (chamadosVencidos.length) {
-    html += `<div style="background:var(--warn-dim);border:1.5px solid var(--warn);border-radius:var(--radius);padding:10px 14px;margin-bottom:10px;">
-      <div style="font-family:'Playfair Display',serif;font-size:13px;font-weight:700;color:var(--warn);margin-bottom:8px;">⚠️ Tolerância Excedida (${chamadosVencidos.length})</div>`;
-    chamadosVencidos.forEach(c => {
-      const diff = Math.floor((Date.now() - ts2ms(c.chamadoEm)) / 60000);
-      html += `<div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">
-        <div><div style="font-weight:600;">${c.nome}</div><div style="font-size:12px;color:var(--warn);">${diff} min · ${c.qtdChamadas || 1} chamada(s)</div></div>
-        <div style="display:flex;gap:5px;">
-          <button class="btn btn-warn btn-sm" onclick="remarcarCliente('${c.docId}')">📣 2ª</button>
-          <button class="btn btn-ghost btn-sm" onclick="marcarStatus('${c.docId}','ausente')">🚫</button>
-          <button class="btn btn-green btn-sm" onclick="marcarAtendido('${c.docId}')">✅</button>
-        </div>
-      </div>`;
-    });
-    html += '</div>';
-  }
-
-  if (chamadosOk.length) {
-    html += `<div style="font-family:'Playfair Display',serif;font-size:12px;font-weight:700;color:var(--text3);margin:4px 0 8px;text-transform:uppercase;letter-spacing:.5px;">Aguardando Comparecimento (${chamadosOk.length})</div>`;
-    chamadosOk.forEach(c => {
-      const diff = Math.floor((Date.now() - ts2ms(c.chamadoEm)) / 60000);
-      html += `<div class="card" style="border-color:rgba(30,79,173,0.3);margin-bottom:8px;">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
-          <div style="font-size:22px;">📣</div>
-          <div style="flex:1;"><div style="font-weight:600;">${c.nome}</div>
-          <div style="font-size:12px;color:var(--text2);">⏳ ${diff} min · ${c.qtdChamadas || 1} chamada(s) · WPP: ${c.ultimoWppStatus || '—'}</div></div>
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          <button class="btn btn-green btn-sm" onclick="marcarAtendido('${c.docId}')">✅ Atendido</button>
-          <button class="btn btn-warn btn-sm" onclick="remarcarCliente('${c.docId}')">📣 2ª</button>
-          <button class="btn btn-ghost btn-sm" onclick="marcarStatus('${c.docId}','ausente')">🚫 Ausente</button>
-          <button class="btn btn-ghost btn-sm" onclick="abrirDesistencia('${c.docId}')">😞 Desistiu</button>
-        </div>
-      </div>`;
-    });
-  }
-
-  if (!html) html = '<div class="empty"><div class="empty-icon">📣</div><div class="empty-text">Nenhuma chamada ativa</div></div>';
-  list.innerHTML = html;
-}
 
 // ── CLIENTES ──
 async function carregarClientes() {
@@ -2833,10 +2768,9 @@ window.salvarParquinho = async () => {
   if (!tel || !resp || !crianca || !mesa) { toast('⚠️ Preencha todos os campos'); return; }
   if (!pqPagSel)                          { toast('⚠️ Selecione a forma de pagamento'); return; }
   const telNum = tel.replace(/\D/g,'');
-  const dupTel    = pqCache.find(r => !r.saida && r.telNum === telNum);
-  const dupCrianca = pqCache.find(r => !r.saida && r.crianca.trim().toLowerCase() === crianca.toLowerCase());
-  if (dupTel)     { toast(`⚠️ ${dupTel.responsavel} já tem criança ativa no parquinho`); return; }
-  if (dupCrianca) { toast(`⚠️ ${dupCrianca.crianca} já está ativa no parquinho`); return; }
+  // Duplicidade apenas por telefone — mesma criança pode ter nome igual se for responsável diferente
+  const dupTel = pqCache.find(r => !r.saida && r.telNum === telNum);
+  if (dupTel) { toast(`⚠️ ${dupTel.responsavel} já tem criança ativa no parquinho (${dupTel.crianca})`); return; }
   try {
     await setDoc(doc(db, 'parquinho', 'pq_' + Date.now()), {
       tel, telNum, responsavel: resp, crianca, mesa,
