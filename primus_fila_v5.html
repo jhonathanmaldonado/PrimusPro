@@ -349,6 +349,57 @@
   .empty { text-align:center; padding:48px 24px; color:var(--text3); }
   .empty-icon { font-size:48px; margin-bottom:12px; }
   .empty-text { font-size:14px; font-weight:500; }
+
+  /* ── PARQUINHO ── */
+  .pq-retornante { background:var(--green-dim); border:1.5px solid var(--green);
+    border-radius:var(--radius); padding:8px 12px; font-size:13px; color:var(--green);
+    font-weight:600; margin-bottom:10px; }
+  .pq-pay-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:4px; }
+  .pq-pay-btn { display:flex; align-items:center; justify-content:center; gap:6px;
+    padding:10px 8px; border:2px solid var(--border); border-radius:var(--radius);
+    cursor:pointer; font-size:13px; font-weight:600; background:var(--surface2);
+    color:var(--text2); transition:all .18s; user-select:none; }
+  .pq-pay-btn.sel { border-color:var(--gold); background:var(--gold-dim); color:var(--gold2); }
+  .pq-card { background:var(--surface); border:1.5px solid var(--border);
+    border-radius:var(--radius); padding:14px 16px; margin-bottom:10px;
+    display:flex; flex-direction:column; gap:6px; }
+  .pq-card-header { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+  .pq-card-nome { font-weight:700; font-size:15px; color:var(--text1); }
+  .pq-card-mesa { font-size:12px; font-weight:600; color:var(--gold2);
+    background:var(--gold-dim); padding:3px 9px; border-radius:20px; white-space:nowrap; }
+  .pq-card-crianca { font-size:13px; color:var(--text2); font-weight:500; }
+  .pq-card-meta { display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color:var(--text3); }
+  .pq-card-pay { font-size:12px; font-weight:600; color:var(--green); }
+  .pq-card-footer { display:flex; gap:8px; margin-top:4px; flex-wrap:wrap; }
+  .pq-badge-ativo { display:inline-block; background:var(--green-dim); color:var(--green);
+    font-size:11px; font-weight:700; padding:2px 9px; border-radius:20px; }
+  .pq-badge-saida { display:inline-block; background:var(--bg2); color:var(--text3);
+    font-size:11px; font-weight:700; padding:2px 9px; border-radius:20px; }
+  .pq-kpi-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:14px; }
+  .pq-kpi { background:var(--surface); border:1.5px solid var(--border);
+    border-radius:var(--radius); padding:14px; text-align:center; }
+  .pq-kpi-val { font-size:22px; font-weight:800; color:var(--wine); font-family:'Playfair Display',serif; }
+  .pq-kpi-lbl { font-size:11px; color:var(--text3); margin-top:3px; }
+  .pq-subtabs { display:flex; gap:0; border-bottom:2px solid var(--border); margin-bottom:14px; overflow-x:auto; }
+  .pq-subtab { padding:9px 14px; font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;
+    color:var(--text3); border-bottom:2px solid transparent; margin-bottom:-2px; transition:all .15s; }
+  .pq-subtab.active { color:var(--wine); border-bottom-color:var(--wine); }
+  .pq-rel-filter { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:14px; }
+  .pq-rel-chip { padding:6px 12px; border-radius:20px; font-size:12px; font-weight:600;
+    border:1.5px solid var(--border); background:var(--surface2); color:var(--text2);
+    cursor:pointer; transition:all .15s; }
+  .pq-rel-chip.active { border-color:var(--wine); background:var(--wine-dim); color:var(--wine); }
+  .pq-bar-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  .pq-bar-lbl { font-size:12px; color:var(--text2); width:80px; flex-shrink:0; text-align:right; }
+  .pq-bar-track { flex:1; height:10px; background:var(--bg2); border-radius:5px; overflow:hidden; }
+  .pq-bar-fill { height:100%; background:var(--wine); border-radius:5px; transition:width .4s; }
+  .pq-bar-pct { font-size:11px; color:var(--text3); width:30px; }
+  .pq-section-title { font-size:13px; font-weight:700; color:var(--text2); margin:12px 0 8px; }
+  .pq-rel-row { background:var(--surface); border:1.5px solid var(--border);
+    border-radius:var(--radius); padding:12px 14px; margin-bottom:8px; font-size:13px; }
+  .pq-rel-row-header { display:flex; justify-content:space-between; align-items:center;
+    font-weight:600; color:var(--text1); margin-bottom:4px; }
+  .pq-rel-row-meta { font-size:12px; color:var(--text3); }
 </style>
 <link rel="manifest" href="./fila-manifest.json">
 <meta name="mobile-web-app-capable" content="yes">
@@ -410,6 +461,7 @@
     <div class="tab active" onclick="goTab('fila')" data-tab="fila"><span class="tab-icon">🎟️</span>Fila</div>
     <div class="tab" onclick="goTab('chamada')" data-tab="chamada"><span class="tab-icon">📣</span>Chamada</div>
     <div class="tab" onclick="goTab('satisfacao')" data-tab="satisfacao"><span class="tab-icon">⭐</span>Satisfação</div>
+    <div class="tab" onclick="goTab('parquinho')" data-tab="parquinho"><span class="tab-icon">🎠</span>Parquinho</div>
     <div class="tab gestor-only" onclick="goTab('clientes')" data-tab="clientes" style="display:none"><span class="tab-icon">👥</span>Clientes</div>
     <div class="tab gestor-only" onclick="goTab('relatorio')" data-tab="relatorio" style="display:none"><span class="tab-icon">📊</span>Relatórios</div>
     <div class="tab gestor-only" onclick="goTab('config')" data-tab="config" style="display:none"><span class="tab-icon">⚙️</span>Config</div>
@@ -569,7 +621,48 @@
       </div>
     </div>
 
-  </div><!-- /content -->
+  
+    <!-- PARQUINHO -->
+    <div class="section" id="sec-parquinho">
+      <div class="sec-hdr"><div class="sec-hdr-text">🎠 Parquinho</div><div class="sec-hdr-line"></div></div>
+
+      <button class="btn btn-primary" onclick="abrirCadastroParquinho()" style="margin-bottom:14px;">
+        ＋ Registrar Entrada
+      </button>
+
+      <!-- Sub-tabs -->
+      <div class="pq-subtabs">
+        <div class="pq-subtab active" id="pqtab-ativo" onclick="setPqTab('ativo',this)">Ativos agora</div>
+        <div class="pq-subtab" id="pqtab-dashboard" onclick="setPqTab('dashboard',this)">Dashboard</div>
+        <div class="pq-subtab" id="pqtab-relatorio" onclick="setPqTab('relatorio',this)">Relatório</div>
+      </div>
+
+      <!-- Ativos -->
+      <div id="pq-view-ativo">
+        <div id="pq-ativos-list"></div>
+      </div>
+
+      <!-- Dashboard -->
+      <div id="pq-view-dashboard" style="display:none;">
+        <div class="pq-kpi-grid" id="pq-kpis"></div>
+        <div id="pq-dash-pagamentos" style="margin-bottom:14px;"></div>
+        <div id="pq-dash-tempo" style="margin-bottom:14px;"></div>
+      </div>
+
+      <!-- Relatório -->
+      <div id="pq-view-relatorio" style="display:none;">
+        <div class="pq-rel-filter">
+          <div class="pq-rel-chip active" onclick="setPqRel('hoje',this)">Hoje</div>
+          <div class="pq-rel-chip" onclick="setPqRel('ontem',this)">Ontem</div>
+          <div class="pq-rel-chip" onclick="setPqRel('7dias',this)">7 dias</div>
+          <div class="pq-rel-chip" onclick="setPqRel('mes',this)">Este mês</div>
+        </div>
+        <div id="pq-rel-kpis" class="pq-kpi-grid"></div>
+        <div id="pq-rel-lista"></div>
+      </div>
+    </div>
+
+</div><!-- /content -->
   <button class="fab" id="fab-btn" onclick="abrirCadastro()">＋</button>
 </div>
 
@@ -707,6 +800,7 @@ window.doLogin = () => {
 window.doLogout = () => {
   if (!confirm('Sair do sistema?')) return;
   if (unsubFila)       unsubFila();
+  if (unsubParquinho) { unsubParquinho(); unsubParquinho = null; }
   if (clockInterval)   clearInterval(clockInterval);
   if (refreshInterval) clearInterval(refreshInterval);
   if (resetTimeout)    clearTimeout(resetTimeout);
@@ -805,6 +899,8 @@ async function resetarFila() {
     renderChamada();
     toast('🌙 Fila do dia encerrada e arquivada');
     console.log(`Fila resetada e arquivada em historico/${dataStr}`);
+    // Reseta o Parquinho junto
+    await resetarParquinho();
   } catch(e) {
     console.error('Erro ao resetar fila:', e);
   }
@@ -833,6 +929,7 @@ window.goTab = t => {
   if (t === 'satisfacao') { carregarPesquisas().then(() => renderSatRespondidas()); }
   if (t === 'config') loadConfig();
   if (t === 'clientes') carregarClientes();
+  if (t === 'parquinho') iniciarListenerParquinho();
 };
 
 // ── HELPERS ──
@@ -2412,6 +2509,318 @@ window.toast = msg => {
 };
 
 
+
+// ════════════════════════════════════════════════════
+// MÓDULO PARQUINHO
+// ════════════════════════════════════════════════════
+
+// ── Estado ──
+let pqCache        = [];
+let pqPagSel       = null;
+let pqTabAtual     = 'ativo';
+let pqRelFiltro    = 'hoje';
+let unsubParquinho = null;
+
+// ── Listener tempo real ──
+function iniciarListenerParquinho() {
+  if (unsubParquinho) { renderPqAtivos(); return; }
+  const agora = new Date();
+  const ini   = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 0, 0, 0);
+  const fim   = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate(), 23, 59, 59);
+  const q = query(
+    collection(db, 'parquinho'),
+    where('entrada', '>=', ini),
+    where('entrada', '<=', fim),
+    orderBy('entrada', 'asc')
+  );
+  unsubParquinho = onSnapshot(q, snap => {
+    pqCache = snap.docs.map(d => ({ docId: d.id, ...d.data() }));
+    renderPqAtivos();
+    if (pqTabAtual === 'dashboard') renderPqDashboard();
+  });
+}
+
+// ── Sub-tabs ──
+window.setPqTab = (tab, el) => {
+  pqTabAtual = tab;
+  document.querySelectorAll('.pq-subtab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('pq-view-ativo').style.display     = tab === 'ativo'     ? '' : 'none';
+  document.getElementById('pq-view-dashboard').style.display = tab === 'dashboard' ? '' : 'none';
+  document.getElementById('pq-view-relatorio').style.display = tab === 'relatorio' ? '' : 'none';
+  if (tab === 'dashboard') renderPqDashboard();
+  if (tab === 'relatorio') carregarRelPq(pqRelFiltro);
+};
+
+// ── Render: ativos ──
+function renderPqAtivos() {
+  const el = document.getElementById('pq-ativos-list');
+  if (!el) return;
+  const ativos = pqCache.filter(r => !r.saida);
+  if (!ativos.length) {
+    el.innerHTML = '<div class="empty"><div class="empty-icon">🎠</div><div class="empty-text">Nenhuma criança no parquinho agora</div></div>';
+    return;
+  }
+  el.innerHTML = ativos.map(r => pqCardHTML(r, true)).join('');
+}
+
+function pqCardHTML(r, mostrarAcoes) {
+  const entrada = r.entrada?.toDate ? r.entrada.toDate() : new Date(r.entrada);
+  const saida   = r.saida?.toDate   ? r.saida.toDate()   : (r.saida ? new Date(r.saida) : null);
+  const hE  = entrada.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' });
+  const hS  = saida ? saida.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }) : null;
+  const min = saida
+    ? Math.round((saida - entrada) / 60000)
+    : Math.round((Date.now() - entrada.getTime()) / 60000);
+  const payLabel = { credito:'Crédito', debito:'Débito', dinheiro:'Dinheiro', pix:'Pix' };
+  return `<div class="pq-card">
+    <div class="pq-card-header">
+      <span class="pq-card-nome">${r.responsavel}</span>
+      <span class="pq-card-mesa">Mesa ${r.mesa}</span>
+    </div>
+    <div class="pq-card-crianca">👶 ${r.crianca}</div>
+    <div class="pq-card-meta">
+      <span>📞 ${r.tel}</span>
+      <span class="pq-card-pay">💳 ${payLabel[r.pagamento] || r.pagamento}</span>
+    </div>
+    <div class="pq-card-meta">
+      <span>🕐 Entrada: <b>${hE}</b></span>
+      ${hS ? `<span>🏁 Saída: <b>${hS}</b></span>` : ''}
+      <span>⏱ ${min} min${saida ? '' : ' (em curso)'}</span>
+    </div>
+    <div class="pq-card-footer">
+      ${saida
+        ? '<span class="pq-badge-saida">✓ Saiu</span>'
+        : `<span class="pq-badge-ativo">● Ativo</span>
+           ${mostrarAcoes ? `<button class="btn btn-primary" style="padding:6px 14px;font-size:12px;" onclick="registrarSaidaPq('${r.docId}')">Registrar Saída</button>` : ''}`}
+    </div>
+  </div>`;
+}
+
+// ── Registrar saída ──
+window.registrarSaidaPq = async (docId) => {
+  if (!confirm('Confirmar saída da criança?')) return;
+  await updateDoc(doc(db, 'parquinho', docId), { saida: serverTimestamp() });
+  toast('✅ Saída registrada!');
+};
+
+// ── Reset diário do Parquinho (chamado pelo resetarFila) ──
+async function resetarParquinho() {
+  try {
+    const snap = await getDocs(collection(db, 'parquinho'));
+    if (snap.empty) return;
+    const ontem = new Date(); ontem.setDate(ontem.getDate() - 1);
+    const dataStr  = dataStrLocal(ontem);
+    const registros = snap.docs.map(d => ({ ...d.data(), docId: d.id }));
+    await setDoc(doc(db, 'historico_parquinho', dataStr), { data: dataStr, registros });
+    await Promise.all(snap.docs.map(d => deleteDoc(doc(db, 'parquinho', d.id))));
+    pqCache = []; unsubParquinho = null;
+  } catch(e) { console.warn('[Parquinho] erro no reset:', e); }
+}
+
+// ── Dashboard ──
+function renderPqDashboard() {
+  const kpiEl = document.getElementById('pq-kpis');
+  const pagEl = document.getElementById('pq-dash-pagamentos');
+  const tmpEl = document.getElementById('pq-dash-tempo');
+  if (!kpiEl) return;
+  const total = pqCache.length;
+  const ativos = pqCache.filter(r => !r.saida).length;
+  const fin = pqCache.filter(r => r.saida);
+  let tmedio = 0;
+  if (fin.length) {
+    const soma = fin.reduce((acc, r) => {
+      const e = r.entrada?.toDate ? r.entrada.toDate() : new Date(r.entrada);
+      const s = r.saida?.toDate   ? r.saida.toDate()   : new Date(r.saida);
+      return acc + (s - e);
+    }, 0);
+    tmedio = Math.round(soma / fin.length / 60000);
+  }
+  kpiEl.innerHTML = `
+    <div class="pq-kpi"><div class="pq-kpi-val">${total}</div><div class="pq-kpi-lbl">Hoje total</div></div>
+    <div class="pq-kpi"><div class="pq-kpi-val">${ativos}</div><div class="pq-kpi-lbl">Ativos agora</div></div>
+    <div class="pq-kpi"><div class="pq-kpi-val">${fin.length}</div><div class="pq-kpi-lbl">Saíram</div></div>
+    <div class="pq-kpi"><div class="pq-kpi-val">${tmedio ? tmedio + ' min' : '—'}</div><div class="pq-kpi-lbl">Tempo médio</div></div>`;
+  const payCount = {};
+  pqCache.forEach(r => { payCount[r.pagamento] = (payCount[r.pagamento] || 0) + 1; });
+  const payLabel = { credito:'Crédito', debito:'Débito', dinheiro:'Dinheiro', pix:'Pix' };
+  pagEl.innerHTML = total ? '<div class="pq-section-title">Formas de pagamento</div>' +
+    Object.entries(payCount).map(([k, v]) => {
+      const pct = Math.round(v / total * 100);
+      return `<div class="pq-bar-row"><span class="pq-bar-lbl">${payLabel[k]||k}</span>
+        <div class="pq-bar-track"><div class="pq-bar-fill" style="width:${pct}%"></div></div>
+        <span class="pq-bar-pct">${pct}%</span></div>`;
+    }).join('') : '';
+  const porHora = {};
+  fin.forEach(r => {
+    const e = r.entrada?.toDate ? r.entrada.toDate() : new Date(r.entrada);
+    const h = e.getHours() + 'h';
+    porHora[h] = (porHora[h] || 0) + 1;
+  });
+  const vals = Object.values(porHora);
+  const maxH = vals.length ? Math.max(...vals) : 1;
+  tmpEl.innerHTML = vals.length ? '<div class="pq-section-title">Atendimentos por hora</div>' +
+    Object.entries(porHora).sort().map(([h, v]) => {
+      const pct = Math.round(v / maxH * 100);
+      return `<div class="pq-bar-row"><span class="pq-bar-lbl">${h}</span>
+        <div class="pq-bar-track"><div class="pq-bar-fill" style="width:${pct}%"></div></div>
+        <span class="pq-bar-pct">${v}</span></div>`;
+    }).join('') : '';
+}
+
+// ── Relatório por período ──
+window.setPqRel = (filtro, el) => {
+  pqRelFiltro = filtro;
+  document.querySelectorAll('.pq-rel-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  carregarRelPq(filtro);
+};
+
+async function carregarRelPq(filtro) {
+  const kpiEl  = document.getElementById('pq-rel-kpis');
+  const listEl = document.getElementById('pq-rel-lista');
+  if (!kpiEl || !listEl) return;
+  let dados = [];
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  if (filtro === 'hoje') {
+    dados = pqCache;
+  } else {
+    let de, ate;
+    if (filtro === 'ontem') { const d = new Date(hoje); d.setDate(d.getDate()-1); de = ate = dataStrLocal(d); }
+    else if (filtro === '7dias') { const d = new Date(hoje); d.setDate(d.getDate()-7); de = dataStrLocal(d); ate = dataStrLocal(hoje); }
+    else if (filtro === 'mes')   { de = dataStrLocal(new Date(hoje.getFullYear(), hoje.getMonth(), 1)); ate = dataStrLocal(hoje); }
+    try {
+      const snap = await getDocs(query(collection(db,'historico_parquinho'),
+        where('data','>=',de), where('data','<=',ate), orderBy('data','asc')));
+      snap.docs.forEach(d => { if(d.data().registros) dados = dados.concat(d.data().registros); });
+      if (filtro !== 'ontem') dados = dados.concat(pqCache);
+    } catch(e) { dados = pqCache; }
+  }
+  const fin = dados.filter(r => r.saida);
+  let tmedio = 0;
+  if (fin.length) {
+    const soma = fin.reduce((acc, r) => {
+      const e = r.entrada?.toDate ? r.entrada.toDate() : new Date(r.entrada);
+      const s = r.saida?.toDate   ? r.saida.toDate()   : new Date(r.saida);
+      return acc + (s-e);
+    }, 0);
+    tmedio = Math.round(soma / fin.length / 60000);
+  }
+  kpiEl.innerHTML = `
+    <div class="pq-kpi"><div class="pq-kpi-val">${dados.length}</div><div class="pq-kpi-lbl">Total período</div></div>
+    <div class="pq-kpi"><div class="pq-kpi-val">${tmedio ? tmedio+' min' : '—'}</div><div class="pq-kpi-lbl">Tempo médio</div></div>`;
+  if (!dados.length) {
+    listEl.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Nenhum registro no período</div></div>';
+    return;
+  }
+  const sorted = [...dados].sort((a,b) => {
+    const ta = a.entrada?.toDate ? a.entrada.toDate() : new Date(a.entrada);
+    const tb = b.entrada?.toDate ? b.entrada.toDate() : new Date(b.entrada);
+    return tb - ta;
+  });
+  const payLabel = { credito:'Crédito', debito:'Débito', dinheiro:'Dinheiro', pix:'Pix' };
+  listEl.innerHTML = sorted.map(r => {
+    const e = r.entrada?.toDate ? r.entrada.toDate() : new Date(r.entrada);
+    const s = r.saida?.toDate   ? r.saida.toDate()   : null;
+    const hE = e.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+    const hS = s ? s.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—';
+    const min = s ? Math.round((s-e)/60000) : null;
+    return `<div class="pq-rel-row">
+      <div class="pq-rel-row-header">
+        <span>${r.responsavel} · 👶 ${r.crianca}</span>
+        <span style="color:var(--gold2)">Mesa ${r.mesa}</span>
+      </div>
+      <div class="pq-rel-row-meta">
+        📞 ${r.tel} · 💳 ${payLabel[r.pagamento]||r.pagamento} · 🕐 ${hE} → ${hS}${min?' · '+min+' min':''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── Modal: abrir ──
+window.abrirCadastroParquinho = () => {
+  document.getElementById('pq-tel').value     = '';
+  document.getElementById('pq-resp').value    = '';
+  document.getElementById('pq-crianca').value = '';
+  document.getElementById('pq-mesa').value    = '';
+  document.getElementById('pq-retornante').style.display = 'none';
+  document.getElementById('pq-ac-list').style.display    = 'none';
+  document.querySelectorAll('.pq-pay-btn').forEach(b => b.classList.remove('sel'));
+  pqPagSel = null;
+  document.getElementById('modal-parquinho').style.display = 'flex';
+};
+
+// ── Autocomplete de telefone ──
+window.pqBuscarTel = async () => {
+  const tel = document.getElementById('pq-tel').value.replace(/\D/g,'');
+  const ac  = document.getElementById('pq-ac-list');
+  document.getElementById('pq-retornante').style.display = 'none';
+  if (tel.length < 4) { ac.style.display = 'none'; return; }
+  try {
+    const snap = await getDocs(query(collection(db,'clientes'),
+      where('telNum','>=',tel), where('telNum','<=',tel+'\uf8ff'), limit(5)));
+    if (snap.empty) { ac.style.display = 'none'; return; }
+    ac.style.display = 'block';
+    ac.innerHTML = snap.docs.map(d => {
+      const cl = d.data();
+      return `<div class="ac-item" onclick="pqPreencherCliente('${d.id}')">
+        <div class="ac-name">${cl.nome}</div>
+        <div class="ac-meta">📞 ${cl.tel} · ${cl.visitas||1} visita(s)</div>
+      </div>`;
+    }).join('');
+  } catch(e) { ac.style.display = 'none'; }
+};
+
+window.pqPreencherCliente = async (cId) => {
+  const snap = await getDoc(doc(db,'clientes',cId));
+  if (!snap.exists()) return;
+  const cl = snap.data();
+  document.getElementById('pq-tel').value  = cl.tel  || '';
+  document.getElementById('pq-resp').value = cl.nome || '';
+  document.getElementById('pq-ac-list').style.display    = 'none';
+  document.getElementById('pq-retornante').style.display = 'block';
+};
+
+// ── Seleção de pagamento ──
+window.selecionarPagPq = (tipo) => {
+  pqPagSel = tipo;
+  document.querySelectorAll('.pq-pay-btn').forEach(b => b.classList.remove('sel'));
+  document.getElementById('pqpay-' + tipo).classList.add('sel');
+};
+
+// ── Salvar entrada ──
+window.salvarParquinho = async () => {
+  const tel     = document.getElementById('pq-tel').value.trim();
+  const resp    = document.getElementById('pq-resp').value.trim();
+  const crianca = document.getElementById('pq-crianca').value.trim();
+  const mesa    = document.getElementById('pq-mesa').value.trim();
+  if (!tel || !resp || !crianca || !mesa) { toast('⚠️ Preencha todos os campos'); return; }
+  if (!pqPagSel)                          { toast('⚠️ Selecione a forma de pagamento'); return; }
+  const telNum = tel.replace(/\D/g,'');
+  const dupTel    = pqCache.find(r => !r.saida && r.telNum === telNum);
+  const dupCrianca = pqCache.find(r => !r.saida && r.crianca.trim().toLowerCase() === crianca.toLowerCase());
+  if (dupTel)     { toast(`⚠️ ${dupTel.responsavel} já tem criança ativa no parquinho`); return; }
+  if (dupCrianca) { toast(`⚠️ ${dupCrianca.crianca} já está ativa no parquinho`); return; }
+  try {
+    await setDoc(doc(db, 'parquinho', 'pq_' + Date.now()), {
+      tel, telNum, responsavel: resp, crianca, mesa,
+      pagamento: pqPagSel,
+      entrada: serverTimestamp(),
+      saida: null
+    });
+    const cId    = 'cl_' + telNum;
+    const clSnap = await getDoc(doc(db,'clientes',cId));
+    if (clSnap.exists()) {
+      await updateDoc(doc(db,'clientes',cId), { visitas:(clSnap.data().visitas||0)+1, ultimaVisita:serverTimestamp() });
+    } else {
+      await setDoc(doc(db,'clientes',cId), { nome:resp, tel, telNum, visitas:1, ultimaVisita:serverTimestamp() });
+    }
+    fecharModal('modal-parquinho');
+    toast('✅ Entrada registrada no parquinho!');
+  } catch(e) { toast('❌ Erro ao salvar: ' + e.message); }
+};
+
+
   // ── PWA Service Worker (inline blob) ──
   if ('serviceWorker' in navigator) {
     const SW_SRC = [
@@ -2426,6 +2835,55 @@ window.toast = msg => {
       .catch(e=>console.warn('[PWA] SW falhou:',e));
   }
 </script>
+
+
+<!-- MODAL: Cadastro Parquinho -->
+<div class="modal-bg" id="modal-parquinho" style="display:none;">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-handle"></div>
+    <div class="modal-title">🎠 Registrar no Parquinho</div>
+
+    <div id="pq-retornante" class="pq-retornante">⭐ Responsável encontrado — dados preenchidos automaticamente</div>
+
+    <div class="field">
+      <label>Telefone do responsável *</label>
+      <div style="position:relative;">
+        <input type="tel" id="pq-tel" placeholder="65 9 9999-9999" oninput="pqBuscarTel()" autocomplete="off">
+        <div class="ac-list" id="pq-ac-list" style="display:none;"></div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Nome do responsável *</label>
+      <input type="text" id="pq-resp" placeholder="Nome do responsável">
+    </div>
+
+    <div class="field">
+      <label>Nome da criança *</label>
+      <input type="text" id="pq-crianca" placeholder="Nome da criança">
+    </div>
+
+    <div class="field">
+      <label>Mesa *</label>
+      <input type="text" id="pq-mesa" placeholder="Ex: 5, 12, Varanda 3…">
+    </div>
+
+    <div class="field">
+      <label>Forma de pagamento *</label>
+      <div class="pq-pay-grid">
+        <div class="pq-pay-btn" id="pqpay-credito" onclick="selecionarPagPq('credito')">💳 Crédito</div>
+        <div class="pq-pay-btn" id="pqpay-debito" onclick="selecionarPagPq('debito')">💳 Débito</div>
+        <div class="pq-pay-btn" id="pqpay-dinheiro" onclick="selecionarPagPq('dinheiro')">💵 Dinheiro</div>
+        <div class="pq-pay-btn" id="pqpay-pix" onclick="selecionarPagPq('pix')">⚡ Pix</div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:4px;">
+      <button class="btn" style="flex:0.5" onclick="fecharModal('modal-parquinho')">Cancelar</button>
+      <button class="btn btn-primary" style="flex:1" onclick="salvarParquinho()">Registrar Entrada</button>
+    </div>
+  </div>
+</div>
 
 <!-- MODO CLIENTE — Pesquisa de Satisfação -->
 <div id="modo-cliente">
