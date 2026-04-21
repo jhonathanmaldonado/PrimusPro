@@ -94,6 +94,7 @@
 
   /* PROFILE */
   .profile-grid { display:grid; grid-template-columns:1fr 1fr; gap:9px; margin-bottom:4px; }
+  .profile-grid.tres { grid-template-columns:1fr 1fr 1fr; }
   .profile-btn { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px; padding:15px 10px; background:var(--surface2); border:2px solid var(--border); border-radius:var(--radius); cursor:pointer; transition:all .18s; }
   .profile-btn.sel { border-color:var(--gold); background:var(--gold-dim); }
   .profile-btn .pb-icon { font-size:24px; }
@@ -432,8 +433,9 @@
     <div class="login-title">Acessar sistema</div>
     <div class="field">
       <label>Perfil</label>
-      <div class="profile-grid">
+      <div class="profile-grid tres">
         <div class="profile-btn sel" id="p-recepcao" onclick="selectProfile('recepcao')"><span class="pb-icon">🎟️</span><span class="pb-label">Recepção</span></div>
+        <div class="profile-btn" id="p-monitora" onclick="selectProfile('monitora')"><span class="pb-icon">🎠</span><span class="pb-label">Monitora</span></div>
         <div class="profile-btn" id="p-gestor" onclick="selectProfile('gestor')"><span class="pb-icon">📊</span><span class="pb-label">Gestor</span></div>
       </div>
     </div>
@@ -615,6 +617,7 @@
         <div class="settings-label">Senhas de Acesso</div>
         <div class="card" style="margin-bottom:0;">
           <div class="field" style="margin-bottom:12px;"><label>Nova Senha — Recepção</label><input type="password" id="cfg-senha-rec" placeholder="Mínimo 4 caracteres"></div>
+          <div class="field" style="margin-bottom:12px;"><label>Nova Senha — Monitora</label><input type="password" id="cfg-senha-mon" placeholder="Mínimo 4 caracteres"></div>
           <div class="field" style="margin-bottom:12px;"><label>Nova Senha — Gestor</label><input type="password" id="cfg-senha-ges" placeholder="Mínimo 4 caracteres"></div>
           <button class="btn btn-primary" onclick="salvarSenhas()">Atualizar Senhas</button>
         </div>
@@ -735,7 +738,7 @@ const db  = getFirestore(app);
 
 // ── STATE ──
 let perfil = 'recepcao';
-let senhas = { recepcao: '1234', gestor: '4321' };
+let senhas = { recepcao: '1234', monitora: '5678', gestor: '4321' };
 let filaCache = [], clientesCache = [];
 let configCache = {
   tolerancia: 5,
@@ -752,6 +755,7 @@ async function carregarConfig() {
     const d = snap.data();
     Object.assign(configCache, d);
     if (d.senhaRecepcao) senhas.recepcao = d.senhaRecepcao;
+    if (d.senhaMonitora) senhas.monitora = d.senhaMonitora;
     if (d.senhaGestor)   senhas.gestor   = d.senhaGestor;
   }
 }
@@ -778,23 +782,43 @@ function setSyncDot(ok) {
 window.selectProfile = p => {
   perfil = p;
   document.getElementById('p-recepcao').classList.toggle('sel', p === 'recepcao');
+  document.getElementById('p-monitora').classList.toggle('sel', p === 'monitora');
   document.getElementById('p-gestor').classList.toggle('sel', p === 'gestor');
 };
 
 window.doLogin = () => {
   const s = document.getElementById('senha-input').value;
-  if (s !== (perfil === 'gestor' ? senhas.gestor : senhas.recepcao)) {
-    toast('❌ Senha incorreta'); return;
-  }
+  const senhaCorreta = perfil === 'gestor'   ? senhas.gestor
+                     : perfil === 'monitora' ? senhas.monitora
+                     : senhas.recepcao;
+  if (s !== senhaCorreta) { toast('❌ Senha incorreta'); return; }
+
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
-  document.querySelectorAll('.gestor-only').forEach(el => el.style.display = perfil === 'gestor' ? '' : 'none');
+
+  // Abas e elementos restritos ao gestor
+  const isGestor   = perfil === 'gestor';
+  const isMonitora = perfil === 'monitora';
+
+  document.querySelectorAll('.gestor-only').forEach(el => el.style.display = isGestor ? '' : 'none');
+
   // Área gestor dentro de Satisfação
   const satGestor = document.getElementById('sat-gestor-area');
-  if (satGestor) satGestor.style.display = perfil === 'gestor' ? 'block' : 'none';
+  if (satGestor) satGestor.style.display = isGestor ? 'block' : 'none';
+
+  // Aba Parquinho visível para monitora e gestor; oculta para recepção
+  const tabPq = document.querySelector('[data-tab="parquinho"]');
+  if (tabPq) tabPq.style.display = (isGestor || isMonitora) ? '' : 'none';
+
+  // Sub-tab Relatório do parquinho — só gestor
+  const pqTabRel = document.getElementById('pqtab-relatorio');
+  if (pqTabRel) pqTabRel.style.display = isGestor ? '' : 'none';
+
+  // Monitora vai direto para o Parquinho
   startClock();
   iniciarListeners();
   agendarResetMeiaNoite();
+  if (isMonitora) goTab('parquinho');
 };
 
 window.doLogout = () => {
@@ -1461,12 +1485,19 @@ window.salvarConfigMsg = async () => {
 
 window.salvarSenhas = async () => {
   const r = document.getElementById('cfg-senha-rec').value.trim();
+  const m = document.getElementById('cfg-senha-mon').value.trim();
   const g = document.getElementById('cfg-senha-ges').value.trim();
   if (r) senhas.recepcao = r;
+  if (m) senhas.monitora = m;
   if (g) senhas.gestor   = g;
-  await setDoc(doc(db, 'config', 'principal'), { senhaRecepcao: senhas.recepcao, senhaGestor: senhas.gestor }, { merge: true });
+  await setDoc(doc(db, 'config', 'principal'), {
+    senhaRecepcao: senhas.recepcao,
+    senhaMonitora: senhas.monitora,
+    senhaGestor:   senhas.gestor
+  }, { merge: true });
   toast('✅ Senhas atualizadas');
   document.getElementById('cfg-senha-rec').value = '';
+  document.getElementById('cfg-senha-mon').value = '';
   document.getElementById('cfg-senha-ges').value = '';
 };
 
@@ -2542,6 +2573,11 @@ function iniciarListenerParquinho() {
 
 // ── Sub-tabs ──
 window.setPqTab = (tab, el) => {
+  // Relatório só para gestor
+  if (tab === 'relatorio' && perfil !== 'gestor') {
+    toast('⚠️ Relatório disponível apenas para o Gestor');
+    return;
+  }
   pqTabAtual = tab;
   document.querySelectorAll('.pq-subtab').forEach(t => t.classList.remove('active'));
   el.classList.add('active');
@@ -2747,7 +2783,7 @@ window.abrirCadastroParquinho = () => {
   document.getElementById('pq-ac-list').style.display    = 'none';
   document.querySelectorAll('.pq-pay-btn').forEach(b => b.classList.remove('sel'));
   pqPagSel = null;
-  document.getElementById('modal-parquinho').style.display = 'flex';
+  abrirModal('modal-parquinho');
 };
 
 // ── Autocomplete de telefone ──
@@ -2838,7 +2874,7 @@ window.salvarParquinho = async () => {
 
 
 <!-- MODAL: Cadastro Parquinho -->
-<div class="modal-bg" id="modal-parquinho" style="display:none;">
+<div class="modal-bg" id="modal-parquinho">
   <div class="modal" style="max-width:420px;">
     <div class="modal-handle"></div>
     <div class="modal-title">🎠 Registrar no Parquinho</div>
