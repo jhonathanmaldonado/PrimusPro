@@ -1851,10 +1851,7 @@ function exportarListaPDF(){
 async function carregarHist(){
   document.getElementById('ld-hist').classList.add('show');document.getElementById('hist-list').innerHTML='';
   /* Buscar auditorias completas E vendas parciais */
-  const[hist,vendasDocs]=await Promise.all([
-    window.fbListarHistorico(),
-    (async()=>{try{const{getDocs,collection,query,orderBy,limit}=await Promise.resolve({getDocs:window._fbGetDocs,collection:window._fbCol,query:window._fbQuery,orderBy:window._fbOrderBy,limit:window._fbLimit});return [];}catch{return[];}})(). catch(()=>[])
-  ]);
+  const hist=await window.fbListarHistorico();
   document.getElementById('ld-hist').classList.remove('show');
   if(!hist.length){document.getElementById('hist-list').innerHTML='<div class="empty"><div class="ico">📂</div><p>Nenhuma auditoria salva ainda.<br><small style="color:#aaa">Confirme a consolidação de um dia para aparecer aqui.</small></p></div>';return;}
   const el=document.getElementById('hist-list');
@@ -1890,6 +1887,7 @@ async function carregarHist(){
     };
     el.appendChild(d);
   });
+}
 
 /* ══ USUÁRIOS ══ */
 async function criarUsuario(){
