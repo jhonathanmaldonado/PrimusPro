@@ -377,6 +377,7 @@
   .pq-badge-saida { display:inline-block; background:var(--bg2); color:var(--text3);
     font-size:11px; font-weight:700; padding:2px 9px; border-radius:20px; }
   .pq-kpi-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:14px; }
+  .pq-kpi-grid.tres { grid-template-columns:repeat(3,1fr); }
   .pq-kpi { background:var(--surface); border:1.5px solid var(--border);
     border-radius:var(--radius); padding:14px; text-align:center; }
   .pq-kpi-val { font-size:22px; font-weight:800; color:var(--wine); font-family:'Playfair Display',serif; }
@@ -654,7 +655,7 @@
           <div class="pq-rel-chip" onclick="setPqRel('7dias',this)">7 dias</div>
           <div class="pq-rel-chip" onclick="setPqRel('mes',this)">Este mês</div>
         </div>
-        <div id="pq-rel-kpis" class="pq-kpi-grid"></div>
+        <div id="pq-rel-kpis" class="pq-kpi-grid tres"></div>
         <div id="pq-rel-lista"></div>
       </div>
     </div>
@@ -2651,6 +2652,7 @@ async function carregarRelPq(filtro) {
   const kpiEl  = document.getElementById('pq-rel-kpis');
   const listEl = document.getElementById('pq-rel-lista');
   if (!kpiEl || !listEl) return;
+
   let dados = [];
   const hoje = new Date(); hoje.setHours(0,0,0,0);
   if (filtro === 'hoje') {
@@ -2667,35 +2669,75 @@ async function carregarRelPq(filtro) {
       if (filtro !== 'ontem') dados = dados.concat(pqCache);
     } catch(e) { dados = pqCache; }
   }
+
+  // ── Métricas operacionais ──
+  const totalCriancas = dados.length; // 1 registro = 1 criança
   const fin = dados.filter(r => r.saida);
+
+  // Tempo médio (só crianças que já saíram)
   let tmedio = 0;
   if (fin.length) {
     const soma = fin.reduce((acc, r) => {
       const e = r.entrada?.toDate ? r.entrada.toDate() : new Date(r.entrada);
       const s = r.saida?.toDate   ? r.saida.toDate()   : new Date(r.saida);
-      return acc + (s-e);
+      return acc + (s - e);
     }, 0);
     tmedio = Math.round(soma / fin.length / 60000);
   }
+
+  // Horário da 1ª e última criança
+  const sorted = [...dados].sort((a,b) => {
+    const ta = a.entrada?.toDate ? a.entrada.toDate() : new Date(a.entrada);
+    const tb = b.entrada?.toDate ? b.entrada.toDate() : new Date(b.entrada);
+    return ta - tb;
+  });
+  const fmt2 = x => x.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  const hPrimeira = sorted.length ? fmt2(sorted[0].entrada?.toDate ? sorted[0].entrada.toDate() : new Date(sorted[0].entrada)) : '—';
+  const hUltima   = sorted.length ? fmt2(sorted[sorted.length-1].entrada?.toDate ? sorted[sorted.length-1].entrada.toDate() : new Date(sorted[sorted.length-1].entrada)) : '—';
+
+  // Lotação máxima simultânea — quantas crianças estavam ativas ao mesmo tempo
+  // Montar linha do tempo de eventos (entrada / saida)
+  let eventos = [];
+  dados.forEach(r => {
+    const e = r.entrada?.toDate ? r.entrada.toDate() : new Date(r.entrada);
+    eventos.push({ t: e.getTime(), tipo: 'e' });
+    if (r.saida) {
+      const s = r.saida?.toDate ? r.saida.toDate() : new Date(r.saida);
+      eventos.push({ t: s.getTime(), tipo: 's' });
+    }
+  });
+  eventos.sort((a,b) => a.t - b.t);
+  let curAtivos = 0, maxAtivos = 0, tMaxAtivos = null;
+  eventos.forEach(ev => {
+    if (ev.tipo === 'e') { curAtivos++; if (curAtivos > maxAtivos) { maxAtivos = curAtivos; tMaxAtivos = ev.t; } }
+    else curAtivos = Math.max(0, curAtivos - 1);
+  });
+  const hLotacao = tMaxAtivos ? fmt2(new Date(tMaxAtivos)) : '—';
+
+  // KPIs expandidos
   kpiEl.innerHTML = `
-    <div class="pq-kpi"><div class="pq-kpi-val">${dados.length}</div><div class="pq-kpi-lbl">Total período</div></div>
-    <div class="pq-kpi"><div class="pq-kpi-val">${tmedio ? tmedio+' min' : '—'}</div><div class="pq-kpi-lbl">Tempo médio</div></div>`;
+    <div class="pq-kpi"><div class="pq-kpi-val">${totalCriancas}</div><div class="pq-kpi-lbl">Total crianças</div></div>
+    <div class="pq-kpi"><div class="pq-kpi-val">${tmedio ? tmedio+' min' : '—'}</div><div class="pq-kpi-lbl">Tempo médio</div></div>
+    <div class="pq-kpi"><div class="pq-kpi-val">${hPrimeira}</div><div class="pq-kpi-lbl">1ª criança</div></div>
+    <div class="pq-kpi"><div class="pq-kpi-val">${hUltima}</div><div class="pq-kpi-lbl">Última entrada</div></div>
+    <div class="pq-kpi"><div class="pq-kpi-val">${maxAtivos || '—'}</div><div class="pq-kpi-lbl">Pico simultâneo</div></div>
+    <div class="pq-kpi"><div class="pq-kpi-val">${hLotacao}</div><div class="pq-kpi-lbl">Horário do pico</div></div>
+  `;
+
   if (!dados.length) {
     listEl.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><div class="empty-text">Nenhum registro no período</div></div>';
     return;
   }
-  const sorted = [...dados].sort((a,b) => {
-    const ta = a.entrada?.toDate ? a.entrada.toDate() : new Date(a.entrada);
-    const tb = b.entrada?.toDate ? b.entrada.toDate() : new Date(b.entrada);
-    return tb - ta;
-  });
+
+  // Lista ordenada mais recente primeiro
+  const sortedDesc = [...sorted].reverse();
   const payLabel = { credito:'Crédito', debito:'Débito', dinheiro:'Dinheiro', pix:'Pix' };
-  listEl.innerHTML = sorted.map(r => {
+  listEl.innerHTML = sortedDesc.map(r => {
     const e = r.entrada?.toDate ? r.entrada.toDate() : new Date(r.entrada);
     const s = r.saida?.toDate   ? r.saida.toDate()   : null;
     const hE = e.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
     const hS = s ? s.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—';
-    const min = s ? Math.round((s-e)/60000) : null;
+    const min = s ? Math.round((s - e)/60000) : null;
     return `<div class="pq-rel-row">
       <div class="pq-rel-row-header">
         <span>${r.responsavel} · 👶 ${r.crianca}</span>
@@ -2710,15 +2752,38 @@ async function carregarRelPq(filtro) {
 
 // ── Modal: abrir ──
 window.abrirCadastroParquinho = () => {
-  document.getElementById('pq-tel').value     = '';
-  document.getElementById('pq-resp').value    = '';
-  document.getElementById('pq-crianca').value = '';
-  document.getElementById('pq-mesa').value    = '';
+  document.getElementById('pq-tel').value  = '';
+  document.getElementById('pq-resp').value = '';
+  document.getElementById('pq-mesa').value = '';
+  // Resetar lista de crianças — deixar apenas 1 input vazio
+  const lista = document.getElementById('pq-criancas-lista');
+  lista.innerHTML = `<div class="pq-crianca-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+    <input type="text" class="pq-crianca-input" placeholder="Nome da criança" style="flex:1;">
+    <button type="button" onclick="pqRemoverCrianca(this)" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--danger);line-height:1;padding:0 4px;" title="Remover">✕</button>
+  </div>`;
   document.getElementById('pq-retornante').style.display = 'none';
   document.getElementById('pq-ac-list').style.display    = 'none';
   document.querySelectorAll('.pq-pay-btn').forEach(b => b.classList.remove('sel'));
   pqPagSel = null;
   abrirModal('modal-parquinho');
+};
+
+// ── Gerenciar lista de crianças no modal ──
+window.pqAdicionarCrianca = () => {
+  const lista = document.getElementById('pq-criancas-lista');
+  const row = document.createElement('div');
+  row.className = 'pq-crianca-row';
+  row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:6px;';
+  row.innerHTML = `<input type="text" class="pq-crianca-input" placeholder="Nome da criança" style="flex:1;">
+    <button type="button" onclick="pqRemoverCrianca(this)" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--danger);line-height:1;padding:0 4px;" title="Remover">✕</button>`;
+  lista.appendChild(row);
+  row.querySelector('input').focus();
+};
+
+window.pqRemoverCrianca = (btn) => {
+  const rows = document.querySelectorAll('.pq-crianca-row');
+  if (rows.length <= 1) { toast('⚠️ Mínimo de uma criança'); return; }
+  btn.closest('.pq-crianca-row').remove();
 };
 
 // ── Autocomplete de telefone ──
@@ -2761,23 +2826,37 @@ window.selecionarPagPq = (tipo) => {
 
 // ── Salvar entrada ──
 window.salvarParquinho = async () => {
-  const tel     = document.getElementById('pq-tel').value.trim();
-  const resp    = document.getElementById('pq-resp').value.trim();
-  const crianca = document.getElementById('pq-crianca').value.trim();
-  const mesa    = document.getElementById('pq-mesa').value.trim();
-  if (!tel || !resp || !crianca || !mesa) { toast('⚠️ Preencha todos os campos'); return; }
-  if (!pqPagSel)                          { toast('⚠️ Selecione a forma de pagamento'); return; }
+  const tel  = document.getElementById('pq-tel').value.trim();
+  const resp = document.getElementById('pq-resp').value.trim();
+  const mesa = document.getElementById('pq-mesa').value.trim();
+
+  // Coletar nomes das crianças (filtrar vazios)
+  const criancas = Array.from(document.querySelectorAll('.pq-crianca-input'))
+    .map(i => i.value.trim()).filter(n => n.length > 0);
+
+  if (!tel || !resp || !mesa)      { toast('⚠️ Preencha todos os campos'); return; }
+  if (criancas.length === 0)       { toast('⚠️ Informe o nome de pelo menos uma criança'); return; }
+  if (!pqPagSel)                   { toast('⚠️ Selecione a forma de pagamento'); return; }
+
   const telNum = tel.replace(/\D/g,'');
-  // Duplicidade apenas por telefone — mesma criança pode ter nome igual se for responsável diferente
+  // Duplicidade por telefone — um responsável ativo já no parquinho
   const dupTel = pqCache.find(r => !r.saida && r.telNum === telNum);
-  if (dupTel) { toast(`⚠️ ${dupTel.responsavel} já tem criança ativa no parquinho (${dupTel.crianca})`); return; }
+  if (dupTel) { toast(`⚠️ ${dupTel.responsavel} já tem criança ativa no parquinho`); return; }
+
   try {
-    await setDoc(doc(db, 'parquinho', 'pq_' + Date.now()), {
-      tel, telNum, responsavel: resp, crianca, mesa,
-      pagamento: pqPagSel,
-      entrada: serverTimestamp(),
-      saida: null
-    });
+    const ts = Date.now();
+    // Salvar um registro por criança (mesmo timestamp de entrada, mesmo pagamento)
+    await Promise.all(criancas.map((crianca, i) =>
+      setDoc(doc(db, 'parquinho', 'pq_' + ts + '_' + i), {
+        tel, telNum, responsavel: resp, crianca, mesa,
+        pagamento: pqPagSel,
+        qtdCriancas: criancas.length, // total do grupo para referência
+        entrada: serverTimestamp(),
+        saida: null
+      })
+    ));
+
+    // Atualiza cliente
     const cId    = 'cl_' + telNum;
     const clSnap = await getDoc(doc(db,'clientes',cId));
     if (clSnap.exists()) {
@@ -2785,8 +2864,9 @@ window.salvarParquinho = async () => {
     } else {
       await setDoc(doc(db,'clientes',cId), { nome:resp, tel, telNum, visitas:1, ultimaVisita:serverTimestamp() });
     }
+
     fecharModal('modal-parquinho');
-    toast('✅ Entrada registrada no parquinho!');
+    toast(`✅ ${criancas.length} criança(s) registrada(s) no parquinho!`);
   } catch(e) { toast('❌ Erro ao salvar: ' + e.message); }
 };
 
@@ -2829,8 +2909,14 @@ window.salvarParquinho = async () => {
     </div>
 
     <div class="field">
-      <label>Nome da criança *</label>
-      <input type="text" id="pq-crianca" placeholder="Nome da criança">
+      <label>Crianças *</label>
+      <div id="pq-criancas-lista">
+        <div class="pq-crianca-row" style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+          <input type="text" class="pq-crianca-input" placeholder="Nome da criança" style="flex:1;">
+          <button type="button" onclick="pqRemoverCrianca(this)" style="background:none;border:none;font-size:18px;cursor:pointer;color:var(--danger);line-height:1;padding:0 4px;" title="Remover">✕</button>
+        </div>
+      </div>
+      <button type="button" onclick="pqAdicionarCrianca()" style="font-size:12px;color:var(--wine);background:none;border:1.5px dashed var(--wine);border-radius:var(--radius);padding:6px 12px;cursor:pointer;width:100%;margin-top:2px;">＋ Adicionar outra criança</button>
     </div>
 
     <div class="field">
