@@ -1,0 +1,44 @@
+{
+  "name": "Primus — Sistema de Gestão",
+  "short_name": "Primus",
+  "description": "Sistema de gestão de estoque, vendas e auditoria da Peixaria Primus",
+  "lang": "pt-BR",
+  "start_url": "./gestor.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#7A1535",
+  "background_color": "#faf3f0",
+  "icons": [
+    {
+      "src": "img/logo-96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "img/logo-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "img/logo-384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "img/logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "img/logo-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
