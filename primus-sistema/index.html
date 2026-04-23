@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Primus — Entrar</title>
+<link rel="icon" type="image/png" href="img/logo.png">
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;600;800;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/primus.css">
+
+<style>
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background:
+      radial-gradient(circle at 10% 20%, rgba(124,0,71,0.08) 0%, transparent 50%),
+      radial-gradient(circle at 90% 80%, rgba(250,185,0,0.08) 0%, transparent 50%),
+      var(--cinza-bg);
+  }
+
+  .login-card {
+    background: white;
+    border-radius: 20px;
+    padding: 36px 28px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+    position: relative;
+    overflow: hidden;
+  }
+  .login-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 5px;
+    background: var(--amarelo);
+  }
+
+  .login-brand {
+    text-align: center;
+    margin-bottom: 28px;
+  }
+  .login-brand .logo-img {
+    width: 96px;
+    height: 96px;
+    margin-bottom: 16px;
+    border-radius: 20px;
+    box-shadow: 0 8px 24px rgba(124,0,71,0.15);
+    display: inline-block;
+    object-fit: contain;
+  }
+  .login-brand h1 {
+    font-family: 'Raleway', sans-serif;
+    font-weight: 900;
+    font-size: 22px;
+    color: var(--vinho);
+    letter-spacing: 2.5px;
+    margin-bottom: 4px;
+  }
+  .login-brand p {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--cinza-texto);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .login-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--cinza-texto);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    display: block;
+  }
+
+  /* Lista de usuários */
+  .users-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 20px;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .user-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--cinza-bg);
+    border: 2px solid transparent;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+    width: 100%;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .user-item:hover { background: #ece8e1; }
+  .user-item.selected {
+    background: white;
+    border-color: var(--vinho);
+    box-shadow: 0 4px 12px rgba(124,0,71,0.15);
+  }
+  .user-item-avatar {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    background: var(--vinho);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Raleway', sans-serif;
+    font-weight: 800;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+  .user-item.selected .user-item-avatar { background: var(--amarelo); color: var(--vinho); }
+  .user-item-info { flex: 1; min-width: 0; }
+  .user-item-nome { font-weight: 600; font-size: 14px; color: var(--preto); }
+  .user-item-perfil {
+    font-size: 10px;
+    color: var(--cinza-texto);
+    font-family: 'DM Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-top: 2px;
+  }
+  .perfil-badge {
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
+  .perfil-badge.barman { background: var(--azul-bg); color: var(--azul); }
+  .perfil-badge.gerente { background: var(--amarelo-bg); color: var(--amarelo-status); }
+  .perfil-badge.gestor { background: var(--ks-bg); color: var(--vinho); }
+
+  .empty-users {
+    text-align: center;
+    padding: 40px 16px;
+    color: var(--cinza-texto);
+    font-size: 13px;
+  }
+  .empty-users .icon { font-size: 40px; margin-bottom: 10px; opacity: 0.4; }
+
+  /* PIN pad */
+  .pin-wrap { display: none; }
+  .pin-wrap.active { display: block; }
+
+  .pin-display {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .pin-dot {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    border: 2px solid var(--cinza-borda);
+    background: transparent;
+    transition: all 0.15s;
+  }
+  .pin-dot.filled {
+    background: var(--vinho);
+    border-color: var(--vinho);
+    transform: scale(1.1);
+  }
+  .pin-dot.err { border-color: var(--vermelho); background: var(--vermelho-bg); animation: shake 0.4s; }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+
+  .pin-pad {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .pin-key {
+    padding: 18px 0;
+    font-family: 'Raleway', sans-serif;
+    font-weight: 700;
+    font-size: 22px;
+    background: var(--cinza-bg);
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+    color: var(--preto);
+    transition: all 0.1s;
+  }
+  .pin-key:hover { background: #ece8e1; }
+  .pin-key:active { background: var(--vinho); color: white; transform: scale(0.96); }
+  .pin-key.special { font-size: 15px; font-weight: 600; color: var(--cinza-texto); background: transparent; }
+  .pin-key.special:hover { background: var(--cinza-bg); color: var(--preto); }
+
+  .pin-error {
+    text-align: center;
+    font-size: 12px;
+    color: var(--vermelho);
+    margin-bottom: 10px;
+    min-height: 16px;
+    font-weight: 600;
+  }
+
+  .back-btn {
+    background: transparent;
+    border: none;
+    color: var(--cinza-texto);
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px;
+    margin: 0 auto;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .back-btn:hover { color: var(--vinho); }
+
+  .selected-user-banner {
+    background: var(--vinho);
+    color: white;
+    border-radius: 12px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 18px;
+  }
+  .selected-user-banner .user-item-avatar { background: var(--amarelo); color: var(--vinho); }
+  .selected-user-banner .user-item-nome { color: white; }
+  .selected-user-banner .user-item-perfil { color: rgba(255,255,255,0.6); }
+
+  /* Seed inicial */
+  .seed-notice {
+    background: var(--amarelo-bg);
+    border: 1px solid var(--amarelo);
+    color: var(--amarelo-status);
+    padding: 14px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1.5;
+    margin-bottom: 16px;
+  }
+  .seed-notice strong { display: block; margin-bottom: 4px; font-family: 'Raleway', sans-serif; }
+  .seed-notice .pin-sample {
+    font-family: 'DM Mono', monospace;
+    background: rgba(0,0,0,0.06);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+
+  .footer-hint {
+    text-align: center;
+    margin-top: 20px;
+    font-size: 10px;
+    color: var(--cinza-texto);
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 1px;
+  }
+</style>
+</head>
+<body>
+
+<div class="login-card">
+  <div class="login-brand">
+    <img src="img/logo.png" alt="Primus Peixaria" class="logo-img">
+    <h1>PRIMUS</h1>
+    <p>Sistema de Gestão</p>
+  </div>
+
+  <!-- ETAPA 1: LISTA DE USUÁRIOS -->
+  <div id="etapa-usuarios">
+    <label class="login-label">Quem está entrando?</label>
+    <div class="users-list" id="users-list">
+      <div style="text-align:center;padding:40px 0"><span class="spinner"></span></div>
+    </div>
+    <div id="seed-notice-wrap"></div>
+  </div>
+
+  <!-- ETAPA 2: PIN -->
+  <div id="etapa-pin" class="pin-wrap">
+    <div class="selected-user-banner" id="selected-user-banner"></div>
+
+    <label class="login-label" style="text-align:center">Digite seu PIN de 4 dígitos</label>
+    <div class="pin-display" id="pin-display">
+      <div class="pin-dot"></div>
+      <div class="pin-dot"></div>
+      <div class="pin-dot"></div>
+      <div class="pin-dot"></div>
+    </div>
+    <div class="pin-error" id="pin-error"></div>
+
+    <div class="pin-pad">
+      <button class="pin-key" data-key="1">1</button>
+      <button class="pin-key" data-key="2">2</button>
+      <button class="pin-key" data-key="3">3</button>
+      <button class="pin-key" data-key="4">4</button>
+      <button class="pin-key" data-key="5">5</button>
+      <button class="pin-key" data-key="6">6</button>
+      <button class="pin-key" data-key="7">7</button>
+      <button class="pin-key" data-key="8">8</button>
+      <button class="pin-key" data-key="9">9</button>
+      <button class="pin-key special" data-key="clear">Limpar</button>
+      <button class="pin-key" data-key="0">0</button>
+      <button class="pin-key special" data-key="back">‹</button>
+    </div>
+
+    <button class="back-btn" id="btn-voltar">← Escolher outro usuário</button>
+  </div>
+
+  <div class="footer-hint">PEIXARIA PRIMUS · CUIABÁ</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { listarUsuarios, fazerLogin, seedUsuariosSeNecessario, getSessao } from './js/auth.js';
+
+  // Se já tem sessão, redireciona
+  const sess = getSessao();
+  if (sess) {
+    window.location.href = sess.perfil === 'gestor' ? 'gestor.html' : 'contagem.html';
+  }
+
+  const $listaUsuarios = document.getElementById('users-list');
+  const $etapaUsuarios = document.getElementById('etapa-usuarios');
+  const $etapaPin = document.getElementById('etapa-pin');
+  const $bannerSelecionado = document.getElementById('selected-user-banner');
+  const $pinError = document.getElementById('pin-error');
+  const $seedNoticeWrap = document.getElementById('seed-notice-wrap');
+  const dots = document.querySelectorAll('.pin-dot');
+  const toast = document.getElementById('toast');
+
+  let usuarioSelecionado = null;
+  let pinAtual = '';
+  let travado = false;
+
+  function mostrarToast(msg, tipo = '') {
+    toast.textContent = msg;
+    toast.className = 'toast show ' + tipo;
+    setTimeout(() => toast.className = 'toast', 2500);
+  }
+
+  function iniciais(nome) {
+    return nome.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+  }
+
+  async function carregarUsuarios() {
+    try {
+      // Seed inicial se for o primeiro acesso
+      const fezSeed = await seedUsuariosSeNecessario();
+
+      const usuarios = await listarUsuarios();
+      if (!usuarios.length) {
+        $listaUsuarios.innerHTML = `
+          <div class="empty-users">
+            <div class="icon">👥</div>
+            Nenhum usuário cadastrado.
+          </div>`;
+        return;
+      }
+
+      $listaUsuarios.innerHTML = '';
+      usuarios.forEach(u => {
+        const btn = document.createElement('button');
+        btn.className = 'user-item';
+        btn.type = 'button';
+        btn.innerHTML = `
+          <div class="user-item-avatar">${iniciais(u.nome)}</div>
+          <div class="user-item-info">
+            <div class="user-item-nome">${u.nome}</div>
+            <div class="user-item-perfil">
+              <span class="perfil-badge ${u.perfil}">${u.perfil}</span>
+            </div>
+          </div>`;
+        btn.onclick = () => selecionarUsuario(u);
+        $listaUsuarios.appendChild(btn);
+      });
+
+      if (fezSeed) {
+        $seedNoticeWrap.innerHTML = `
+          <div class="seed-notice">
+            <strong>⚡ Primeiro acesso</strong>
+            Usuários padrão criados. PINs iniciais:
+            <div style="margin-top:8px;line-height:2">
+              Barman: <span class="pin-sample">1111</span> ·
+              Gerente: <span class="pin-sample">2222</span> ·
+              Gestor: <span class="pin-sample">0000</span>
+            </div>
+            <div style="margin-top:8px;opacity:0.85">Troque os PINs assim que fizer o primeiro login como gestor.</div>
+          </div>`;
+      }
+    } catch (e) {
+      console.error(e);
+      $listaUsuarios.innerHTML = `
+        <div class="empty-users">
+          <div class="icon">⚠️</div>
+          <div style="color:var(--vermelho);font-weight:600;margin-bottom:6px">Erro ao conectar no Firebase</div>
+          <div style="font-size:11px">${e.message}</div>
+        </div>`;
+    }
+  }
+
+  function selecionarUsuario(u) {
+    usuarioSelecionado = u;
+    $etapaUsuarios.style.display = 'none';
+    $etapaPin.classList.add('active');
+    $bannerSelecionado.innerHTML = `
+      <div class="user-item-avatar">${iniciais(u.nome)}</div>
+      <div class="user-item-info">
+        <div class="user-item-nome">${u.nome}</div>
+        <div class="user-item-perfil">${u.perfil}</div>
+      </div>`;
+    pinAtual = '';
+    atualizarDots();
+    $pinError.textContent = '';
+  }
+
+  function voltar() {
+    usuarioSelecionado = null;
+    pinAtual = '';
+    $etapaUsuarios.style.display = 'block';
+    $etapaPin.classList.remove('active');
+    atualizarDots();
+  }
+
+  function atualizarDots(erro = false) {
+    dots.forEach((d, i) => {
+      d.classList.toggle('filled', i < pinAtual.length);
+      d.classList.toggle('err', erro);
+    });
+  }
+
+  async function tentarLogin() {
+    travado = true;
+    $pinError.textContent = '';
+    try {
+      const r = await fazerLogin(usuarioSelecionado.id, pinAtual);
+      if (!r.ok) {
+        atualizarDots(true);
+        $pinError.textContent = r.erro;
+        setTimeout(() => {
+          pinAtual = '';
+          atualizarDots(false);
+          travado = false;
+        }, 500);
+        return;
+      }
+      // sucesso
+      mostrarToast('Entrando...', 'ok');
+      setTimeout(() => {
+        window.location.href = r.sessao.perfil === 'gestor' ? 'gestor.html' : 'contagem.html';
+      }, 400);
+    } catch (e) {
+      console.error(e);
+      $pinError.textContent = 'Erro ao entrar. Tente de novo.';
+      travado = false;
+    }
+  }
+
+  document.querySelectorAll('.pin-key').forEach(btn => {
+    btn.onclick = () => {
+      if (travado) return;
+      const k = btn.dataset.key;
+      if (k === 'clear') { pinAtual = ''; atualizarDots(); $pinError.textContent=''; return; }
+      if (k === 'back') { pinAtual = pinAtual.slice(0, -1); atualizarDots(); $pinError.textContent=''; return; }
+      if (pinAtual.length >= 4) return;
+      pinAtual += k;
+      atualizarDots();
+      if (pinAtual.length === 4) setTimeout(tentarLogin, 150);
+    };
+  });
+
+  document.getElementById('btn-voltar').onclick = voltar;
+
+  // Teclado físico
+  document.addEventListener('keydown', e => {
+    if (!$etapaPin.classList.contains('active') || travado) return;
+    if (/^[0-9]$/.test(e.key)) {
+      if (pinAtual.length < 4) {
+        pinAtual += e.key;
+        atualizarDots();
+        if (pinAtual.length === 4) setTimeout(tentarLogin, 150);
+      }
+    } else if (e.key === 'Backspace') {
+      pinAtual = pinAtual.slice(0, -1);
+      atualizarDots();
+    } else if (e.key === 'Escape') {
+      voltar();
+    }
+  });
+
+  carregarUsuarios();
+</script>
+
+</body>
+</html>

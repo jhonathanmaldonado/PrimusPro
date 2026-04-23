@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Contagem — Primus</title>
+<link rel="icon" type="image/png" href="img/logo.png">
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;600;800;900&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/primus.css">
+
+<style>
+  body { padding-bottom: 90px; }
+
+  /* Seletor de tipo */
+  .tipo-selector {
+    padding: 18px 16px;
+    background: var(--vinho);
+  }
+  .tipo-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  .tipo-btn {
+    padding: 14px 8px;
+    border-radius: 12px;
+    border: 2px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.7);
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+    font-family: 'Raleway', sans-serif;
+    font-weight: 700;
+    font-size: 12px;
+    line-height: 1.3;
+  }
+  .tipo-btn .tipo-icon { font-size: 22px; display: block; margin-bottom: 5px; }
+  .tipo-btn.active {
+    background: var(--amarelo);
+    border-color: var(--amarelo);
+    color: var(--vinho);
+  }
+  .tipo-btn:hover:not(.active) {
+    background: rgba(255,255,255,0.15);
+  }
+
+  /* Barra de data */
+  .data-bar {
+    background: rgba(0,0,0,0.25);
+    padding: 10px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .data-bar label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.6);
+    font-family: 'DM Mono', monospace;
+    letter-spacing: 1px;
+  }
+  .data-bar input {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 6px;
+    padding: 5px 10px;
+    color: white;
+    font-size: 13px;
+    font-family: 'DM Mono', monospace;
+    outline: none;
+  }
+  .data-bar input:focus { border-color: var(--amarelo); }
+
+  /* Barra de progresso */
+  .progresso-bar {
+    background: white;
+    border-bottom: 1px solid var(--cinza-borda);
+    padding: 12px 20px;
+    display: none;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+  }
+  .prog-texto { font-size: 11px; color: var(--cinza-texto); font-family: 'DM Mono', monospace; white-space: nowrap; }
+  .prog-track { flex: 1; height: 6px; background: var(--cinza-borda); border-radius: 3px; overflow: hidden; }
+  .prog-fill { height: 100%; background: var(--amarelo); transition: width 0.3s; }
+  .prog-pct { font-family: 'Raleway', sans-serif; font-weight: 800; font-size: 13px; color: var(--vinho); min-width: 40px; text-align: right; }
+
+  /* Conteúdo principal */
+  .main {
+    padding: 16px 12px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  .tela-inicio {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--cinza-texto);
+  }
+  .tela-inicio .icon { font-size: 50px; margin-bottom: 14px; opacity: 0.5; }
+  .tela-inicio h2 { font-family: 'Raleway', sans-serif; font-weight: 800; font-size: 18px; margin-bottom: 6px; color: var(--preto); }
+  .tela-inicio p { font-size: 13px; }
+
+  /* Grupo de produtos */
+  .grupo {
+    background: white;
+    border-radius: 12px;
+    margin-bottom: 14px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .grupo-header {
+    background: var(--preto);
+    color: white;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .grupo-icon { font-size: 18px; }
+  .grupo-nome { flex: 1; font-family: 'Raleway', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: 1px; }
+  .grupo-count { font-size: 10px; opacity: 0.6; font-family: 'DM Mono', monospace; }
+
+  .col-headers {
+    display: grid;
+    padding: 8px 12px;
+    background: var(--cinza-bg);
+    border-bottom: 1px solid var(--cinza-borda);
+    gap: 6px;
+  }
+  .col-header {
+    font-size: 9px;
+    color: var(--cinza-texto);
+    font-family: 'DM Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-weight: 600;
+    text-align: center;
+  }
+  .col-header:first-child { text-align: left; }
+
+  .col-headers.layout-beb     { grid-template-columns: 1fr 55px 55px 50px 80px; }
+  .col-headers.layout-fin     { grid-template-columns: 1fr 55px 55px 50px 55px 80px; }
+  .col-headers.layout-sorv    { grid-template-columns: 1fr 85px 90px; }
+  .col-headers.layout-sorv-fin{ grid-template-columns: 1fr 65px 65px 60px 80px; }
+
+  .produto-row {
+    display: grid;
+    padding: 8px 12px;
+    gap: 6px;
+    align-items: center;
+    border-bottom: 1px solid var(--cinza-borda);
+    transition: background 0.15s;
+  }
+  .produto-row:last-child { border-bottom: none; }
+  .produto-row.preenchido { background: rgba(250,185,0,0.05); }
+
+  .produto-row.layout-beb     { grid-template-columns: 1fr 55px 55px 50px 80px; }
+  .produto-row.layout-fin     { grid-template-columns: 1fr 55px 55px 50px 55px 80px; }
+  .produto-row.layout-sorv    { grid-template-columns: 1fr 85px 90px; }
+  .produto-row.layout-sorv-fin{ grid-template-columns: 1fr 65px 65px 60px 80px; }
+
+  .prod-nome {
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.25;
+    color: var(--preto);
+  }
+  .tag-ks, .tag-saindo {
+    display: inline-block;
+    font-size: 8px;
+    padding: 1px 5px;
+    border-radius: 6px;
+    margin-left: 4px;
+    font-family: 'DM Mono', monospace;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    vertical-align: middle;
+  }
+  .tag-ks { background: var(--ks-bg); color: var(--vinho); }
+  .tag-saindo { background: var(--vermelho-bg); color: var(--vermelho); }
+
+  .num-input {
+    width: 100%;
+    padding: 8px 4px;
+    border: 1.5px solid var(--cinza-borda);
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: 'DM Mono', monospace;
+    text-align: center;
+    background: white;
+    font-weight: 600;
+    outline: none;
+    -moz-appearance: textfield;
+  }
+  .num-input::-webkit-outer-spin-button,
+  .num-input::-webkit-inner-spin-button {
+    -webkit-appearance: none; margin: 0;
+  }
+  .num-input:focus { border-color: var(--amarelo); box-shadow: 0 0 0 3px rgba(250,185,0,0.15); }
+  .num-input.filled { background: var(--amarelo-bg); border-color: var(--amarelo); color: var(--vinho); }
+
+  .total-val {
+    text-align: center;
+    font-family: 'Raleway', sans-serif;
+    font-weight: 800;
+    font-size: 15px;
+    color: #ccc;
+  }
+
+  .obs-input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1.5px solid var(--cinza-borda);
+    border-radius: 8px;
+    font-size: 11px;
+    font-family: 'DM Sans', sans-serif;
+    background: white;
+    outline: none;
+    resize: none;
+    line-height: 1.3;
+    min-height: 32px;
+  }
+  .obs-input:focus { border-color: var(--amarelo); }
+
+  .secao-sep-sorv {
+    background: var(--vinho);
+    color: white;
+    padding: 10px 14px;
+    font-family: 'Raleway', sans-serif;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 1px;
+    border-radius: 12px 12px 0 0;
+    margin-bottom: -14px;
+  }
+
+  @media (max-width: 500px) {
+    .produto-row.layout-beb     { grid-template-columns: 1fr 50px 50px 44px 70px; padding: 8px 10px; }
+    .produto-row.layout-fin     { grid-template-columns: 1fr 48px 48px 44px 48px 70px; padding: 8px 10px; }
+    .produto-row.layout-sorv    { grid-template-columns: 1fr 75px 80px; }
+    .produto-row.layout-sorv-fin{ grid-template-columns: 1fr 55px 55px 50px 70px; }
+    .col-headers.layout-beb     { grid-template-columns: 1fr 50px 50px 44px 70px; }
+    .col-headers.layout-fin     { grid-template-columns: 1fr 48px 48px 44px 48px 70px; }
+    .col-headers.layout-sorv    { grid-template-columns: 1fr 75px 80px; }
+    .col-headers.layout-sorv-fin{ grid-template-columns: 1fr 55px 55px 50px 70px; }
+    .num-input { font-size: 14px; padding: 7px 3px; }
+    .obs-input { font-size: 10px; }
+    .prod-nome { font-size: 11px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-tarja"></div>
+  <div class="header-inner">
+    <div class="header-logo">
+      <div class="logo-box"><img src="img/logo.png" alt="Primus"></div>
+      <div class="logo-text">
+        <h1>CONTAGEM</h1>
+        <p>ESTOQUE PRIMUS</p>
+      </div>
+    </div>
+
+    <div class="user-chip-wrap">
+      <div class="user-chip" id="user-chip">
+        <div class="user-avatar" id="user-avatar">??</div>
+        <div class="user-info">
+          <div class="user-name" id="user-name">—</div>
+          <div class="user-perfil" id="user-perfil">—</div>
+        </div>
+      </div>
+      <div class="user-menu" id="user-menu">
+        <button id="btn-painel-gestor" style="display:none;color:var(--vinho);font-weight:600" onclick="location.href='gestor.html'">
+          📊 Painel do Gestor
+        </button>
+        <button class="danger" id="btn-logout">Sair</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tipo-selector">
+    <div class="tipo-grid">
+      <button class="tipo-btn" id="btn-ini" onclick="selecionarTipo('ini')">
+        <span class="tipo-icon">🌅</span>
+        Bebidas<br>INÍCIO
+      </button>
+      <button class="tipo-btn" id="btn-fin" onclick="selecionarTipo('fin')">
+        <span class="tipo-icon">🌙</span>
+        Bebidas<br>FINAL
+      </button>
+      <button class="tipo-btn" id="btn-sorv" onclick="selecionarTipo('sorv')">
+        <span class="tipo-icon">🍨</span>
+        Sorvetes &<br>Embalagens
+      </button>
+    </div>
+  </div>
+
+  <div class="data-bar">
+    <label>📅 DATA</label>
+    <input type="date" id="data-input">
+  </div>
+</header>
+
+<div class="progresso-bar" id="progresso-bar">
+  <span class="prog-texto" id="prog-texto">0 / 0</span>
+  <div class="prog-track"><div class="prog-fill" id="prog-fill"></div></div>
+  <span class="prog-pct" id="prog-pct">0%</span>
+</div>
+
+<main class="main" id="main-content">
+  <div class="tela-inicio">
+    <div class="icon">📋</div>
+    <h2>Selecione o tipo de contagem</h2>
+    <p>Escolha acima qual folha você vai preencher</p>
+  </div>
+</main>
+
+<div class="bottom-bar" id="bottom-bar" style="display:none">
+  <button class="btn btn-primary" id="btn-salvar" style="flex:1">
+    💾 Salvar Contagem
+  </button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module" src="js/contagem.js"></script>
+
+</body>
+</html>
