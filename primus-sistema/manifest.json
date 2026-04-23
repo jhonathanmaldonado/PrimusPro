@@ -1,6 +1,6 @@
 {
-  "name": "Primus — Sistema de Gestão",
-  "short_name": "Primus",
+  "name": "Painel do Gestor",
+  "short_name": "Painel do Gestor",
   "description": "Sistema de gestão de estoque, vendas e auditoria da Peixaria Primus",
   "lang": "pt-BR",
   "start_url": "./gestor.html",
