@@ -1347,6 +1347,10 @@ function renderizarExploradorResultado(buckets, dimensao, flags) {
     avisoProporcao = `<div class="expl-aviso">⚠️ Valores estimados por proporção — o TXT do PDV não cruza diretamente ${descreverFiltros(fVend, fSubgrupo, fProduto, dimensao)}. Pra ter valores reais, suba o relatório Vendedor × Produto na aba Vendas.</div>`;
   }
 
+  // Colunas "Dias" e "Média/dia" só fazem sentido quando há agregação por múltiplos dias.
+  // Na dimensão "dia", cada linha É um dia, então seria sempre 1 — redundante.
+  const mostrarDias = dimensao !== 'dia';
+
   resultado.innerHTML = `
     <div class="expl-resumo">
       <div class="expl-resumo-item">
@@ -1370,6 +1374,8 @@ function renderizarExploradorResultado(buckets, dimensao, flags) {
           <th class="expl-th-chave">${dimensaoLabel(dimensao)}</th>
           <th class="expl-th-num">Unidades</th>
           <th class="expl-th-num">Faturamento</th>
+          ${mostrarDias ? '<th class="expl-th-num" title="Dias em que este item teve venda no período">Dias</th>' : ''}
+          ${mostrarDias ? '<th class="expl-th-num" title="Média de unidades por dia trabalhado">Média/dia</th>' : ''}
           <th class="expl-th-barra">Participação</th>
         </tr>
       </thead>
@@ -1377,12 +1383,15 @@ function renderizarExploradorResultado(buckets, dimensao, flags) {
         ${ordenado.slice(0, 30).map((r, i) => {
           const pct = maior ? (r.qtd / maior) * 100 : 0;
           const pctTotal = qtdTotal ? (r.qtd / qtdTotal) * 100 : 0;
+          const mediaDia = r.dias > 0 ? (r.qtd / r.dias) : 0;
           return `
             <tr>
               <td class="expl-td-pos">${i + 1}</td>
               <td class="expl-td-chave" title="${r.chave}">${r.chave}</td>
               <td class="expl-td-num">${fmtInt(r.qtd)}</td>
               <td class="expl-td-num expl-td-vinho">${fmtMoeda(r.total)}</td>
+              ${mostrarDias ? `<td class="expl-td-num">${r.dias}</td>` : ''}
+              ${mostrarDias ? `<td class="expl-td-num">${mediaDia.toFixed(1)}</td>` : ''}
               <td class="expl-td-barra">
                 <div class="expl-barra-wrap">
                   <div class="expl-barra-fill" style="width:${pct}%"></div>
