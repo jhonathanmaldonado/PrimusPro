@@ -550,13 +550,28 @@ function calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebime
   // Se tiver FIN anterior, extrai também (pra calcular D-1)
   const estoqueFinAnt = contagemFinAnterior ? extrairEstoque(contagemFinAnterior) : null;
 
-  // Soma recebimentos por slug
+  // Recebimentos têm 2 fontes possíveis:
+  //  (a) registrados via Lista de Compras (documentos tipo "recebimento" em primus_compras)
+  //  (b) anotados direto na folha FIN (campo "Recebido" → dados[slug].rec)
+  // Somamos as duas — se o gestor registrar em uma só fonte, funciona igual.
   const recebidoPorSlug = {};
+  // Fonte (a): documentos de recebimento
   recebimentos.forEach(r => {
     (r.itens || []).forEach(i => {
       if (!recebidoPorSlug[i.slug]) recebidoPorSlug[i.slug] = 0;
       recebidoPorSlug[i.slug] += i.qtd || 0;
     });
+  });
+  // Fonte (b): campo "rec" dentro da própria contagem FIN
+  Object.entries(contagemFin.itens || {}).forEach(([chave, v]) => {
+    if (typeof v !== 'object' || v === null) return;
+    // Só bebidas (chaves sem sufixo __fin/__ini) têm o campo rec
+    if (chave.includes('__')) return;
+    const qtdRec = v.rec || 0;
+    if (qtdRec > 0) {
+      if (!recebidoPorSlug[chave]) recebidoPorSlug[chave] = 0;
+      recebidoPorSlug[chave] += qtdRec;
+    }
   });
 
   // Soma vendas por slug (match fuzzy pelo nome → slug)
