@@ -12,7 +12,8 @@
 import {
   listarContagens, listarVendas, listarRecebimentos,
   salvarAuditoriaFechada, buscarAuditoriaFechada,
-  listarAuditoriasFechadas, excluirAuditoriaFechada
+  listarAuditoriasFechadas, excluirAuditoriaFechada,
+  corrigirItemContagem
 } from './db.js';
 import { BEBIDAS, slugify, converterParaCaixas } from './produtos.js';
 import { getSessao } from './auth.js';
@@ -531,13 +532,21 @@ async function executarModoVirada() {
     throw new Error(`Não encontrei contagem de INÍCIO (ini) em ${fmtData(dataFim)}.`);
   }
 
-  // 2) Calcula auditoria de virada
-  resultadoAuditoria = calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual);
+  // 2) Busca auditoria operacional FECHADA do dia anterior (pro cruzamento de erro de contagem)
+  let auditoriaOperacionalDiaAnterior = null;
+  try {
+    auditoriaOperacionalDiaAnterior = await buscarAuditoriaFechada('operacional', dataInicio, dataInicio);
+  } catch (e) {
+    console.warn('Não foi possível buscar auditoria operacional do dia anterior:', e);
+  }
 
-  // Salva contexto pro PDF usar depois
-  contextoAuditoria = { contagemFinAnterior, contagemIniAtual };
+  // 3) Calcula auditoria de virada com cruzamento
+  resultadoAuditoria = calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior);
 
-  // 3) Renderiza (layout específico do modo virada)
+  // Salva contexto pro PDF e correção usarem depois
+  contextoAuditoria = { contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior };
+
+  // 4) Renderiza (layout específico do modo virada)
   renderizarResumoVirada(contagemFinAnterior, contagemIniAtual);
   renderizarTabelaVirada();
 }
@@ -672,9 +681,17 @@ function extrairEstoque(contagem) {
 // Compara FIN do dia anterior com INI do dia atual.
 // Em teoria, deveriam ser IGUAIS (não houve operação entre eles).
 // Qualquer diferença significa sumiço ou erro de contagem.
-function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual) {
+function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior = null) {
   const estoqueFim  = extrairEstoque(contagemFinAnterior);
   const estoqueIni  = extrairEstoque(contagemIniAtual);
+
+  // Mapa slug → diferença da auditoria operacional do dia anterior (se existir)
+  const difOperacionalPorSlug = {};
+  if (auditoriaOperacionalDiaAnterior && auditoriaOperacionalDiaAnterior.resultado) {
+    auditoriaOperacionalDiaAnterior.resultado.forEach(r => {
+      difOperacionalPorSlug[r.slug] = r.diferenca || 0;
+    });
+  }
 
   return BEBIDAS.map(bebida => {
     const slug = slugify(bebida.nome);
@@ -689,6 +706,27 @@ function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual) {
     else if (abs >= 2) status = 'atencao';
     else if (abs >= 1) status = 'leve';
 
+    // DETECÇÃO DE ERRO DE CONTAGEM CONFIRMADO
+    // Se na auditoria do dia anterior houve DIF, e hoje na virada a DIF está
+    // próximo do oposto, é "coincidência suspeita" → erro de contagem confirmado
+    let erroContagemConfirmado = false;
+    let difOperacionalAnterior = null;
+
+    if (slug in difOperacionalPorSlug) {
+      const difOp = difOperacionalPorSlug[slug];
+      difOperacionalAnterior = difOp;
+
+      // Soma das duas diferenças deveria ser ~0 se for erro de contagem
+      // (uma "sumiu" no dia, a outra "apareceu" na virada — se anulam)
+      const soma = difOp + diferenca;
+
+      // Tolerância 1: soma entre -1 e +1
+      // E além disso, ambos têm que ter magnitude >= 1 (senão é só zero vs zero)
+      if (Math.abs(soma) <= 1 && Math.abs(difOp) >= 1 && Math.abs(diferenca) >= 1) {
+        erroContagemConfirmado = true;
+      }
+    }
+
     return {
       slug,
       nome: bebida.nome,
@@ -698,7 +736,9 @@ function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual) {
       fimAnterior,
       iniAtual,
       diferenca,
-      status
+      status,
+      erroContagemConfirmado,
+      difOperacionalAnterior
     };
   });
 }
@@ -1050,9 +1090,32 @@ function renderLinhaVirada(r) {
   const difClasse = r.diferenca < 0 ? 'aud-dif-neg' :
                     r.diferenca > 0 ? 'aud-dif-pos' : 'aud-dif-zero';
 
+  // Badge e botão de erro de contagem confirmado
+  let erroConfirmadoHtml = '';
+  if (r.erroContagemConfirmado) {
+    const difOp = r.difOperacionalAnterior;
+    erroConfirmadoHtml = `
+      <div class="aud-erro-confirmado">
+        <span class="aud-erro-ico">⚠️</span>
+        <div class="aud-erro-txt">
+          <strong>Erro de contagem confirmado</strong>
+          <small>Ontem faltou ${fmtSgn(difOp)}, hoje apareceu ${fmtSgn(r.diferenca)}. Total = 0 → a FIN de ontem foi contada errada.</small>
+        </div>
+        <button class="btn btn-primary btn-sm aud-btn-corrigir"
+                onclick="window.__aud_corrigirErro('${r.slug}', ${r.fimAnterior}, ${r.iniAtual})"
+                title="Corrigir FIN do dia anterior pra ${fmtInt(r.iniAtual)}">
+          🔄 Corrigir FIN
+        </button>
+      </div>
+    `;
+  }
+
   return `
-    <div class="aud-linha aud-linha-virada aud-linha-${r.status}">
-      <div class="aud-nome">${r.nome}</div>
+    <div class="aud-linha aud-linha-virada aud-linha-${r.status}${r.erroContagemConfirmado ? ' aud-linha-erro-confirmado' : ''}">
+      <div class="aud-nome">
+        ${r.nome}
+        ${erroConfirmadoHtml}
+      </div>
       <div class="aud-num">${fmtInt(r.fimAnterior)}</div>
       <div class="aud-num aud-num-real">${fmtInt(r.iniAtual)}</div>
       <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}${convDif}</div>
@@ -1655,6 +1718,97 @@ function gerarPDFVirada(itens, conteudo) {
   const nomeArq = `auditoria_virada_${dataInicio}_${dataFim}.pdf`;
   doc.save(nomeArq);
 }
+
+// ========================================================================
+// CORREÇÃO DE ERRO DE CONTAGEM (fluxo do D-1)
+// ========================================================================
+
+/**
+ * Chamado quando o usuário clica em "🔄 Corrigir FIN" num produto com
+ * erro de contagem confirmado. Abre modal de confirmação, e se OK,
+ * atualiza a FIN do dia anterior pra igualar a INI de hoje.
+ */
+window.__aud_corrigirErro = async function(slug, fimAnteriorAtual, iniAtual) {
+  const item = resultadoAuditoria.find(r => r.slug === slug);
+  if (!item) {
+    alert('Item não encontrado.');
+    return;
+  }
+
+  const { contagemFinAnterior } = contextoAuditoria;
+  if (!contagemFinAnterior) {
+    alert('Contagem FIN do dia anterior não disponível.');
+    return;
+  }
+
+  // Mostra modal de confirmação
+  const confirmado = confirm(
+    `🔄 CORRIGIR CONTAGEM FIN\n\n` +
+    `Produto: ${item.nome}\n` +
+    `Data: ${fmtData(dataInicio)}\n\n` +
+    `Valor atual (FIN): ${fimAnteriorAtual}\n` +
+    `Valor correto: ${iniAtual}\n\n` +
+    `Esta ação vai:\n` +
+    `• Corrigir a FIN de ontem de ${fimAnteriorAtual} pra ${iniAtual}\n` +
+    `• Zerar a divergência detectada na auditoria operacional anterior\n` +
+    `• Recalcular esta auditoria automaticamente\n\n` +
+    `⚠️  A correção fica registrada no histórico. Confirmar?`
+  );
+
+  if (!confirmado) return;
+
+  try {
+    // Copia os itens atuais da contagem e atualiza só o item alvo
+    const novosItens = { ...contagemFinAnterior.itens };
+    const chaveAtual = Object.keys(novosItens).find(k =>
+      k === slug || k.startsWith(`${slug}__`)
+    );
+
+    if (!chaveAtual) {
+      alert('Estrutura da contagem não reconhecida. Contate o administrador.');
+      return;
+    }
+
+    // Atualiza o valor do item
+    // Estrutura típica: { "slug__fin": { final: X }, ... } ou { "slug": { fr: X, est: Y } }
+    const valorAtual = novosItens[chaveAtual];
+    if (valorAtual && typeof valorAtual === 'object') {
+      if ('final' in valorAtual) {
+        // Tipo FIN com campo "final"
+        valorAtual.final = iniAtual;
+      } else if ('fr' in valorAtual && 'est' in valorAtual) {
+        // Tipo com fr+est — coloca tudo em fr (zera est)
+        valorAtual.fr = iniAtual;
+        valorAtual.est = 0;
+      } else {
+        alert('Formato da contagem não reconhecido.');
+        return;
+      }
+    } else {
+      // Valor é um número direto
+      novosItens[chaveAtual] = iniAtual;
+    }
+
+    // Grava a correção
+    const sessao = getSessao();
+    await corrigirItemContagem(contagemFinAnterior.id, novosItens, {
+      responsavel: sessao?.nome || 'Gestor',
+      motivo: `Correção via D-1: FIN ${fimAnteriorAtual} → ${iniAtual} (confirmado por INI do dia seguinte)`,
+      itemSlug: slug,
+      valorAntigo: fimAnteriorAtual,
+      valorNovo: iniAtual
+    });
+
+    alert(`✅ Correção aplicada!\n\nA FIN de ${fmtData(dataInicio)} agora mostra ${iniAtual} unidades de ${item.nome}.\n\nRecalculando auditoria...`);
+
+    // Re-executa a auditoria pra atualizar a tela
+    await executarAuditoria();
+
+  } catch (e) {
+    console.error(e);
+    alert(`❌ Erro ao corrigir: ${e.message}`);
+  }
+};
 
 // ========================================================================
 // FECHAMENTO DE AUDITORIA

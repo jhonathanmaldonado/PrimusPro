@@ -81,6 +81,41 @@ export async function excluirContagem(id) {
   await deleteDoc(doc(db, COL_CONTAGENS, id));
 }
 
+/**
+ * Corrige um item específico de uma contagem existente.
+ * Como a regra do Firestore não permite update em contagens (imutabilidade),
+ * a estratégia é: deletar a antiga e criar uma nova com o item corrigido.
+ * Registra também quem corrigiu pra auditoria.
+ *
+ * @param {string} idContagem - ID da contagem original
+ * @param {object} novosItens - Novos valores de itens (substitui os antigos)
+ * @param {object} correcao - { responsavel, motivo, itemSlug, valorAntigo, valorNovo }
+ * @returns {string} Novo ID da contagem corrigida
+ */
+export async function corrigirItemContagem(idContagem, novosItens, correcao) {
+  const contagemOriginal = await getDoc(doc(db, COL_CONTAGENS, idContagem));
+  if (!contagemOriginal.exists()) {
+    throw new Error('Contagem original não encontrada');
+  }
+  const dados = contagemOriginal.data();
+
+  // Cria nova contagem com os itens corrigidos
+  const novaRef = await addDoc(collection(db, COL_CONTAGENS), {
+    tipo: dados.tipo,
+    data: dados.data,
+    autorId: dados.autorId,
+    autorNome: dados.autorNome,
+    autorPerfil: dados.autorPerfil,
+    itens: novosItens,
+    criadoEm: serverTimestamp()
+  });
+
+  // Deleta a contagem original
+  await deleteDoc(doc(db, COL_CONTAGENS, idContagem));
+
+  return novaRef.id;
+}
+
 // ===== VENDAS (parseadas do TXT do PDV) =====
 
 /**
