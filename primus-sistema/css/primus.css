@@ -1925,6 +1925,15 @@ body {
   outline: none;
   border-color: var(--amarelo);
 }
+.aud-periodo-hint {
+  display: block;
+  margin-top: 4px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10.5px;
+  color: var(--cinza-texto);
+  line-height: 1.4;
+  letter-spacing: 0.2px;
+}
 .aud-periodo-sep {
   font-family: 'DM Mono', monospace;
   font-size: 24px;
