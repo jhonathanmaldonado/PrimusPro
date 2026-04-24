@@ -15,7 +15,7 @@ import {
   listarAuditoriasFechadas, excluirAuditoriaFechada,
   corrigirItemContagem
 } from './db.js';
-import { BEBIDAS, slugify, converterParaCaixas } from './produtos.js';
+import { BEBIDAS, slugify } from './produtos.js';
 import { getSessao } from './auth.js';
 
 // ===== ESTADO =====
@@ -70,28 +70,26 @@ export async function inicializarAuditoria() {
           <span class="aud-modo-ico">📊</span>
           <span class="aud-modo-txt">
             <strong>Dia operacional</strong>
-            <small>INI + recebimentos − vendas vs FIN (mesmo dia)</small>
+            <small>INI + recebimentos − vendas vs FIN do mesmo dia</small>
           </span>
         </button>
         <button class="aud-modo-btn" id="aud-modo-vir" data-modo="virada">
           <span class="aud-modo-ico">🌙</span>
           <span class="aud-modo-txt">
             <strong>Virada de dia</strong>
-            <small>FIN do dia X vs INI do próximo dia operacional</small>
+            <small>INI do dia vs FIN do dia operacional anterior</small>
           </span>
         </button>
       </div>
 
-      <!-- Campos de data (adaptam ao modo) -->
+      <!-- Campo único de data (adapta ao modo) -->
       <div class="aud-periodo" id="aud-periodo">
         <div class="aud-periodo-campo">
-          <label id="aud-label-ini">📅 Contagem de INÍCIO</label>
-          <input type="date" id="aud-data-inicio" value="${ontemIso}">
-        </div>
-        <div class="aud-periodo-sep" id="aud-sep">→</div>
-        <div class="aud-periodo-campo">
-          <label id="aud-label-fim">🌙 Contagem de FINAL</label>
-          <input type="date" id="aud-data-fim" value="${ontemIso}">
+          <label id="aud-label-principal">📅 Contagem do dia</label>
+          <input type="date" id="aud-data-principal" value="${ontemIso}">
+          <small class="aud-periodo-hint" id="aud-hint">
+            Compara INI + recebimentos − vendas vs FIN do mesmo dia
+          </small>
         </div>
         <button class="btn btn-primary" id="aud-executar">🔍 Executar</button>
       </div>
@@ -194,10 +192,11 @@ export async function inicializarAuditoria() {
   document.getElementById('aud-modo-op').onclick  = () => trocarModo('operacional');
   document.getElementById('aud-modo-vir').onclick = () => trocarModo('virada');
 
-  // No modo VIRADA, quando mudar a data FIN, sugere a próxima INI operacional
-  document.getElementById('aud-data-inicio').onchange = () => {
+  // Quando a data muda no modo VIRADA, atualiza o aviso de quantos dias estão entre
+  // o dia anterior operacional e o dia escolhido (parada semanal vs noite normal).
+  document.getElementById('aud-data-principal').onchange = () => {
     if (modoAtual === 'virada') {
-      sugerirProximaINI();
+      aplicarModo();
     }
   };
 
@@ -287,8 +286,8 @@ function trocarModo(novoModo) {
 function aplicarModo() {
   const btnOp  = document.getElementById('aud-modo-op');
   const btnVir = document.getElementById('aud-modo-vir');
-  const labelIni = document.getElementById('aud-label-ini');
-  const labelFim = document.getElementById('aud-label-fim');
+  const labelPrincipal = document.getElementById('aud-label-principal');
+  const hint = document.getElementById('aud-hint');
   const info = document.getElementById('aud-info');
   const sub = document.getElementById('aud-sub');
 
@@ -296,35 +295,36 @@ function aplicarModo() {
   btnVir.classList.toggle('ativo', modoAtual === 'virada');
 
   if (modoAtual === 'operacional') {
-    labelIni.innerHTML = '📅 Contagem de INÍCIO';
-    labelFim.innerHTML = '🌙 Contagem de FINAL';
+    labelPrincipal.innerHTML = '📅 Contagem do dia';
+    hint.textContent = 'Compara INI + recebimentos − vendas vs FIN do mesmo dia';
     info.innerHTML = `
       <strong>📊 Modo Dia operacional:</strong>
-      Busca a contagem INI na data de início e a FIN na data final. Soma recebimentos e
-      subtrai vendas do PDV no período. Compara com a FIN pra detectar divergências
+      Busca a contagem INI e a FIN do dia selecionado. Soma recebimentos e
+      subtrai vendas do PDV. Compara com a FIN pra detectar divergências
       <strong>durante a operação</strong> (consumo fora do PDV, quebras, erros).
     `;
     sub.textContent = 'Modo: Dia operacional';
   } else {
-    labelIni.innerHTML = '🌙 FIN do dia';
-    labelFim.innerHTML = '📅 INI do próximo dia';
+    labelPrincipal.innerHTML = '📅 INI do dia';
+    const dIni = document.getElementById('aud-data-principal')?.value;
+    const diaAnteriorTxt = dIni ? fmtData(diaAnteriorOperacional(dIni)) : '—';
+    hint.textContent = `Compara com a FIN do dia operacional anterior (${diaAnteriorTxt})`;
     info.innerHTML = `
       <strong>🌙 Modo Virada de dia:</strong>
-      Compara a FIN de um dia com a INI do próximo dia operacional. Detecta divergências
+      Compara a FIN do dia operacional anterior com a INI do dia selecionado. Detecta divergências
       <strong>entre operações</strong> (sumiço noturno, erro na virada de contagem).
       Em modo normal a diferença é zero — qualquer divergência merece atenção.
       ${avisoViradaLonga()}
     `;
     sub.textContent = 'Modo: Virada de dia';
-    sugerirProximaINI();
   }
 }
 
 function avisoViradaLonga() {
-  const dIni = document.getElementById('aud-data-inicio')?.value;
-  const dFim = document.getElementById('aud-data-fim')?.value;
-  if (!dIni || !dFim) return '';
-  const diasEntre = diffDias(dIni, dFim);
+  const dIni = document.getElementById('aud-data-principal')?.value;
+  if (!dIni) return '';
+  const dAnterior = diaAnteriorOperacional(dIni);
+  const diasEntre = diffDias(dAnterior, dIni);
   if (diasEntre >= 2) {
     return `<br><span style="color:var(--amarelo-status);font-weight:600">
       ⚠️ ${diasEntre} dias entre fechamento e abertura (parada semanal) — atenção redobrada.
@@ -334,40 +334,18 @@ function avisoViradaLonga() {
 }
 
 /**
- * Quando usuário escolher a FIN de um dia, sugere a INI do próximo dia operacional.
- * Regra: Qua-Dom opera. Se FIN for Domingo, sugere Quarta (pula Seg-Ter).
- * Nos outros casos, sugere o dia seguinte.
- * Só sugere se o usuário ainda não mexeu manualmente na data de fim.
- */
-function sugerirProximaINI() {
-  const dIniInput = document.getElementById('aud-data-inicio');
-  const dFimInput = document.getElementById('aud-data-fim');
-  if (!dIniInput.value) return;
-
-  const proxima = proximoDiaOperacional(dIniInput.value);
-  dFimInput.value = proxima;
-
-  // Atualiza o aviso de parada longa
-  const info = document.getElementById('aud-info');
-  if (info && modoAtual === 'virada') {
-    // Regenera mensagem com novo aviso
-    aplicarModo();
-  }
-}
-
-/**
- * Retorna o próximo dia operacional (Qua-Dom) depois de uma data.
- * Se a data for Domingo → pula pra Quarta (Seg-Ter fechado).
- * Caso contrário → próximo dia.
+ * Retorna o dia operacional ANTERIOR a uma data.
+ * Regra: Qua-Dom opera. Se a data for Quarta → o anterior é Domingo (pula Seg-Ter).
+ * Caso contrário → dia anterior.
  * JS: getDay() = 0 (Dom), 1 (Seg), 2 (Ter), 3 (Qua), 4 (Qui), 5 (Sex), 6 (Sáb)
  */
-function proximoDiaOperacional(dataIso) {
+function diaAnteriorOperacional(dataIso) {
   const [y, m, d] = dataIso.split('-').map(Number);
   const data = new Date(y, m - 1, d);
-  data.setDate(data.getDate() + 1);
-  // Se cair em Seg ou Ter, avança até Quarta
+  data.setDate(data.getDate() - 1);
+  // Se cair em Ter ou Seg, volta até Domingo
   while (data.getDay() === 1 || data.getDay() === 2) {
-    data.setDate(data.getDate() + 1);
+    data.setDate(data.getDate() - 1);
   }
   return toIso(data);
 }
@@ -380,16 +358,22 @@ function diffDias(dataA, dataB) {
 
 // ===== EXECUÇÃO =====
 async function executarAuditoria() {
-  dataInicio = document.getElementById('aud-data-inicio').value;
-  dataFim    = document.getElementById('aud-data-fim').value;
+  const dataPrincipal = document.getElementById('aud-data-principal').value;
 
-  if (!dataInicio || !dataFim) {
-    mostrarErro('Selecione as duas datas.');
+  if (!dataPrincipal) {
+    mostrarErro('Selecione a data.');
     return;
   }
-  if (dataInicio > dataFim) {
-    mostrarErro('A data de início precisa ser anterior ou igual à data final.');
-    return;
+
+  // Calcula dataInicio e dataFim de acordo com o modo
+  if (modoAtual === 'operacional') {
+    // Contagem do dia → INI e FIN do mesmo dia
+    dataInicio = dataPrincipal;
+    dataFim    = dataPrincipal;
+  } else {
+    // Virada: INI do dia escolhido vs FIN do dia operacional anterior
+    dataFim    = dataPrincipal;
+    dataInicio = diaAnteriorOperacional(dataPrincipal);
   }
 
   const loading = document.getElementById('aud-loading');
@@ -760,11 +744,6 @@ function renderizarResumoOperacional(contagemIni, contagemFin, vendas, recebimen
   const ok       = resultadoAuditoria.filter(r => r.status === 'ok').length;
   const semdados = resultadoAuditoria.filter(r => r.status === 'semdados').length;
 
-  // Conta diagnósticos (cruzamento D-1)
-  const diagErroContagem = resultadoAuditoria.filter(r => r.diagnostico === 'erro_contagem').length;
-  const diagRecorrente   = resultadoAuditoria.filter(r => r.diagnostico === 'recorrente').length;
-  const diagIsolado      = resultadoAuditoria.filter(r => r.diagnostico === 'isolado').length;
-
   // Totais gerais (unidades)
   const totalIni = resultadoAuditoria.reduce((s, r) => s + r.ini, 0);
   const totalRec = resultadoAuditoria.reduce((s, r) => s + r.recebido, 0);
@@ -772,43 +751,10 @@ function renderizarResumoOperacional(contagemIni, contagemFin, vendas, recebimen
   const totalFin = resultadoAuditoria.reduce((s, r) => s + r.real, 0);
   const totalDif = resultadoAuditoria.reduce((s, r) => s + r.diferenca, 0);
 
-  // Banner de diagnóstico (só se houver pelo menos um achado)
-  const totalAchados = diagErroContagem + diagRecorrente + diagIsolado;
-  const bannerDiagnostico = (totalAchados > 0 && contagemFinAnterior)
-    ? `
-      <div class="aud-diag-banner">
-        <div class="aud-diag-head">
-          <span class="aud-diag-ico">🔍</span>
-          <div>
-            <strong>Análise cruzada com D-1</strong>
-            <small>Comparando com a FIN de ${fmtData(contagemFinAnterior.data)}</small>
-          </div>
-        </div>
-        <div class="aud-diag-chips">
-          ${diagErroContagem > 0 ? `
-            <div class="aud-diag-chip diag-erro">
-              <span class="diag-chip-val">${diagErroContagem}</span>
-              <span class="diag-chip-lbl">provável erro de contagem</span>
-            </div>` : ''}
-          ${diagRecorrente > 0 ? `
-            <div class="aud-diag-chip diag-rec">
-              <span class="diag-chip-val">${diagRecorrente}</span>
-              <span class="diag-chip-lbl">problema recorrente</span>
-            </div>` : ''}
-          ${diagIsolado > 0 ? `
-            <div class="aud-diag-chip diag-iso">
-              <span class="diag-chip-val">${diagIsolado}</span>
-              <span class="diag-chip-lbl">problema isolado do dia</span>
-            </div>` : ''}
-        </div>
-      </div>
-    `
-    : (contagemFinAnterior ? '' : `
-      <div class="aud-diag-banner aud-diag-sem">
-        <span class="aud-diag-ico">💡</span>
-        <span>Não há FIN anterior registrada para cruzar com o D-1. Conforme você acumular contagens, a análise cruzada vai automaticamente aparecer aqui.</span>
-      </div>
-    `);
+  // Nota: o banner "Análise cruzada com D-1" foi removido do topo do resumo
+  // (o gestor já verá os detalhes do D-1 no modo Virada de dia).
+  // Os chips "problema recorrente/isolado/erro de contagem" continuam aparecendo
+  // embaixo do nome de cada produto na tabela — lá são úteis item a item.
 
   resumo.innerHTML = `
     <div class="aud-kpis">
@@ -833,8 +779,6 @@ function renderizarResumoOperacional(contagemIni, contagemFin, vendas, recebimen
         <div class="aud-kpi-label">SEM DADOS</div>
       </div>
     </div>
-
-    ${bannerDiagnostico}
 
     <div class="aud-equacao">
       <div class="aud-eq-item">
@@ -921,12 +865,6 @@ function renderLinhaOperacional(r) {
     semdados: '<span class="aud-badge bad-semdados">s/ dados</span>'
   }[r.status];
 
-  // Conversão da diferença pra caixa/fardo (útil pra entender o tamanho do problema)
-  const produtoInfo = { unidCompra: r.unidCompra, porCaixa: r.porCaixa };
-  const convDif = Math.abs(r.diferenca) >= (r.porCaixa || 999)
-    ? ` (${converterParaCaixas(Math.abs(r.diferenca), produtoInfo)})`
-    : '';
-
   const difClasse = r.diferenca < 0 ? 'aud-dif-neg' :
                     r.diferenca > 0 ? 'aud-dif-pos' : 'aud-dif-zero';
 
@@ -964,7 +902,7 @@ function renderLinhaOperacional(r) {
       <div class="aud-num aud-num-neg">${r.vendido > 0 ? '−' + fmtInt(r.vendido) : '—'}</div>
       <div class="aud-num aud-num-esp">${fmtInt(r.esperado)}</div>
       <div class="aud-num aud-num-real">${fmtInt(r.real)}</div>
-      <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}${convDif}</div>
+      <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}</div>
       <div>${statusBadge}</div>
     </div>
   `;
@@ -1082,11 +1020,6 @@ function renderLinhaVirada(r) {
     semdados: '<span class="aud-badge bad-semdados">s/ dados</span>'
   }[r.status];
 
-  const produtoInfo = { unidCompra: r.unidCompra, porCaixa: r.porCaixa };
-  const convDif = Math.abs(r.diferenca) >= (r.porCaixa || 999)
-    ? ` (${converterParaCaixas(Math.abs(r.diferenca), produtoInfo)})`
-    : '';
-
   const difClasse = r.diferenca < 0 ? 'aud-dif-neg' :
                     r.diferenca > 0 ? 'aud-dif-pos' : 'aud-dif-zero';
 
@@ -1118,7 +1051,7 @@ function renderLinhaVirada(r) {
       </div>
       <div class="aud-num">${fmtInt(r.fimAnterior)}</div>
       <div class="aud-num aud-num-real">${fmtInt(r.iniAtual)}</div>
-      <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}${convDif}</div>
+      <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}</div>
       <div>${statusBadge}</div>
     </div>
   `;
@@ -1770,16 +1703,21 @@ window.__aud_corrigirErro = async function(slug, fimAnteriorAtual, iniAtual) {
     }
 
     // Atualiza o valor do item
-    // Estrutura típica: { "slug__fin": { final: X }, ... } ou { "slug": { fr: X, est: Y } }
+    // Estruturas possíveis na contagem:
+    //   - FIN de bebidas (sem sufixo): { fr, est, total }  → total é prioritário em extrairEstoque
+    //   - FIN de sorvetes (sufixo __fin): { final: X }
+    //   - Valor numérico direto (legado)
     const valorAtual = novosItens[chaveAtual];
     if (valorAtual && typeof valorAtual === 'object') {
       if ('final' in valorAtual) {
-        // Tipo FIN com campo "final"
+        // Tipo FIN com campo "final" (sorvetes)
         valorAtual.final = iniAtual;
-      } else if ('fr' in valorAtual && 'est' in valorAtual) {
-        // Tipo com fr+est — coloca tudo em fr (zera est)
+      } else if ('fr' in valorAtual || 'est' in valorAtual || 'total' in valorAtual) {
+        // Tipo bebidas — atualiza fr, est E total (é o total que o extrairEstoque
+        // lê com prioridade; não pode ficar defasado, senão a leitura ignora fr/est)
         valorAtual.fr = iniAtual;
         valorAtual.est = 0;
+        valorAtual.total = iniAtual;
       } else {
         alert('Formato da contagem não reconhecido.');
         return;
@@ -2076,10 +2014,15 @@ window.__aud_abrirFechada = async function(id) {
       modoAtual = a.modo;
       aplicarModo();
     }
-    document.getElementById('aud-data-inicio').value = a.dataInicio;
-    document.getElementById('aud-data-fim').value    = a.dataFim;
+    // No campo único, guardamos a "data principal":
+    //   - operacional: dataInicio = dataFim (mesmo dia)
+    //   - virada:     dataFim (INI do dia escolhido)
+    const dataPrincipal = (a.modo === 'virada') ? a.dataFim : a.dataInicio;
+    document.getElementById('aud-data-principal').value = dataPrincipal;
     dataInicio = a.dataInicio;
     dataFim    = a.dataFim;
+    // Atualiza a hint (no modo virada, mostra qual dia é o anterior)
+    aplicarModo();
 
     // Hidrata estado com o snapshot (dados congelados) — não recalcula
     resultadoAuditoria = a.resultado || [];
