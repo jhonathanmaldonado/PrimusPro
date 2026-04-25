@@ -1,0 +1,117 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function perfil() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.perfil;
+    }
+    function ativo() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.ativo == true;
+    }
+    function autenticado() {
+      return request.auth != null && ativo();
+    }
+    function isGerente()    { return autenticado() && perfil() in ['gerente','admin']; }
+    function isFinanceiro() { return autenticado() && perfil() in ['financeiro','diretoria','admin']; }
+    function isDiretoria()  { return autenticado() && perfil() in ['diretoria','admin']; }
+    function isAdmin()      { return autenticado() && perfil() == 'admin'; }
+    function qualquerPerfil() { return autenticado(); }
+
+    // ============ SISTEMAS ANTIGOS (não mexer) ============
+    match /usuarios/{uid}              { allow read: if autenticado(); allow write: if isAdmin(); allow update: if request.auth.uid == uid; }
+    match /funcionarios/{id}           { allow read: if qualquerPerfil(); allow write: if isGerente(); allow delete: if isAdmin(); }
+    match /presencas_diarias/{data}    { allow read: if qualquerPerfil(); allow create: if isGerente(); allow update: if isGerente() || isFinanceiro() || isDiretoria(); allow delete: if isAdmin(); }
+    match /fechamento_diario/{id}      { allow read: if qualquerPerfil(); allow write: if isFinanceiro(); allow delete: if isAdmin(); }
+    match /fechamento_funcionario/{id} { allow read: if qualquerPerfil(); allow write: if isFinanceiro(); allow delete: if isAdmin(); }
+    match /configuracoes/{id}          { allow read: if qualquerPerfil(); allow write: if isAdmin(); }
+    match /escala_semanal/{id}         { allow read: if qualquerPerfil(); allow write: if isGerente(); allow delete: if isAdmin(); }
+    match /auditoria/{id}              { allow read: if isDiretoria(); allow create: if qualquerPerfil(); allow update, delete: if isAdmin(); }
+    match /av_funcionarios/{doc}       { allow read, write: if true; }
+    match /av_avaliacoes/{doc}         { allow read, write: if true; }
+    match /fila/{id}                   { allow read, write: if true; }
+    match /mesas/{id}                  { allow read, write: if true; }
+    match /clientes/{id}               { allow read, write: if true; }
+    match /config/{id}                 { allow read, write: if true; }
+    match /historico/{id}              { allow read, write: if true; }
+    match /pesquisas_satisfacao/{id}   { allow read, write: if true; }
+    match /parquinho/{id}              { allow read, write: if true; }
+    match /historico_parquinho/{id}    { allow read, write: if true; }
+
+    // ============ SISTEMA PRIMUS (estoque, vendas, auditoria) ============
+    // Autenticação via PIN no app (sessionStorage), por isso as regras
+    // validam a estrutura dos documentos em vez de request.auth.
+
+    // --- Usuários do Primus ---
+    match /primus_usuarios/{uid} {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasAll(['nome','perfil','pinHash','ativo'])
+                            && request.resource.data.nome is string
+                            && request.resource.data.nome.size() > 0
+                            && request.resource.data.nome.size() <= 80
+                            && request.resource.data.perfil in ['barman','gerente','gestor']
+                            && request.resource.data.pinHash is string
+                            && request.resource.data.pinHash.size() == 64
+                            && request.resource.data.ativo is bool;
+      allow delete: if false;
+    }
+
+    // --- Contagens de estoque ---
+    match /primus_contagens/{id} {
+      allow read: if true;
+      allow create: if request.resource.data.tipo in ['ini','fin','sorv']
+                    && request.resource.data.data is string
+                    && request.resource.data.data.matches('^\\d{4}-\\d{2}-\\d{2}$')
+                    && request.resource.data.autorId is string
+                    && request.resource.data.autorNome is string
+                    && request.resource.data.autorNome.size() <= 80
+                    && request.resource.data.autorPerfil in ['barman','gerente','gestor']
+                    && request.resource.data.itens is map;
+      allow update: if false;
+      allow delete: if true;
+    }
+
+    // --- Vendas (upload do TXT do PDV) ---
+    match /primus_vendas/{data} {
+      allow read: if true;
+      allow write: if data.matches('^\\d{4}-\\d{2}-\\d{2}$');
+      allow delete: if false;
+    }
+
+    // --- Listas de compras (fornecedores, preços, recebimentos) ---
+    match /primus_compras/{id} {
+      allow read: if true;
+      allow write: if true;
+      allow delete: if true;
+    }
+
+    // --- Catálogo de produtos (overrides editáveis pelo gestor) ---
+    // Documento único: primus_produtos/overrides — armazena edições do gestor
+    // sobre o catálogo base (que continua versionado em produtos.js).
+    // Estrutura validada: { editados, ocultos, saindo, novos, gruposNovos }
+    match /primus_produtos/{id} {
+      allow read: if true;
+      allow write: if id == 'overrides'
+                   && request.resource.data.editados is map
+                   && request.resource.data.ocultos is list
+                   && request.resource.data.saindo is list
+                   && request.resource.data.novos is list
+                   && request.resource.data.gruposNovos is list;
+      allow delete: if false;
+    }
+
+    // --- Auditorias fechadas (histórico) ---
+    // ID do documento: `${modo}_${dataInicio}_${dataFim}` (ex: "operacional_2026-04-22_2026-04-22")
+    // Permite update pra quando o gestor quer reabrir e refazer o fechamento.
+    match /primus_auditorias/{id} {
+      allow read: if true;
+      allow write: if request.resource.data.modo in ['operacional','virada']
+                   && request.resource.data.dataInicio is string
+                   && request.resource.data.dataInicio.matches('^\\d{4}-\\d{2}-\\d{2}$')
+                   && request.resource.data.dataFim is string
+                   && request.resource.data.dataFim.matches('^\\d{4}-\\d{2}-\\d{2}$')
+                   && request.resource.data.responsavel is string
+                   && request.resource.data.responsavel.size() <= 120
+                   && request.resource.data.resultado is list;
+      allow delete: if true;
+    }
+  }
+}
