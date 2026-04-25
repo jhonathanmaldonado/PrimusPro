@@ -28,7 +28,11 @@
 <link rel="stylesheet" href="css/primus.css">
 
 <style>
-  body { padding-bottom: 90px; }
+  /* Espaço pra não deixar o último item escondido atrás da barra inferior fixa.
+     Usa env(safe-area-inset-bottom) pra respeitar a área segura do iPhone (notch). */
+  body {
+    padding-bottom: calc(140px + env(safe-area-inset-bottom, 0px));
+  }
 
   /* Seletor de tipo */
   .tipo-selector {
