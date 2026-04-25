@@ -10,9 +10,10 @@ import {
   buscarUltimosPrecos, salvarPrecosCompra
 } from './db.js';
 import {
-  BEBIDAS, slugify, FORNECEDORES_PADRAO,
+  slugify, FORNECEDORES_PADRAO,
   converterParaCaixas, arredondarParaCaixaCheia
 } from './produtos.js';
+import { obterBebidas } from './produtos-store.js';
 
 // ===== CONFIGURAÇÃO =====
 const JANELA_CONSUMO_DIAS = 14;   // média calculada sobre os últimos 14 dias
@@ -26,6 +27,7 @@ let sugestaoCache = [];           // produtos com cálculo pronto
 let quantidadesAjustadas = {};    // slug → quantidade editada pelo usuário
 let ultimosPrecos = {};           // slug → { valor, data, fornecedor }
 let precosDigitados = {};         // slug → preço unit digitado agora
+let bebidasCache = [];            // catálogo efetivo de bebidas (base + overrides)
 
 const fmtMoeda = v => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtInt   = v => Math.round(v || 0).toLocaleString('pt-BR');
@@ -85,6 +87,9 @@ export async function inicializarCompras() {
           <button class="btn btn-primary" id="btn-novo-fornecedor" style="margin-top:14px;width:100%">
             + Adicionar fornecedor
           </button>
+          <button class="btn btn-ghost" id="btn-resetar-associacoes" style="margin-top:8px;width:100%;font-size:11px">
+            🔄 Resetar associações para o padrão do catálogo
+          </button>
         </div>
       </div>
     </div>
@@ -112,6 +117,10 @@ async function carregarECalcular() {
   rodape.style.display  = 'none';
 
   try {
+    // 0) Carrega o catálogo efetivo de bebidas (base + overrides do gestor).
+    // Toda função abaixo usa `bebidasCache` em vez de importar BEBIDAS direto.
+    bebidasCache = await obterBebidas();
+
     // 1) Busca a contagem MAIS RECENTE de bebidas (ini ou fin).
     // A lógica: o estoque atual é o que foi contado por último.
     // Se a última contagem foi "fin" (encerramento do dia), é o que vale.
@@ -182,7 +191,7 @@ async function criarFornecedoresPadrao() {
   }));
 
   // Associa cada produto ao seu fornecedor (a partir do campo "fornecedor" no catálogo)
-  BEBIDAS.forEach(b => {
+  bebidasCache.forEach(b => {
     if (!b.fornecedor) return;
     const forn = lista.find(f => f.nome === b.fornecedor);
     if (forn) {
@@ -246,8 +255,8 @@ function calcularSugestao(contagem, vendas) {
 
   const qtdDias = Math.max(diasComVenda.size, 1);
 
-  // Monta sugestão para cada bebida do catálogo
-  const sugestao = BEBIDAS.map(bebida => {
+  // Monta sugestão para cada bebida do catálogo efetivo
+  const sugestao = bebidasCache.map(bebida => {
     const slug = slugify(bebida.nome);
     const estoque = estoquePorSlug[slug] || 0;
 
@@ -873,13 +882,70 @@ function conversaoCurta(qtd, produto) {
 // ===== MODAL DE FORNECEDORES =====
 
 function abrirModalFornecedores() {
+  // Garantia: se chegou aqui antes do catálogo carregar (clique muito rápido,
+  // ou recarregamento parcial), busca o catálogo de novo antes de abrir
+  if (!bebidasCache.length) {
+    obterBebidas().then(b => {
+      bebidasCache = b;
+      _abrirModalFornecedoresAgora();
+    });
+    return;
+  }
+  _abrirModalFornecedoresAgora();
+}
+
+function _abrirModalFornecedoresAgora() {
   renderizarFornecedoresModal();
   document.getElementById('modal-fornecedores').classList.add('open');
 
   document.getElementById('btn-novo-fornecedor').onclick = novoFornecedor;
+  document.getElementById('btn-resetar-associacoes').onclick = resetarAssociacoes;
   document.getElementById('modal-fornecedores').onclick = e => {
     if (e.target.id === 'modal-fornecedores') fecharModalFornecedores();
   };
+}
+
+/**
+ * Reseta todas as associações produto→fornecedor para o padrão definido no catálogo (produtos.js).
+ * Mantém os fornecedores existentes (nome, telefone), só atualiza a lista de produtos de cada um.
+ */
+async function resetarAssociacoes() {
+  if (!confirm(
+    'Isso vai ZERAR todas as associações atuais e refazer baseado no catálogo padrão.\n\n' +
+    'Fornecedores (nome, telefone) são preservados, mas a lista de produtos de cada um é refeita.\n\n' +
+    'Continuar?'
+  )) return;
+
+  // Zera produtos de todos os fornecedores existentes
+  fornecedoresCache.forEach(f => { f.produtos = []; });
+
+  // Re-associa baseado no catálogo efetivo
+  bebidasCache.forEach(b => {
+    if (!b.fornecedor) return;
+    const forn = fornecedoresCache.find(f => f.nome === b.fornecedor);
+    if (forn) {
+      forn.produtos.push(slugify(b.nome));
+    }
+  });
+
+  // Se algum fornecedor do catálogo não existir, cria
+  FORNECEDORES_PADRAO.forEach(padrao => {
+    if (!fornecedoresCache.find(f => f.nome === padrao.nome)) {
+      const produtos = bebidasCache
+        .filter(b => b.fornecedor === padrao.nome)
+        .map(b => slugify(b.nome));
+      fornecedoresCache.push({
+        id: padrao.id,
+        nome: padrao.nome,
+        telefone: '',
+        produtos
+      });
+    }
+  });
+
+  await salvarFornecedores(fornecedoresCache);
+  mostrarToast('Associações resetadas para o padrão! ✓', 'ok');
+  renderizarFornecedoresModal();
 }
 
 function fecharModalFornecedores() {
@@ -907,7 +973,7 @@ function renderizarFornecedoresModal() {
       <div class="fornecedor-produtos">
         <label class="fornecedor-produtos-label">Produtos fornecidos:</label>
         <div class="fornecedor-chips">
-          ${BEBIDAS.map(b => {
+          ${bebidasCache.map(b => {
             const slug = slugify(b.nome);
             const marcado = (f.produtos || []).includes(slug);
             return `
