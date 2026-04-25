@@ -15,7 +15,8 @@ import {
   listarAuditoriasFechadas, excluirAuditoriaFechada,
   corrigirItemContagem
 } from './db.js';
-import { BEBIDAS, slugify } from './produtos.js';
+import { slugify } from './produtos.js';
+import { obterBebidas } from './produtos-store.js';
 import { getSessao } from './auth.js';
 
 // ===== ESTADO =====
@@ -487,7 +488,7 @@ async function executarModoOperacional() {
   const recebimentos = await listarRecebimentos(dataInicio, dataFim);
 
   // 5) Calcula auditoria (agora com D-1 e diagnóstico)
-  resultadoAuditoria = calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior);
+  resultadoAuditoria = await calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior);
 
   // Salva contexto pro PDF usar depois
   contextoAuditoria = { contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior };
@@ -525,7 +526,7 @@ async function executarModoVirada() {
   }
 
   // 3) Calcula auditoria de virada com cruzamento
-  resultadoAuditoria = calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior);
+  resultadoAuditoria = await calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior);
 
   // Salva contexto pro PDF e correção usarem depois
   contextoAuditoria = { contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior };
@@ -543,7 +544,10 @@ function mostrarErro(msg) {
 }
 
 // ===== MOTOR DO CÁLCULO — MODO OPERACIONAL =====
-function calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior) {
+async function calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior) {
+  // Carrega catálogo efetivo de bebidas (base + overrides do gestor)
+  const bebidas = await obterBebidas();
+
   // Extrai estoques por slug das contagens
   const estoqueIni = extrairEstoque(contagemIni);
   const estoqueFin = extrairEstoque(contagemFin);
@@ -584,8 +588,8 @@ function calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebime
     });
   });
 
-  // Monta linha por bebida
-  return BEBIDAS.map(bebida => {
+  // Monta linha por bebida (usa catálogo efetivo carregado acima)
+  return bebidas.map(bebida => {
     const slug = slugify(bebida.nome);
     const ini  = estoqueIni[slug] || 0;
     const fin  = estoqueFin[slug] || 0;
@@ -680,7 +684,10 @@ function extrairEstoque(contagem) {
 // Compara FIN do dia anterior com INI do dia atual.
 // Em teoria, deveriam ser IGUAIS (não houve operação entre eles).
 // Qualquer diferença significa sumiço ou erro de contagem.
-function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior = null) {
+async function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior = null) {
+  // Carrega catálogo efetivo de bebidas (base + overrides do gestor)
+  const bebidas = await obterBebidas();
+
   const estoqueFim  = extrairEstoque(contagemFinAnterior);
   const estoqueIni  = extrairEstoque(contagemIniAtual);
 
@@ -692,7 +699,7 @@ function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, auditori
     });
   }
 
-  return BEBIDAS.map(bebida => {
+  return bebidas.map(bebida => {
     const slug = slugify(bebida.nome);
     const fimAnterior = estoqueFim[slug] || 0;
     const iniAtual    = estoqueIni[slug] || 0;
@@ -2041,10 +2048,13 @@ window.__aud_abrirFechada = async function(id) {
 
     // Hidrata estado com o snapshot (dados congelados) — não recalcula
     resultadoAuditoria = a.resultado || [];
-    // Reconstitui campos de produto (grupo, unidCompra, porCaixa) a partir do catálogo atual
-    // — pra conversão de caixa/fardo funcionar no render
+    // Reconstitui campos de produto (grupo, unidCompra, porCaixa) a partir
+    // do catálogo efetivo atual — pra render funcionar.
+    // Nota: usa o catálogo de HOJE pra produtos antigos. Se o produto foi
+    // editado depois da auditoria fechada, mostra os dados atualizados.
+    const bebidasAtuais = await obterBebidas({ incluirOcultos: true });
     resultadoAuditoria = resultadoAuditoria.map(r => {
-      const bebida = BEBIDAS.find(b => slugify(b.nome) === r.slug);
+      const bebida = bebidasAtuais.find(b => slugify(b.nome) === r.slug);
       return {
         ...r,
         grupo: r.grupo || bebida?.grupo || '',
