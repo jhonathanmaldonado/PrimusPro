@@ -1,7 +1,8 @@
 // ===== CONTAGEM — PRIMUS =====
 // Baseado no contagem_primus.html original, mas salvando no Firestore.
 
-import { BEBIDAS, SORVETES, slugify } from './produtos.js';
+import { slugify } from './produtos.js';
+import { obterBebidas, obterSorvetes } from './produtos-store.js';
 import { exigirPerfil, logout } from './auth.js';
 import { salvarContagem, hoje } from './db.js';
 
@@ -41,29 +42,36 @@ document.getElementById('btn-logout').onclick = logout;
 document.getElementById('data-input').value = hoje();
 
 // ===== SELEÇÃO DE TIPO =====
-window.selecionarTipo = function(tipo) {
+window.selecionarTipo = async function(tipo) {
   tipoAtual = tipo;
   ['ini','fin','sorv'].forEach(t => {
     document.getElementById('btn-'+t).classList.toggle('active', t===tipo);
   });
-  renderizarFormulario();
   document.getElementById('progresso-bar').style.display = 'flex';
   document.getElementById('bottom-bar').style.display = 'flex';
+  await renderizarFormulario();
   atualizarProgresso();
 };
 
 // ===== RENDER FORMULÁRIO =====
-function renderizarFormulario() {
+async function renderizarFormulario() {
   const main = document.getElementById('main-content');
-  main.innerHTML = '';
+  // Loading enquanto busca o catálogo (chamada assíncrona ao Firebase)
+  main.innerHTML = '<div class="tela-inicio"><div class="icon">⏳</div><h2>Carregando catálogo...</h2></div>';
 
   // Limpa estado ao trocar de tipo
   Object.keys(dados).forEach(k => delete dados[k]);
 
-  const lista = tipoAtual === 'sorv' ? SORVETES : BEBIDAS;
+  // Busca o catálogo efetivo (base + overrides do gestor)
+  const lista = tipoAtual === 'sorv'
+    ? await obterSorvetes()
+    : await obterBebidas();
+
+  // Limpa o loading e parte pra renderização
+  main.innerHTML = '';
 
   if (tipoAtual === 'sorv') {
-    renderizarSorvetes(main);
+    renderizarSorvetes(main, lista);
     return;
   }
 
@@ -142,9 +150,10 @@ function renderizarFormulario() {
 }
 
 // ===== SORVETES (INÍCIO + FINAL na mesma folha) =====
-function renderizarSorvetes(main) {
+// Recebe a lista já carregada do produtos-store (catálogo efetivo).
+function renderizarSorvetes(main, lista) {
   const grupos = {};
-  SORVETES.forEach(item => {
+  lista.forEach(item => {
     if (!grupos[item.grupo]) grupos[item.grupo] = [];
     grupos[item.grupo].push(item);
   });
