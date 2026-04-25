@@ -332,6 +332,64 @@ export async function excluirRecebimento(id) {
   await deleteDoc(doc(db, COL_COMPRAS, id));
 }
 
+// ===== OVERRIDES DE PRODUTOS =====
+// O catálogo base fica em produtos.js (versionado no Git).
+// Os "overrides" ficam aqui no Firestore num único documento, e permitem ao
+// gestor: editar campos de produtos existentes, ocultar produtos do catálogo,
+// marcar como "saindo", adicionar produtos novos e criar grupos novos —
+// tudo SEM precisar mexer no código.
+//
+// Estrutura do documento `primus_produtos/overrides`:
+// {
+//   editados:    { "<slug>": { porCaixa?, fornecedor?, grupo?, ... } },
+//   ocultos:     [ "<slug>", ... ],     // somem completamente da contagem
+//   saindo:      [ "<slug>", ... ],     // ficam visíveis mas marcados como "saindo"
+//   novos:       [ { nome, grupo, fornecedor?, unidCompra?, porCaixa?, ks? }, ... ],
+//   gruposNovos: [ "🥃 Destilados", ... ]
+// }
+//
+// O merge final (catálogo base + overrides) é feito por produtos-store.js.
+
+const DOC_OVERRIDES = 'overrides';
+
+/** Lê o documento de overrides. Retorna estrutura vazia se não existir. */
+export async function lerProdutosOverrides() {
+  const snap = await getDoc(doc(db, COL_PRODUTOS, DOC_OVERRIDES));
+  if (!snap.exists()) {
+    return {
+      editados: {},
+      ocultos: [],
+      saindo: [],
+      novos: [],
+      gruposNovos: []
+    };
+  }
+  const dados = snap.data();
+  // Garante todos os campos (proteção contra docs antigos sem algum campo)
+  return {
+    editados:    dados.editados    || {},
+    ocultos:     dados.ocultos     || [],
+    saindo:      dados.saindo      || [],
+    novos:       dados.novos       || [],
+    gruposNovos: dados.gruposNovos || []
+  };
+}
+
+/**
+ * Sobrescreve o documento de overrides inteiro. O `produtos-store.js`
+ * faz a leitura, modifica em memória, e chama esta função pra persistir.
+ */
+export async function salvarProdutosOverrides(overrides) {
+  await setDoc(doc(db, COL_PRODUTOS, DOC_OVERRIDES), {
+    editados:    overrides.editados    || {},
+    ocultos:     overrides.ocultos     || [],
+    saindo:      overrides.saindo      || [],
+    novos:       overrides.novos       || [],
+    gruposNovos: overrides.gruposNovos || [],
+    atualizadoEm: serverTimestamp()
+  });
+}
+
 // ===== AUDITORIAS FECHADAS =====
 // Cada auditoria fechada vira um documento em primus_auditorias
 // ID fixo = `${modo}_${dataInicio}_${dataFim}` pra permitir "regravar" a mesma auditoria
