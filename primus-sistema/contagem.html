@@ -28,10 +28,21 @@
 <link rel="stylesheet" href="css/primus.css">
 
 <style>
-  /* Espaço pra não deixar o último item escondido atrás da barra inferior fixa.
-     Usa env(safe-area-inset-bottom) pra respeitar a área segura do iPhone (notch). */
-  body {
-    padding-bottom: calc(140px + env(safe-area-inset-bottom, 0px));
+  /* Override do height:100% global pra esta página específica.
+     A contagem precisa ter altura natural pra rolar normalmente. */
+  html, body {
+    height: auto !important;
+    min-height: 100vh;
+  }
+
+  /* O main precisa ter espaço extra no final pra o último item nunca ficar
+     atrás da barra fixa Salvar. Coloca o respiro DENTRO do main (não no body)
+     pra garantir que funciona mesmo com overflow ou alturas restritas em pais. */
+  .main {
+    padding: 16px 12px;
+    padding-bottom: calc(160px + env(safe-area-inset-bottom, 0px));
+    max-width: 900px;
+    margin: 0 auto;
   }
 
   /* Seletor de tipo */
@@ -114,12 +125,7 @@
   .prog-fill { height: 100%; background: var(--amarelo); transition: width 0.3s; }
   .prog-pct { font-family: 'Raleway', sans-serif; font-weight: 800; font-size: 13px; color: var(--vinho); min-width: 40px; text-align: right; }
 
-  /* Conteúdo principal */
-  .main {
-    padding: 16px 12px;
-    max-width: 900px;
-    margin: 0 auto;
-  }
+  /* Conteúdo principal — definido acima junto com o respiro pra a barra fixa */
 
   .tela-inicio {
     text-align: center;
