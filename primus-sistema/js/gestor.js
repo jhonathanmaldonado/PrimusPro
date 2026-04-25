@@ -3,12 +3,14 @@
 
 import { exigirPerfil, logout, listarUsuarios } from './auth.js';
 import { listarContagens, excluirContagem } from './db.js';
-import { BEBIDAS, SORVETES, slugify } from './produtos.js';
+import { slugify } from './produtos.js';
+import { obterBebidas, obterSorvetes } from './produtos-store.js';
 import { inicializarDashboard, recarregarDashboard } from './dashboard.js';
 import { inicializarVendas } from './vendas.js';
 import { inicializarUsuarios } from './usuarios.js';
 import { inicializarCompras } from './compras.js';
 import { inicializarAuditoria } from './auditoria.js';
+import { inicializarCatalogo } from './catalogo.js';
 
 const sessao = exigirPerfil(['gestor']);
 if (!sessao) throw new Error('sem sessão');
@@ -34,6 +36,7 @@ const views = {
   'auditoria': { titulo: 'Auditoria', icon: '🔍' },
   'compras':   { titulo: 'Lista de Compras', icon: '🛒' },
   'vendas':    { titulo: 'Vendas & Vendedores', icon: '💰' },
+  'catalogo':  { titulo: 'Catálogo de Produtos', icon: '📦' },
   'usuarios':  { titulo: 'Usuários', icon: '👥' },
 };
 
@@ -57,6 +60,7 @@ function mostrarView(id) {
   if (id === 'vendas')    carregarVendas();
   if (id === 'compras')   carregarComprasTab();
   if (id === 'auditoria') carregarAuditoriaTab();
+  if (id === 'catalogo')  carregarCatalogoTab();
 }
 
 // ===== CARREGADORES DE MÓDULO =====
@@ -66,6 +70,7 @@ let vendasCarregado = false;
 let usuariosCarregado = false;
 let comprasCarregado = false;
 let auditoriaCarregado = false;
+let catalogoCarregado = false;
 
 async function carregarDashboard() {
   if (window._dashboardPrecisaRecarregar) {
@@ -100,6 +105,12 @@ async function carregarAuditoriaTab() {
   if (auditoriaCarregado) return;
   auditoriaCarregado = true;
   await inicializarAuditoria();
+}
+
+async function carregarCatalogoTab() {
+  if (catalogoCarregado) return;
+  catalogoCarregado = true;
+  await inicializarCatalogo();
 }
 
 Object.keys(views).forEach(id => {
@@ -225,19 +236,22 @@ function mostrarToastGlobal(msg, tipo = '') {
   setTimeout(() => t.className = 'toast', 2800);
 }
 
-window.verDetalheContagem = function(id) {
+window.verDetalheContagem = async function(id) {
   const c = contagensCache.find(x => x.id === id);
   if (!c) return;
-  mostrarModalContagem(c);
+  await mostrarModalContagem(c);
 };
 
-function mostrarModalContagem(c) {
+async function mostrarModalContagem(c) {
   const modal = document.getElementById('modal-contagem');
   const body  = document.getElementById('modal-body');
   const tipoLabel = { ini: 'Bebidas Início', fin: 'Bebidas Final', sorv: 'Sorvetes e Embalagens' };
 
-  // Buscar nomes dos produtos a partir dos IDs
-  const lista = c.tipo === 'sorv' ? SORVETES : BEBIDAS;
+  // Buscar nomes dos produtos a partir dos IDs (catálogo efetivo, incluindo
+  // ocultos — pode ser uma contagem antiga de produto que foi descontinuado)
+  const lista = c.tipo === 'sorv'
+    ? await obterSorvetes({ incluirOcultos: true })
+    : await obterBebidas({ incluirOcultos: true });
   const mapaNomes = {};
   lista.forEach(p => { mapaNomes[slugify(p.nome)] = p.nome; });
 
