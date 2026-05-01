@@ -409,6 +409,7 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
             </div>
           </div>
           <div style="font-size:12px;color:var(--muted);margin-bottom:12px;font-weight:500" id="gerEmpCount"></div>
+          <div id="gerCargosCount" style="margin-bottom:12px;display:none"></div>
           <div id="grpFixos" class="grupo-section"><div class="grupo-header">🏷️ Fixos</div><div class="emp-list" id="listFixos"></div></div>
           <div id="grpFreq" class="grupo-section"><div class="grupo-header">🔄 Frequentes</div><div class="emp-list" id="listFreq"></div><div id="emptyFreq" style="font-size:13px;color:var(--muted);padding:8px 0;display:none">Nenhum frequente cadastrado</div></div>
           <div id="grpExtras" class="grupo-section"><div class="grupo-header">➕ Extras do Dia</div><div class="emp-list" id="listExtras"></div></div>
@@ -498,8 +499,7 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
         <div><div class="field-label">Período</div><select id="pgtoTipo" class="form-select" style="max-width:200px" onchange="onPgtoTipo()"><option value="semana">Esta Semana (Qua–Dom)</option><option value="semana_ant">Semana Anterior</option><option value="mes">Este Mês</option><option value="custom">Personalizado</option></select></div>
         <div id="pgtoCustom" style="display:none;gap:8px;flex-wrap:wrap"><div><div class="field-label">De</div><input type="date" id="pgtoDe" class="form-input" style="max-width:150px"></div><div><div class="field-label">Até</div><input type="date" id="pgtoAte" class="form-input" style="max-width:150px"></div><div style="align-self:flex-end"><button class="btn btn-primary btn-sm" onclick="renderPagamentos()">Buscar</button></div></div>
         <button class="btn btn-secondary btn-sm" onclick="renderPagamentos()" style="align-self:flex-end">Atualizar</button>
-        <button class="btn btn-secondary btn-sm" onclick="imprimirPagamentos('todos')" style="align-self:flex-end">🖨️ Imprimir Todos</button>
-        <button class="btn btn-secondary btn-sm" onclick="imprimirPagamentos('diaristas')" style="align-self:flex-end">🖨️ Imprimir Diaristas</button>
+        <button class="btn btn-secondary btn-sm" onclick="window.print()" style="align-self:flex-end">🖨️ Imprimir</button>
       </div>
       <div id="pgtoAlert" class="alert"></div><div id="pgtoContent"></div>
     </div>
@@ -989,17 +989,14 @@ function renderGerStatus() {
   pill.innerHTML = gerDayStatus
     ? `<span class="status-pill status-${gerDayStatus}">${STATUS_LABEL[gerDayStatus]}</span>`
     : `<span class="status-pill status-em_aberto">🔵 Novo dia</span>`;
-  const podeEditar = !gerDayStatus || gerDayStatus === 'em_aberto' || gerDayStatus === 'reaberto';
+  const podeEditar = !gerDayStatus || gerDayStatus === 'em_aberto';
   const soPodeObs  = gerDayStatus === 'aguardando_fechamento';
   const bloqueado  = gerDayStatus === 'fechado';
   const banner = $('gerBanner');
   if(bloqueado) {
     banner.innerHTML = '🔒 Dia fechado. Apenas Diretoria pode reabrir.';
     banner.className = 'bloqueado-banner lock'; banner.style.display = 'block';
-  } else if(gerDayStatus === 'reaberto') {
-    banner.innerHTML = '🔴 Dia reaberto. Edições liberadas.';
-    banner.className = 'bloqueado-banner warn'; banner.style.display = 'block';
-  } else if(soPodeObs) {
+  } else if(soPadeObs) {
     banner.innerHTML = '📤 Enviado para o financeiro. <strong>Presença e consumo bloqueados.</strong>';
     banner.className = 'bloqueado-banner warn'; banner.style.display = 'block';
   } else { banner.style.display = 'none'; }
@@ -1030,7 +1027,7 @@ function setFiltro(f) {
   renderGerList();
 }
 function renderGrupoGer(lista) {
-  const podeEditar = !gerDayStatus || gerDayStatus === 'em_aberto' || gerDayStatus === 'reaberto';
+  const podeEditar = !gerDayStatus || gerDayStatus === 'em_aberto';
   return lista.map(f => {
     const idx = gerFuncionarios.indexOf(f);
     const isSeg = f.cargo === 'Segurança';
@@ -1077,6 +1074,35 @@ function renderGerList() {
   $('gerAus').textContent   = gerFuncionarios.filter(f=>!f.presente).length;
   $('gerAtras').textContent = gerFuncionarios.filter(f=>f.atrasado).length;
   $('gerEmpCount').textContent = `${pres} presentes de ${gerFuncionarios.length} (${fixos.length} fixos · ${freq.length} frequentes · ${extras.length} extras)`;
+
+  // Detalhamento por cargo
+  const porCargo = {};
+  gerFuncionarios.forEach(f => {
+    if(!porCargo[f.cargo]) porCargo[f.cargo] = {pres:0, aus:0, atras:0};
+    if(f.presente) porCargo[f.cargo].pres++;
+    else porCargo[f.cargo].aus++;
+    if(f.atrasado) porCargo[f.cargo].atras++;
+  });
+  const cargosEl = $('gerCargosCount');
+  const linhas = Object.entries(porCargo)
+    .sort(([a],[b]) => a.localeCompare(b))
+    .map(([cargo, c]) => {
+      const partes = [];
+      if(c.pres)  partes.push(`<span style="color:var(--success);font-weight:700">${c.pres} pres.</span>`);
+      if(c.aus)   partes.push(`<span style="color:var(--danger);font-weight:700">${c.aus} aus.</span>`);
+      if(c.atras) partes.push(`<span style="color:var(--accent);font-weight:700">${c.atras} atras.</span>`);
+      return `<div style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid var(--border)">
+        <span style="font-size:11px;font-weight:700;color:var(--text2);min-width:110px">${cargo}</span>
+        <span style="font-size:11px;color:var(--muted)">${partes.join(' · ')}</span>
+      </div>`;
+    }).join('');
+  if(linhas) {
+    cargosEl.style.display = 'block';
+    cargosEl.innerHTML = `<div style="background:var(--surface2);border-radius:8px;padding:8px 12px;font-size:11px">
+      <div style="font-weight:700;color:var(--text2);margin-bottom:6px;font-size:11px;text-transform:uppercase;letter-spacing:.5px">Por Cargo</div>
+      ${linhas}
+    </div>`;
+  } else { cargosEl.style.display = 'none'; }
 }
 function gerTogglePres(i)  { gerFuncionarios[i].presente=!gerFuncionarios[i].presente; if(!gerFuncionarios[i].presente)gerFuncionarios[i].atrasado=false; renderGerList(); gerAutoSave(); }
 function gerToggleAtras(i) { gerFuncionarios[i].atrasado=!gerFuncionarios[i].atrasado; renderGerList(); gerAutoSave(); }
@@ -1230,18 +1256,6 @@ async function gerSalvar(apenasObs=false, silencioso=false) {
       gerDiasStatus[gerCurrentDate]='em_aberto'; renderGerCal(); renderGerStatus();
     } else {
       await db.collection('presencas_diarias').doc(gerCurrentDate).update(payload);
-      // Se dia reaberto e salvou presença, apaga fechamentos antigos para forçar recálculo
-      if(gerDayStatus === 'reaberto' && !apenasObs) {
-        try {
-          const batch = db.batch();
-          gerFuncionarios.forEach(f => {
-            batch.delete(db.collection('fechamento_funcionario').doc(`${gerCurrentDate}_${f.id}`));
-          });
-          // Apagar também o fechamento_diario do dia
-          batch.delete(db.collection('fechamento_diario').doc(gerCurrentDate));
-          await batch.commit();
-        } catch(_) {}
-      }
     }
     await logAuditoria('PRESENCA_SALVA',`presencas_diarias/${gerCurrentDate}`,{},{status:gerDayStatus||'em_aberto'});
     setSyncStatus('saved');
@@ -1615,148 +1629,6 @@ function getPeriodo() {
   }
   return {de,ate};
 }
-function imprimirPagamentos(tipo) {
-  const cont = $('pgtoContent');
-  if(!cont || !cont.innerHTML.trim()) {
-    alert('Carregue os pagamentos primeiro.'); return;
-  }
-
-  // Coletar dados da tela atual
-  const periodo = cont.querySelector('[style*="font-size:16px"]')?.textContent?.trim() || 'Pagamentos';
-  const subtitulo = cont.querySelectorAll('[style*="font-size:12px"]')?.[0]?.textContent?.trim() || '';
-
-  // Pegar grupos
-  const todosCards = [...cont.querySelectorAll('.card[data-funcid]')];
-
-  // Separar fixos e diaristas pelo atributo data-tipo
-  const fixosCards = [...cont.querySelectorAll('.card[data-tipo="fixo"]')];
-  const diaristasCards = [...cont.querySelectorAll('.card[data-tipo="diarista"]')];
-
-  // Fallback: pegar pelo HTML gerado
-  let htmlGrupos = '';
-  if(tipo === 'todos') {
-    htmlGrupos = cont.innerHTML;
-  } else {
-    // Pegar apenas seção de diaristas
-    const allHTML = cont.innerHTML;
-    const idx = allHTML.indexOf('Frequentes — Diaristas');
-    htmlGrupos = idx >= 0 ? allHTML.substring(idx - 200) : allHTML;
-  }
-
-  const titulo = tipo === 'todos' ? '📋 Pagamentos — Todos os Funcionários' : '👤 Pagamentos — Diaristas (Frequentes)';
-
-  const win = window.open('', '_blank');
-  win.document.write(`<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<title>${titulo}</title>
-<style>
-  @page { size: A4; margin: 10mm 12mm; }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Segoe UI', Arial, sans-serif; font-size: 11px; color: #222; background: #fff; }
-  .print-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 2px solid #C8782A; }
-  .print-header h1 { font-size: 15px; font-weight: 800; color: #C8782A; }
-  .print-header .sub { font-size: 10px; color: #888; margin-top: 2px; }
-  .print-header .logo { font-size: 18px; font-weight: 900; color: #C8782A; letter-spacing: -1px; }
-  .resumo-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-bottom: 10px; }
-  .resumo-box { border: 1px solid #ddd; border-radius: 6px; padding: 6px 8px; }
-  .resumo-box .label { font-size: 9px; color: #888; text-transform: uppercase; letter-spacing: .5px; }
-  .resumo-box .valor { font-size: 14px; font-weight: 800; color: #C8782A; }
-  .resumo-box .sub { font-size: 9px; color: #888; }
-  .grupo-header { display: flex; justify-content: space-between; align-items: center; background: #f5f0eb; border-radius: 6px; padding: 5px 10px; margin: 8px 0 4px; }
-  .grupo-header .titulo { font-size: 11px; font-weight: 800; color: #333; }
-  .grupo-header .total { font-size: 13px; font-weight: 800; color: #C8782A; }
-  table { width: 100%; border-collapse: collapse; }
-  th { font-size: 9px; text-transform: uppercase; letter-spacing: .5px; color: #888; border-bottom: 1px solid #ddd; padding: 3px 6px; text-align: left; font-weight: 600; }
-  td { font-size: 10px; padding: 4px 6px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
-  tr:last-child td { border-bottom: none; }
-  .nome { font-weight: 700; font-size: 11px; }
-  .cargo-badge { display: inline-block; font-size: 8px; font-weight: 700; padding: 1px 5px; border-radius: 10px; background: #e8e0d8; color: #555; text-transform: uppercase; }
-  .pix-key { font-size: 9px; color: #1A6FA8; }
-  .valor-td { font-weight: 800; font-size: 11px; color: #C8782A; text-align: right; white-space: nowrap; }
-  .dias-td { color: #666; text-align: center; }
-  .recibo-box { width: 14px; height: 14px; border: 1px solid #bbb; border-radius: 2px; display: inline-block; }
-  .footer { margin-top: 12px; padding-top: 6px; border-top: 1px solid #ddd; display: flex; justify-content: space-between; font-size: 9px; color: #aaa; }
-  @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
-</style>
-</head>
-<body>
-<div class="print-header">
-  <div>
-    <h1>${titulo}</h1>
-    <div class="sub" id="sub-periodo">Carregando...</div>
-  </div>
-  <div class="logo">Primus</div>
-</div>
-<div id="print-body">Carregando...</div>
-<div class="footer">
-  <span>Primus Peixaria — Sistema de Gestão</span>
-  <span>Impresso em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>
-</div>
-</body></html>`);
-  win.document.close();
-
-  // Injetar dados após a janela abrir
-  setTimeout(() => {
-    try {
-      const subEl = win.document.getElementById('sub-periodo');
-      const bodyEl = win.document.getElementById('print-body');
-
-      // Buscar dados da variável global pgtoUltimosDados se existir
-      const dados = window._pgtoUltimosDados;
-      if(!dados) { win.document.getElementById('print-body').innerHTML = cont.innerHTML; win.print(); return; }
-
-      const { de, ate, lbl, registrados, diaristas, totalGeral, totalRegistrado, totalDiarista, totalPix, totalDinheiro, fmt } = dados;
-      subEl.textContent = `${de} → ${ate}`;
-
-      const lista = tipo === 'todos' ? [...registrados, ...diaristas] : diaristas;
-      const grupos = tipo === 'todos'
-        ? [{titulo: '📋 Fixos — Conta Salário Itaú', itens: registrados, total: totalRegistrado}, {titulo: '👤 Frequentes — Diaristas', itens: diaristas, total: totalDiarista}]
-        : [{titulo: '👤 Frequentes — Diaristas', itens: diaristas, total: totalDiarista}];
-
-      // Resumo
-      let resumoHTML = `<div class="resumo-grid">
-        <div class="resumo-box"><div class="label">Total Geral</div><div class="valor">${fmt(tipo==='todos'?totalGeral:totalDiarista)}</div><div class="sub">${lista.length} funcionários</div></div>`;
-      if(tipo === 'todos') {
-        resumoHTML += `<div class="resumo-box"><div class="label">📋 Fixos</div><div class="valor">${fmt(totalRegistrado)}</div><div class="sub">${registrados.length} func.</div></div>
-        <div class="resumo-box"><div class="label">👤 Frequentes</div><div class="valor">${fmt(totalDiarista)}</div><div class="sub">${diaristas.length} func.</div></div>`;
-      }
-      resumoHTML += `<div class="resumo-box"><div class="label">📱 Total Pix</div><div class="valor">${fmt(totalPix)}</div><div class="sub">a transferir</div></div>
-      <div class="resumo-box"><div class="label">💵 Dinheiro</div><div class="valor">${fmt(totalDinheiro)}</div><div class="sub">em espécie</div></div>
-      </div>`;
-
-      // Tabela
-      let tabelaHTML = '';
-      grupos.forEach(g => {
-        if(!g.itens.length) return;
-        tabelaHTML += `<div class="grupo-header"><span class="titulo">${g.titulo}</span><span class="total">${fmt(g.total)}</span></div>
-        <table><thead><tr>
-          <th>Funcionário</th><th>Dias</th><th>Diária</th><th>Gorjeta</th><th>Consumo</th><th>Desconto</th><th style="text-align:right">Total</th><th style="text-align:center">✓</th>
-        </tr></thead><tbody>`;
-        g.itens.forEach(t => {
-          tabelaHTML += `<tr>
-            <td><div class="nome">${t.nome}</div><div class="cargo-badge">${t.cargo}</div>${t.pix&&t.pix.toUpperCase()!=='DINHEIRO'?`<div class="pix-key">Pix: ${t.pix}</div>`:t.pix?'<div class="pix-key">💵 Dinheiro</div>':''}</td>
-            <td class="dias-td">${t.dias.length}</td>
-            <td>${fmt(t.diarias)}</td>
-            <td>${fmt(t.gorjeta)}</td>
-            <td>${t.consumo?fmt(t.consumo):'-'}</td>
-            <td>-</td>
-            <td class="valor-td">${fmt(t.total)}</td>
-            <td style="text-align:center"><div class="recibo-box"></div></td>
-          </tr>`;
-        });
-        tabelaHTML += '</tbody></table>';
-      });
-
-      bodyEl.innerHTML = resumoHTML + tabelaHTML;
-      setTimeout(() => win.print(), 300);
-    } catch(err) {
-      win.document.getElementById('print-body').innerHTML = '<p>Erro ao gerar impressão: ' + err.message + '</p>';
-    }
-  }, 300);
-}
-
 async function renderPagamentos() {
   const {de,ate} = getPeriodo();
   if(!de||!ate) { showAlert('pgtoAlert','Selecione o período.','error'); return; }
@@ -1898,20 +1770,6 @@ async function renderPagamentos() {
         ${diaristas.map(renderCard).join('')}
       ` : ''}
     `;
-
-    // Salvar dados para impressão
-    window._pgtoUltimosDados = {
-      de, ate, lbl, registrados, diaristas, totalGeral,
-      totalRegistrado, totalDiarista, totalPix, totalDinheiro,
-      fmt: (v) => 'R$ ' + (v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})
-    };
-    // Enriquecer cada item com campos necessários para impressão
-    [...registrados, ...diaristas].forEach(t => {
-      t.dias_count = t.dias.length;
-      t.diaria = t.diarias / (t.dias.length || 1);
-      t.desconto = 0; // desconto individual não está somado aqui
-    });
-
   } catch(e) { cont.innerHTML=`<div class="empty-state"><p>Erro: ${e.message}</p></div>`; }
 }
 
