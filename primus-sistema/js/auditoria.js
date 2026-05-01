@@ -16,7 +16,7 @@ import {
   corrigirItemContagem
 } from './db.js';
 import { slugify } from './produtos.js';
-import { obterBebidas } from './produtos-store.js';
+import { obterBebidas, obterSorvetes } from './produtos-store.js';
 import { getSessao } from './auth.js';
 
 // ===== ESTADO =====
@@ -24,8 +24,10 @@ let abaAtiva = 'atual';          // 'atual' | 'historico'
 let modoAtual = 'operacional';   // 'operacional' | 'virada'
 let dataInicio = '';
 let dataFim    = '';
-let resultadoAuditoria = [];
-let contextoAuditoria = {};      // { contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior }
+let resultadoAuditoria = [];     // resultado das BEBIDAS
+let resultadoSorvetes  = [];     // resultado dos SORVETES + EMBALAGENS (modo operacional)
+let resultadoSorvetesVirada = []; // resultado dos SORVETES + EMBALAGENS (modo virada)
+let contextoAuditoria = {};      // { contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior, contagemSorv, contagemSorvAnterior }
 let logoDataURL = null;          // logo da Primus em base64 (carregada uma vez)
 let auditoriaFechadaAtual = null; // preenchido quando a auditoria do período já está fechada
 
@@ -108,6 +110,8 @@ export async function inicializarAuditoria() {
       <div id="aud-erro" style="display:none"></div>
       <div id="aud-resumo" style="display:none"></div>
       <div id="aud-tabela" style="display:none"></div>
+      <!-- Seção de sorvetes & embalagens (renderizada empilhada abaixo da de bebidas) -->
+      <div id="aud-sorvetes-secao" style="display:none"></div>
       <div id="aud-acoes" style="display:none" class="aud-acoes">
         <button class="btn btn-ghost" id="aud-btn-pdf">📄 Exportar PDF</button>
         <button class="btn btn-primary" id="aud-btn-fechar">🔒 Fechar auditoria</button>
@@ -278,6 +282,7 @@ function trocarModo(novoModo) {
   // Limpa resultado anterior ao trocar de modo (evita confusão)
   document.getElementById('aud-resumo').style.display = 'none';
   document.getElementById('aud-tabela').style.display = 'none';
+  document.getElementById('aud-sorvetes-secao').style.display = 'none';
   document.getElementById('aud-erro').style.display = 'none';
   document.getElementById('aud-acoes').style.display = 'none';
   document.getElementById('aud-fechada-banner').style.display = 'none';
@@ -454,13 +459,17 @@ async function executarModoOperacional() {
   // 1) Busca contagens no período
   const todasContagens = await listarContagens({ limite: 500 });
 
-  // Pega a contagem INI na data de início
+  // Pega a contagem INI na data de início (bebidas)
   const contagemIni = todasContagens.find(c =>
     c.tipo === 'ini' && c.data === dataInicio
   );
-  // Pega a contagem FIN na data de fim
+  // Pega a contagem FIN na data de fim (bebidas)
   const contagemFin = todasContagens.find(c =>
     c.tipo === 'fin' && c.data === dataFim
+  );
+  // Pega a contagem de SORVETES (única, mesmo dia — tipo='sorv')
+  const contagemSorv = todasContagens.find(c =>
+    c.tipo === 'sorv' && c.data === dataInicio
   );
 
   if (!contagemIni) {
@@ -469,10 +478,10 @@ async function executarModoOperacional() {
   if (!contagemFin) {
     throw new Error(`Não encontrei contagem de FINAL (fin) na data ${fmtData(dataFim)}. Peça pro barman fazer essa contagem primeiro.`);
   }
+  // Sorvetes é opcional — se não tiver, a tabela de sorvetes não é renderizada,
+  // mas a auditoria de bebidas continua funcionando normalmente.
 
   // 2) Busca a FIN do DIA OPERACIONAL ANTERIOR (pro cálculo do D-1)
-  // Precisa ser FIN, de qualquer data anterior a dataInicio.
-  // Ordenado desc, então basta pegar a primeira FIN com data < dataInicio.
   const contagemFinAnterior = todasContagens.find(c =>
     c.tipo === 'fin' && c.data < dataInicio
   );
@@ -487,15 +496,28 @@ async function executarModoOperacional() {
   // 4) Busca recebimentos no período
   const recebimentos = await listarRecebimentos(dataInicio, dataFim);
 
-  // 5) Calcula auditoria (agora com D-1 e diagnóstico)
+  // 5) Calcula auditoria de bebidas (com D-1 e diagnóstico)
   resultadoAuditoria = await calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior);
 
+  // 5b) Calcula auditoria de sorvetes (se houver contagem)
+  if (contagemSorv) {
+    resultadoSorvetes = await calcularAuditoriaSorvetes(contagemSorv, vendas);
+  } else {
+    resultadoSorvetes = [];
+  }
+
   // Salva contexto pro PDF usar depois
-  contextoAuditoria = { contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior };
+  contextoAuditoria = { contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior, contagemSorv };
 
   // 6) Renderiza
   renderizarResumoOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior);
   renderizarTabelaOperacional();
+  // Tabela de sorvetes (empilhada abaixo) — só se tiver contagem
+  if (contagemSorv) {
+    await renderizarSecaoSorvetesOperacional(vendas);
+  } else {
+    limparSecaoSorvetes();
+  }
 }
 
 // ===== MODO VIRADA =====
@@ -508,6 +530,14 @@ async function executarModoVirada() {
   );
   const contagemIniAtual = todasContagens.find(c =>
     c.tipo === 'ini' && c.data === dataFim
+  );
+
+  // Sorvetes: pega as duas folhas (anterior e atual)
+  const contagemSorvAnterior = todasContagens.find(c =>
+    c.tipo === 'sorv' && c.data === dataInicio
+  );
+  const contagemSorvAtual = todasContagens.find(c =>
+    c.tipo === 'sorv' && c.data === dataFim
   );
 
   if (!contagemFinAnterior) {
@@ -525,15 +555,31 @@ async function executarModoVirada() {
     console.warn('Não foi possível buscar auditoria operacional do dia anterior:', e);
   }
 
-  // 3) Calcula auditoria de virada com cruzamento
+  // 3) Calcula auditoria de virada com cruzamento (bebidas)
   resultadoAuditoria = await calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior);
 
+  // 3b) Calcula virada de sorvetes (se houver as duas contagens)
+  if (contagemSorvAnterior && contagemSorvAtual) {
+    resultadoSorvetesVirada = await calcularAuditoriaSorvetesVirada(contagemSorvAnterior, contagemSorvAtual);
+  } else {
+    resultadoSorvetesVirada = [];
+  }
+
   // Salva contexto pro PDF e correção usarem depois
-  contextoAuditoria = { contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior };
+  contextoAuditoria = {
+    contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior,
+    contagemSorvAnterior, contagemSorvAtual
+  };
 
   // 4) Renderiza (layout específico do modo virada)
   renderizarResumoVirada(contagemFinAnterior, contagemIniAtual);
   renderizarTabelaVirada();
+  // Tabela de virada de sorvetes (empilhada abaixo)
+  if (contagemSorvAnterior && contagemSorvAtual) {
+    renderizarSecaoSorvetesVirada();
+  } else {
+    limparSecaoSorvetes();
+  }
 }
 
 function mostrarErro(msg) {
@@ -680,6 +726,33 @@ function extrairEstoque(contagem) {
   return estoque;
 }
 
+/**
+ * Extrai os campos completos de sorvetes (qtd inicial, abast, final, vendeu calculado).
+ * A folha de sorvetes (tipo='sorv') é única e tem estrutura:
+ *   - "<slug>__ini" → { qtd, obs }
+ *   - "<slug>__fin" → { abast, final, vendeu, obs }
+ * Retorna: { <slug>: { ini, abast, fin, vendeuAnotado } }
+ */
+function extrairCamposSorvetes(contagemSorv) {
+  const out = {};
+  if (!contagemSorv?.itens) return out;
+  Object.entries(contagemSorv.itens).forEach(([chave, v]) => {
+    if (typeof v !== 'object' || v === null) return;
+    if (chave.endsWith('__ini')) {
+      const slug = chave.replace(/__ini$/, '');
+      if (!out[slug]) out[slug] = {};
+      out[slug].ini = v.qtd || 0;
+    } else if (chave.endsWith('__fin')) {
+      const slug = chave.replace(/__fin$/, '');
+      if (!out[slug]) out[slug] = {};
+      out[slug].abast = v.abast || 0;
+      out[slug].fin   = v.final || 0;
+      out[slug].vendeuAnotado = v.vendeu;  // pode ser undefined se não anotou
+    }
+  });
+  return out;
+}
+
 // ===== MOTOR DO CÁLCULO — MODO VIRADA =====
 // Compara FIN do dia anterior com INI do dia atual.
 // Em teoria, deveriam ser IGUAIS (não houve operação entre eles).
@@ -745,6 +818,132 @@ async function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, au
       status,
       erroContagemConfirmado,
       difOperacionalAnterior
+    };
+  });
+}
+
+// ===== MOTOR DO CÁLCULO — SORVETES OPERACIONAL =====
+// Sorvetes têm uma estrutura diferente das bebidas:
+// - INI e FIN ficam no MESMO documento (tipo='sorv')
+// - Pra cada sorvete: { ini, abast, fin } → vendeuCalculado = ini + abast - fin
+// - Compara com vendas do PDV
+// - Embalagens (categoria 📦) têm a mesma estrutura, mas geralmente o "vendeu"
+//   no PDV é o consumo de embalagem (ex: "EMBALAGEM M" no relatório de produtos).
+async function calcularAuditoriaSorvetes(contagemSorv, vendas) {
+  // Carrega catálogo efetivo de sorvetes (inclui embalagens — todos vão na mesma folha)
+  const sorvetes = await obterSorvetes();
+
+  // Extrai os campos da contagem
+  const camposSorv = extrairCamposSorvetes(contagemSorv);
+
+  // Soma vendas do PDV por slug
+  const vendidoPorSlug = {};
+  vendas.forEach(v => {
+    (v.produtos || []).forEach(p => {
+      const slug = slugify(p.nome);
+      if (!vendidoPorSlug[slug]) vendidoPorSlug[slug] = 0;
+      vendidoPorSlug[slug] += p.qtd || 0;
+    });
+  });
+
+  // Monta linha por sorvete cadastrado
+  return sorvetes.map(sorv => {
+    const slug = slugify(sorv.nome);
+    const c = camposSorv[slug] || { ini: 0, abast: 0, fin: 0 };
+    const ini   = c.ini   || 0;
+    const abast = c.abast || 0;
+    const fin   = c.fin   || 0;
+    const vendeuCalc = ini + abast - fin;            // Quanto saiu fisicamente
+    const vendeuPDV  = vendidoPorSlug[slug] || 0;    // Quanto o PDV registrou
+    const diferenca  = vendeuCalc - vendeuPDV;       // Positivo = saiu mais que vendeu (sumiço/cortesia/quebra)
+                                                     // Negativo = vendeu mais que saiu (erro de contagem ou contou menos)
+
+    // Classifica o status pela magnitude da divergência (igual bebidas)
+    const abs = Math.abs(diferenca);
+    let status;
+    if (vendeuCalc === 0 && vendeuPDV === 0)        status = 'sem_dados';
+    else if (abs === 0)                              status = 'ok';
+    else if (abs === 1)                              status = 'leve';
+    else if (abs >= 2 && abs <= 4)                   status = 'atencao';
+    else                                             status = 'critico';
+
+    return {
+      slug,
+      nome: sorv.nome,
+      grupo: sorv.grupo || '',
+      ini,
+      abast,
+      fin,
+      vendeuCalc,
+      vendeuPDV,
+      diferenca,
+      vendeuAnotado: c.vendeuAnotado,  // pode ser undefined
+      status,
+      _origem: 'cadastrado'
+    };
+  });
+  // OBS: produtos vendidos no PDV que NÃO estão no catálogo de sorvetes
+  // são tratados pela função detectarSorvetesNaoCadastrados (para não poluir
+  // a tabela principal — vão pra um aviso separado).
+}
+
+/**
+ * Detecta produtos vendidos no PDV que se parecem com sorvete/embalagem
+ * mas não estão no catálogo. Mostra como aviso pra o gestor cadastrar.
+ */
+async function detectarSorvetesNaoCadastrados(vendas) {
+  const sorvetes = await obterSorvetes({ incluirOcultos: true });
+  const slugsCadastrados = new Set(sorvetes.map(s => slugify(s.nome)));
+  const naoCadastrados = [];
+  const PALAVRAS_CHAVE = ['GELATO', 'SORBET', 'IOGURTE', 'PALETA',
+                          'EMBALAGEM', 'COPO CUZUMEL', 'KIT FESTA',
+                          'ESPATULA'];
+  const vistos = new Set();
+  vendas.forEach(v => {
+    (v.produtos || []).forEach(p => {
+      const up = (p.nome || '').toUpperCase();
+      if (!PALAVRAS_CHAVE.some(k => up.includes(k))) return;
+      const slug = slugify(p.nome);
+      if (slugsCadastrados.has(slug)) return;
+      if (vistos.has(slug)) return;
+      vistos.add(slug);
+      naoCadastrados.push({ nome: p.nome, qtd: p.qtd || 0 });
+    });
+  });
+  return naoCadastrados;
+}
+
+// ===== MOTOR DO CÁLCULO — SORVETES VIRADA =====
+// Compara o FIN do dia anterior com o INI do dia atual (ambos no mesmo doc tipo='sorv').
+// Em teoria, deveriam ser iguais — qualquer divergência é sumiço noturno ou erro de contagem.
+async function calcularAuditoriaSorvetesVirada(contagemSorvAnterior, contagemSorvAtual) {
+  const sorvetes = await obterSorvetes();
+  const camposAnt = extrairCamposSorvetes(contagemSorvAnterior);
+  const camposAtu = extrairCamposSorvetes(contagemSorvAtual);
+
+  return sorvetes.map(sorv => {
+    const slug = slugify(sorv.nome);
+    const fimAnterior = camposAnt[slug]?.fin || 0;
+    const iniAtual    = camposAtu[slug]?.ini || 0;
+    const diferenca   = iniAtual - fimAnterior;  // negativo = sumiu; positivo = "apareceu"
+
+    const abs = Math.abs(diferenca);
+    let status;
+    if (fimAnterior === 0 && iniAtual === 0) status = 'sem_dados';
+    else if (abs === 0)                       status = 'ok';
+    else if (abs === 1)                       status = 'leve';
+    else if (abs >= 2 && abs <= 4)            status = 'atencao';
+    else                                       status = 'critico';
+
+    return {
+      slug,
+      nome: sorv.nome,
+      grupo: sorv.grupo || '',
+      fimAnterior,
+      iniAtual,
+      diferenca,
+      status,
+      _origem: 'cadastrado'
     };
   });
 }
@@ -1077,6 +1276,354 @@ function renderLinhaVirada(r) {
       <div>${statusBadge}</div>
     </div>
   `;
+}
+
+// ========================================================================
+// RENDERIZAÇÃO — SORVETES & EMBALAGENS
+// ========================================================================
+
+/** Limpa a seção de sorvetes (esconde) — usado quando troca modo ou não há contagem). */
+function limparSecaoSorvetes() {
+  const secao = document.getElementById('aud-sorvetes-secao');
+  if (secao) {
+    secao.style.display = 'none';
+    secao.innerHTML = '';
+  }
+}
+
+/**
+ * Renderiza a tabela de sorvetes & embalagens no modo operacional.
+ * Mostra: INI / +ABAST / =ESP / FIN / VEN-PDV / DIF
+ * Onde ESP = INI + ABAST e DIF = (INI+ABAST-FIN) - VEN-PDV
+ */
+async function renderizarSecaoSorvetesOperacional(vendas) {
+  const secao = document.getElementById('aud-sorvetes-secao');
+  if (!secao) return;
+
+  const naoCadastrados = await detectarSorvetesNaoCadastrados(vendas);
+
+  // KPIs
+  const criticos = resultadoSorvetes.filter(r => r.status === 'critico').length;
+  const atencao  = resultadoSorvetes.filter(r => r.status === 'atencao').length;
+  const leves    = resultadoSorvetes.filter(r => r.status === 'leve').length;
+  const ok       = resultadoSorvetes.filter(r => r.status === 'ok').length;
+  const semdados = resultadoSorvetes.filter(r => r.status === 'sem_dados').length;
+
+  // Totais
+  const totalIni    = resultadoSorvetes.reduce((s, r) => s + r.ini, 0);
+  const totalAbast  = resultadoSorvetes.reduce((s, r) => s + r.abast, 0);
+  const totalFin    = resultadoSorvetes.reduce((s, r) => s + r.fin, 0);
+  const totalVCalc  = resultadoSorvetes.reduce((s, r) => s + r.vendeuCalc, 0);
+  const totalVPdv   = resultadoSorvetes.reduce((s, r) => s + r.vendeuPDV, 0);
+  const totalDif    = resultadoSorvetes.reduce((s, r) => s + r.diferenca, 0);
+
+  // Agrupa por grupo (Sorbets / Gelatos / Embalagens)
+  const grupos = {};
+  resultadoSorvetes.forEach(r => {
+    if (r.status === 'sem_dados' && r.vendeuPDV === 0) return;  // pula totalmente vazio
+    const g = r.grupo || '— Sem grupo —';
+    if (!grupos[g]) grupos[g] = [];
+    grupos[g].push(r);
+  });
+
+  // Aviso de produtos vendidos não cadastrados
+  let avisoNaoCadastrados = '';
+  if (naoCadastrados.length > 0) {
+    const lista = naoCadastrados.map(p => `<li><strong>${p.nome}</strong> (${p.qtd} un)</li>`).join('');
+    avisoNaoCadastrados = `
+      <div class="aud-aviso-naocad">
+        <div class="aud-aviso-head">
+          <span class="aud-aviso-ico">⚠️</span>
+          <strong>Produtos vendidos no PDV mas não cadastrados em Sorvetes/Embalagens</strong>
+        </div>
+        <small>Vá em <strong>Catálogo</strong> e adicione esses produtos pra que apareçam na auditoria:</small>
+        <ul class="aud-aviso-lista">${lista}</ul>
+      </div>
+    `;
+  }
+
+  secao.innerHTML = `
+    <div class="aud-sorv-titulo">
+      <h3>🍨 Sorvetes &amp; Embalagens</h3>
+      <span class="aud-sorv-sub">Comparação: estoque físico vs PDV</span>
+    </div>
+
+    <div class="aud-kpis aud-kpis-sorv">
+      <div class="aud-kpi aud-kpi-critico"><div class="aud-kpi-val">${criticos}</div><div class="aud-kpi-label">CRÍTICOS (≥5)</div></div>
+      <div class="aud-kpi aud-kpi-atencao"><div class="aud-kpi-val">${atencao}</div><div class="aud-kpi-label">ATENÇÃO (2-4)</div></div>
+      <div class="aud-kpi aud-kpi-leve"><div class="aud-kpi-val">${leves}</div><div class="aud-kpi-label">LEVES (1)</div></div>
+      <div class="aud-kpi aud-kpi-ok"><div class="aud-kpi-val">${ok}</div><div class="aud-kpi-label">OK (0)</div></div>
+      <div class="aud-kpi aud-kpi-semdados"><div class="aud-kpi-val">${semdados}</div><div class="aud-kpi-label">SEM DADOS</div></div>
+    </div>
+
+    ${avisoNaoCadastrados}
+
+    <div class="aud-equacao">
+      <div class="aud-eq-card">
+        <div class="aud-eq-label">INICIAL</div>
+        <div class="aud-eq-val">${fmtInt(totalIni)}</div>
+      </div>
+      <div class="aud-eq-op">+</div>
+      <div class="aud-eq-card">
+        <div class="aud-eq-label">ABAST.</div>
+        <div class="aud-eq-val">${fmtInt(totalAbast)}</div>
+      </div>
+      <div class="aud-eq-op">−</div>
+      <div class="aud-eq-card">
+        <div class="aud-eq-label">FINAL</div>
+        <div class="aud-eq-val">${fmtInt(totalFin)}</div>
+      </div>
+      <div class="aud-eq-op">=</div>
+      <div class="aud-eq-card aud-eq-card-esp">
+        <div class="aud-eq-label">VENDEU CALC.</div>
+        <div class="aud-eq-val">${fmtInt(totalVCalc)}</div>
+      </div>
+      <div class="aud-eq-op">vs</div>
+      <div class="aud-eq-card aud-eq-card-real">
+        <div class="aud-eq-label">VENDEU PDV</div>
+        <div class="aud-eq-val">${fmtInt(totalVPdv)}</div>
+      </div>
+      <div class="aud-eq-op">=</div>
+      <div class="aud-eq-card aud-eq-card-dif">
+        <div class="aud-eq-label">DIFERENÇA</div>
+        <div class="aud-eq-val ${totalDif < 0 ? 'aud-dif-neg' : totalDif > 0 ? 'aud-dif-pos' : 'aud-dif-zero'}">${fmtSgn(totalDif)}</div>
+      </div>
+    </div>
+
+    <div class="aud-tabela-wrapper">
+      <div class="aud-cabecalho aud-cabecalho-sorv">
+        <div>Produto</div>
+        <div class="aud-num">INI</div>
+        <div class="aud-num">+ABAST</div>
+        <div class="aud-num">−FIN</div>
+        <div class="aud-num">=CALC</div>
+        <div class="aud-num">PDV</div>
+        <div class="aud-num">DIF</div>
+        <div>Status</div>
+      </div>
+      ${Object.entries(grupos).map(([grupo, itens]) => `
+        <div class="aud-grupo-sep">
+          <span class="aud-grupo-icon">◆</span> ${grupo}
+        </div>
+        ${itens.map(r => renderLinhaSorvetesOperacional(r)).join('')}
+      `).join('')}
+    </div>
+  `;
+
+  secao.style.display = 'block';
+}
+
+function renderLinhaSorvetesOperacional(r) {
+  const statusBadge = {
+    critico:  '<span class="aud-badge bad-critico">CRÍTICO</span>',
+    atencao:  '<span class="aud-badge bad-atencao">ATENÇÃO</span>',
+    leve:     '<span class="aud-badge bad-leve">LEVE</span>',
+    ok:       '<span class="aud-badge bad-ok">OK</span>',
+    sem_dados:'<span class="aud-badge bad-semdados">s/ dados</span>'
+  }[r.status];
+
+  const difClasse = r.diferenca < 0 ? 'aud-dif-neg' :
+                    r.diferenca > 0 ? 'aud-dif-pos' : 'aud-dif-zero';
+
+  return `
+    <div class="aud-linha aud-linha-sorv aud-linha-${r.status}">
+      <div class="aud-nome">${r.nome}</div>
+      <div class="aud-num">${fmtInt(r.ini)}</div>
+      <div class="aud-num aud-num-pos">${r.abast > 0 ? '+' + fmtInt(r.abast) : '—'}</div>
+      <div class="aud-num">${fmtInt(r.fin)}</div>
+      <div class="aud-num aud-num-esp">${fmtInt(r.vendeuCalc)}</div>
+      <div class="aud-num aud-num-real">${fmtInt(r.vendeuPDV)}</div>
+      <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}</div>
+      <div>${statusBadge}</div>
+    </div>
+  `;
+}
+
+/**
+ * Renderiza a virada de sorvetes (FIN do dia X vs INI do dia X+1).
+ */
+function renderizarSecaoSorvetesVirada() {
+  const secao = document.getElementById('aud-sorvetes-secao');
+  if (!secao) return;
+
+  const criticos = resultadoSorvetesVirada.filter(r => r.status === 'critico').length;
+  const atencao  = resultadoSorvetesVirada.filter(r => r.status === 'atencao').length;
+  const leves    = resultadoSorvetesVirada.filter(r => r.status === 'leve').length;
+  const ok       = resultadoSorvetesVirada.filter(r => r.status === 'ok').length;
+  const semdados = resultadoSorvetesVirada.filter(r => r.status === 'sem_dados').length;
+
+  const totalFim = resultadoSorvetesVirada.reduce((s, r) => s + r.fimAnterior, 0);
+  const totalIni = resultadoSorvetesVirada.reduce((s, r) => s + r.iniAtual, 0);
+  const totalDif = resultadoSorvetesVirada.reduce((s, r) => s + r.diferenca, 0);
+
+  const grupos = {};
+  resultadoSorvetesVirada.forEach(r => {
+    if (r.status === 'sem_dados') return;
+    const g = r.grupo || '— Sem grupo —';
+    if (!grupos[g]) grupos[g] = [];
+    grupos[g].push(r);
+  });
+
+  secao.innerHTML = `
+    <div class="aud-sorv-titulo">
+      <h3>🍨 Sorvetes &amp; Embalagens</h3>
+      <span class="aud-sorv-sub">Virada: FIN do dia anterior vs INI do dia atual</span>
+    </div>
+
+    <div class="aud-kpis aud-kpis-sorv">
+      <div class="aud-kpi aud-kpi-critico"><div class="aud-kpi-val">${criticos}</div><div class="aud-kpi-label">CRÍTICOS (≥5)</div></div>
+      <div class="aud-kpi aud-kpi-atencao"><div class="aud-kpi-val">${atencao}</div><div class="aud-kpi-label">ATENÇÃO (2-4)</div></div>
+      <div class="aud-kpi aud-kpi-leve"><div class="aud-kpi-val">${leves}</div><div class="aud-kpi-label">LEVES (1)</div></div>
+      <div class="aud-kpi aud-kpi-ok"><div class="aud-kpi-val">${ok}</div><div class="aud-kpi-label">OK (0)</div></div>
+      <div class="aud-kpi aud-kpi-semdados"><div class="aud-kpi-val">${semdados}</div><div class="aud-kpi-label">SEM DADOS</div></div>
+    </div>
+
+    <div class="aud-equacao aud-equacao-virada">
+      <div class="aud-eq-card">
+        <div class="aud-eq-label">FIN ANTERIOR</div>
+        <div class="aud-eq-val">${fmtInt(totalFim)}</div>
+      </div>
+      <div class="aud-eq-op">vs</div>
+      <div class="aud-eq-card aud-eq-card-real">
+        <div class="aud-eq-label">INI ATUAL</div>
+        <div class="aud-eq-val">${fmtInt(totalIni)}</div>
+      </div>
+      <div class="aud-eq-op">=</div>
+      <div class="aud-eq-card aud-eq-card-dif">
+        <div class="aud-eq-label">DIFERENÇA</div>
+        <div class="aud-eq-val ${totalDif < 0 ? 'aud-dif-neg' : totalDif > 0 ? 'aud-dif-pos' : 'aud-dif-zero'}">${fmtSgn(totalDif)}</div>
+      </div>
+    </div>
+
+    <div class="aud-tabela-wrapper">
+      <div class="aud-cabecalho aud-cabecalho-virada">
+        <div>Produto</div>
+        <div class="aud-num">FIN ANT.</div>
+        <div class="aud-num">INI ATUAL</div>
+        <div class="aud-num">DIF</div>
+        <div>Status</div>
+      </div>
+      ${Object.entries(grupos).map(([grupo, itens]) => `
+        <div class="aud-grupo-sep">
+          <span class="aud-grupo-icon">◆</span> ${grupo}
+        </div>
+        ${itens.map(r => renderLinhaSorvetesVirada(r)).join('')}
+      `).join('')}
+    </div>
+  `;
+
+  secao.style.display = 'block';
+}
+
+function renderLinhaSorvetesVirada(r) {
+  const statusBadge = {
+    critico:  '<span class="aud-badge bad-critico">CRÍTICO</span>',
+    atencao:  '<span class="aud-badge bad-atencao">ATENÇÃO</span>',
+    leve:     '<span class="aud-badge bad-leve">LEVE</span>',
+    ok:       '<span class="aud-badge bad-ok">OK</span>',
+    sem_dados:'<span class="aud-badge bad-semdados">s/ dados</span>'
+  }[r.status];
+
+  const difClasse = r.diferenca < 0 ? 'aud-dif-neg' :
+                    r.diferenca > 0 ? 'aud-dif-pos' : 'aud-dif-zero';
+
+  return `
+    <div class="aud-linha aud-linha-virada aud-linha-${r.status}">
+      <div class="aud-nome">${r.nome}</div>
+      <div class="aud-num">${fmtInt(r.fimAnterior)}</div>
+      <div class="aud-num aud-num-real">${fmtInt(r.iniAtual)}</div>
+      <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}</div>
+      <div>${statusBadge}</div>
+    </div>
+  `;
+}
+
+/**
+ * Renderiza a tabela de sorvetes do HISTÓRICO (sem buscar vendas).
+ * Usa o snapshot já hidratado em `resultadoSorvetes`.
+ * Mesma lógica visual do operacional, mas sem o aviso de "não cadastrados"
+ * (que só faria sentido em tempo real, comparando com o catálogo atual).
+ */
+async function renderizarSecaoSorvetesHistoricoOperacional() {
+  const secao = document.getElementById('aud-sorvetes-secao');
+  if (!secao) return;
+
+  // KPIs
+  const criticos = resultadoSorvetes.filter(r => r.status === 'critico').length;
+  const atencao  = resultadoSorvetes.filter(r => r.status === 'atencao').length;
+  const leves    = resultadoSorvetes.filter(r => r.status === 'leve').length;
+  const ok       = resultadoSorvetes.filter(r => r.status === 'ok').length;
+  const semdados = resultadoSorvetes.filter(r => r.status === 'sem_dados').length;
+
+  // Totais
+  const totalIni    = resultadoSorvetes.reduce((s, r) => s + (r.ini || 0), 0);
+  const totalAbast  = resultadoSorvetes.reduce((s, r) => s + (r.abast || 0), 0);
+  const totalFin    = resultadoSorvetes.reduce((s, r) => s + (r.fin || 0), 0);
+  const totalVCalc  = resultadoSorvetes.reduce((s, r) => s + (r.vendeuCalc || 0), 0);
+  const totalVPdv   = resultadoSorvetes.reduce((s, r) => s + (r.vendeuPDV || 0), 0);
+  const totalDif    = resultadoSorvetes.reduce((s, r) => s + (r.diferenca || 0), 0);
+
+  // Agrupa por grupo
+  const grupos = {};
+  resultadoSorvetes.forEach(r => {
+    if (r.status === 'sem_dados' && (r.vendeuPDV || 0) === 0) return;
+    const g = r.grupo || '— Sem grupo —';
+    if (!grupos[g]) grupos[g] = [];
+    grupos[g].push(r);
+  });
+
+  secao.innerHTML = `
+    <div class="aud-sorv-titulo">
+      <h3>🍨 Sorvetes &amp; Embalagens</h3>
+      <span class="aud-sorv-sub">Histórico — snapshot da auditoria fechada</span>
+    </div>
+
+    <div class="aud-kpis aud-kpis-sorv">
+      <div class="aud-kpi aud-kpi-critico"><div class="aud-kpi-val">${criticos}</div><div class="aud-kpi-label">CRÍTICOS (≥5)</div></div>
+      <div class="aud-kpi aud-kpi-atencao"><div class="aud-kpi-val">${atencao}</div><div class="aud-kpi-label">ATENÇÃO (2-4)</div></div>
+      <div class="aud-kpi aud-kpi-leve"><div class="aud-kpi-val">${leves}</div><div class="aud-kpi-label">LEVES (1)</div></div>
+      <div class="aud-kpi aud-kpi-ok"><div class="aud-kpi-val">${ok}</div><div class="aud-kpi-label">OK (0)</div></div>
+      <div class="aud-kpi aud-kpi-semdados"><div class="aud-kpi-val">${semdados}</div><div class="aud-kpi-label">SEM DADOS</div></div>
+    </div>
+
+    <div class="aud-equacao">
+      <div class="aud-eq-card"><div class="aud-eq-label">INICIAL</div><div class="aud-eq-val">${fmtInt(totalIni)}</div></div>
+      <div class="aud-eq-op">+</div>
+      <div class="aud-eq-card"><div class="aud-eq-label">ABAST.</div><div class="aud-eq-val">${fmtInt(totalAbast)}</div></div>
+      <div class="aud-eq-op">−</div>
+      <div class="aud-eq-card"><div class="aud-eq-label">FINAL</div><div class="aud-eq-val">${fmtInt(totalFin)}</div></div>
+      <div class="aud-eq-op">=</div>
+      <div class="aud-eq-card aud-eq-card-esp"><div class="aud-eq-label">VENDEU CALC.</div><div class="aud-eq-val">${fmtInt(totalVCalc)}</div></div>
+      <div class="aud-eq-op">vs</div>
+      <div class="aud-eq-card aud-eq-card-real"><div class="aud-eq-label">VENDEU PDV</div><div class="aud-eq-val">${fmtInt(totalVPdv)}</div></div>
+      <div class="aud-eq-op">=</div>
+      <div class="aud-eq-card aud-eq-card-dif">
+        <div class="aud-eq-label">DIFERENÇA</div>
+        <div class="aud-eq-val ${totalDif < 0 ? 'aud-dif-neg' : totalDif > 0 ? 'aud-dif-pos' : 'aud-dif-zero'}">${fmtSgn(totalDif)}</div>
+      </div>
+    </div>
+
+    <div class="aud-tabela-wrapper">
+      <div class="aud-cabecalho aud-cabecalho-sorv">
+        <div>Produto</div>
+        <div class="aud-num">INI</div>
+        <div class="aud-num">+ABAST</div>
+        <div class="aud-num">−FIN</div>
+        <div class="aud-num">=CALC</div>
+        <div class="aud-num">PDV</div>
+        <div class="aud-num">DIF</div>
+        <div>Status</div>
+      </div>
+      ${Object.entries(grupos).map(([grupo, itens]) => `
+        <div class="aud-grupo-sep">
+          <span class="aud-grupo-icon">◆</span> ${grupo}
+        </div>
+        ${itens.map(r => renderLinhaSorvetesOperacional(r)).join('')}
+      `).join('')}
+    </div>
+  `;
+
+  secao.style.display = 'block';
 }
 
 // ========================================================================
@@ -1854,6 +2401,17 @@ async function confirmarFechamento() {
           : { fimAnterior: r.fimAnterior, iniAtual: r.iniAtual, diferenca: r.diferenca }
         )
       })),
+      // Snapshot de sorvetes (se houver) — pra histórico preservar tudo
+      resultadoSorvetes: (modoAtual === 'operacional' ? resultadoSorvetes : resultadoSorvetesVirada).map(r => ({
+        slug: r.slug,
+        nome: r.nome,
+        grupo: r.grupo,
+        status: r.status,
+        ...(modoAtual === 'operacional'
+          ? { ini: r.ini, abast: r.abast, fin: r.fin, vendeuCalc: r.vendeuCalc, vendeuPDV: r.vendeuPDV, diferenca: r.diferenca }
+          : { fimAnterior: r.fimAnterior, iniAtual: r.iniAtual, diferenca: r.diferenca }
+        )
+      })),
       totais: calcularTotaisResumo(),
       observacoes: obs,
       responsavel: resp,
@@ -2084,6 +2642,27 @@ window.__aud_abrirFechada = async function(id) {
     } else {
       renderizarResumoViradaHistorico(a);
       renderizarTabelaVirada();
+    }
+
+    // Re-hidrata sorvetes do snapshot (se houver no fechamento)
+    const sorvSnapshot = a.resultadoSorvetes || [];
+    if (a.modo === 'operacional') {
+      resultadoSorvetes = sorvSnapshot;
+      resultadoSorvetesVirada = [];
+      if (sorvSnapshot.length > 0) {
+        // Renderização simplificada (sem buscar vendas — usa dados do snapshot)
+        await renderizarSecaoSorvetesHistoricoOperacional();
+      } else {
+        limparSecaoSorvetes();
+      }
+    } else {
+      resultadoSorvetesVirada = sorvSnapshot;
+      resultadoSorvetes = [];
+      if (sorvSnapshot.length > 0) {
+        renderizarSecaoSorvetesVirada();
+      } else {
+        limparSecaoSorvetes();
+      }
     }
 
     renderizarBannerFechamento();
