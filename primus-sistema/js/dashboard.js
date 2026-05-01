@@ -1086,12 +1086,20 @@ function construirMapaProdutoSubgrupo(vendas) {
   const mapa = new Map();
   if (!vendas.length) return mapa;
 
-  // Coleta todos os subgrupos e produtos que apareceram
+  // Coleta todos os subgrupos e produtos que apareceram.
+  // IMPORTANTE: nomes podem variar entre o relatório geral (v.produtos)
+  // e o detalhado (v.vendedoresDetalhado[].produtos). Ex: o geral pode ter
+  // "INDIVIDUAL PINTADO A PARMEGIANA" e o detalhado "INDIVIDUAL PINTADO PARMEGIANA".
+  // Por isso adicionamos NOMES DOS DOIS no mapa — assim qualquer lookup acerta.
   const subgrupos = new Set();
   const produtos  = new Set();
   vendas.forEach(v => {
     (v.subgrupos || []).forEach(s => subgrupos.add(s.nome));
     (v.produtos  || []).forEach(p => produtos.add(p.nome));
+    // Também coleta nomes do detalhado (vendedor × produto)
+    (v.vendedoresDetalhado || []).forEach(vd => {
+      (vd.produtos || []).forEach(p => produtos.add(p.nome));
+    });
   });
 
   // Regras heurísticas — cada produto é classificado pelo nome.
@@ -1123,6 +1131,8 @@ function construirMapaProdutoSubgrupo(vendas) {
         up.includes('PINTADO A PALITO')) return 'ESPECIALIDADES DA CASA';
 
     // PRATOS INDIVIDUAIS
+    // Tanto o geral quanto o detalhado usam "INDIVIDUAL" no nome
+    // (ex: "INDIVIDUAL PINTADO A PARMEGIANA" / "INDIVIDUAL PINTADO PARMEGIANA")
     if (up.includes('INDIVIDUAL')) return 'PRATOS INDIVIDUAIS';
 
     // SUGESTOES DO CHEFE
@@ -1149,8 +1159,10 @@ function construirMapaProdutoSubgrupo(vendas) {
     // DRINKS
     if (['CAIPIRINHA','CAIPIROSKA'].some(x => up.includes(x))) return 'DRINKS';
 
-    // SORVETES (gelatos e sorbets)
-    if (['GELATO','SORBET'].some(x => up.includes(x))) return 'SORVETES';
+    // SORVETES (gelatos, sorbets, iogurtes congelados e similares)
+    // Inclui IOGURTE porque alguns produtos da carta de sorvetes têm "iogurte" no nome
+    // (ex: "Iogurte com Frutas Vermelhas") e o PDV não usa "GELATO" pra esses
+    if (['GELATO','SORBET','IOGURTE','PALETA'].some(x => up.includes(x))) return 'SORVETES';
 
     // SOBREMESAS
     if (up.includes('BROWNIE')) return 'SOBREMESAS';
@@ -1289,6 +1301,20 @@ function atualizarExplorador() {
       fonte = (v.subgrupos || []).filter(x => !fSubgrupo || x.nome === fSubgrupo);
     } else if (dimensao === 'produto') {
       fonte = (v.produtos || []).filter(x => !fProduto || x.nome === fProduto);
+      // Se há filtro de subgrupo, restringe aos produtos que pertencem a esse subgrupo
+      // (senão o rateio espalha o valor do subgrupo entre TODOS os produtos do dia,
+      // gerando linhas absurdas como "COCA COLA" com R$ 2,58 num filtro de "PRATOS")
+      if (fSubgrupo) {
+        const produtosDoSubgrupo = produtosPertencentesAoSubgrupo(v, fSubgrupo, mapaProdutoSubgrupo);
+        if (produtosDoSubgrupo) {
+          fonte = fonte.filter(x => produtosDoSubgrupo.has(x.nome));
+        }
+        // Se produtosDoSubgrupo for null, é porque não consegui identificar nenhum
+        // produto desse subgrupo — então melhor não mostrar nada do que mostrar lixo.
+        else {
+          fonte = [];
+        }
+      }
     } else if (dimensao === 'hora') {
       fonte = (v.horas || []).map(h => ({ ...h, nome: h.faixa }));
     } else if (dimensao === 'dia') {
@@ -1312,6 +1338,26 @@ function atualizarExplorador() {
   });
 
   renderizarExploradorResultado(buckets, dimensao, { usouDetalhado, usouProporcao });
+}
+
+/**
+ * Descobre quais produtos vendidos num dia pertencem ao subgrupo dado.
+ * Estratégia (em ordem de confiabilidade):
+ *  1) Se há `vendedoresDetalhado` (relatório real Vendedor×Produto) — usa esse cruzamento
+ *     com o mapa de classificação heurística.
+ *  2) Senão, usa só o mapa heurístico (todos os produtos do dia que se classificam no subgrupo).
+ *
+ * Retorna um Set de nomes de produto, ou null se não conseguiu identificar nenhum.
+ */
+function produtosPertencentesAoSubgrupo(v, subgrupo, mapaProdutoSubgrupo) {
+  const produtosDoDia = (v.produtos || []).map(p => p.nome);
+  const set = new Set();
+  produtosDoDia.forEach(nome => {
+    if (mapaProdutoSubgrupo.get(nome) === subgrupo) {
+      set.add(nome);
+    }
+  });
+  return set.size > 0 ? set : null;
 }
 
 function renderizarExploradorResultado(buckets, dimensao, flags) {
