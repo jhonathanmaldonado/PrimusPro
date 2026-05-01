@@ -3050,3 +3050,157 @@ body {
   .cat-linha { flex-direction: column; align-items: stretch; }
   .cat-linha-acoes { justify-content: flex-end; flex-wrap: wrap; }
 }
+
+/* ========================================================================
+   AUDITORIA DE SORVETES & EMBALAGENS
+   Tabela própria, empilhada abaixo da tabela de bebidas.
+   ======================================================================== */
+
+.aud-sorv-titulo {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 28px;
+  margin-bottom: 12px;
+  padding: 0 4px;
+  border-top: 2px dashed var(--cinza-borda);
+  padding-top: 18px;
+}
+
+.aud-sorv-titulo h3 {
+  font-family: 'Raleway', sans-serif;
+  font-weight: 800;
+  font-size: 16px;
+  color: var(--vinho);
+  margin: 0;
+}
+
+.aud-sorv-sub {
+  font-size: 11px;
+  color: var(--cinza-texto);
+  font-family: 'DM Mono', monospace;
+}
+
+/* Os KPIs reaproveitam o estilo já existente — só adiciona um espaçamento */
+.aud-kpis-sorv {
+  margin-bottom: 12px;
+}
+
+/* Tabela de sorvetes - 8 colunas (operacional) */
+.aud-cabecalho {
+  display: grid;
+  background: var(--preto);
+  color: var(--amarelo);
+  padding: 9px 14px;
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 600;
+  gap: 8px;
+  align-items: center;
+  border-radius: 10px 10px 0 0;
+}
+
+.aud-cabecalho.aud-cabecalho-sorv {
+  /* Produto / INI / +ABAST / -FIN / =CALC / PDV / DIF / Status */
+  grid-template-columns: 2.2fr 0.7fr 0.85fr 0.7fr 0.85fr 0.7fr 0.9fr 1fr;
+}
+
+.aud-cabecalho.aud-cabecalho-virada {
+  /* Produto / FIN ANT / INI ATUAL / DIF / Status */
+  grid-template-columns: 2.2fr 1fr 1fr 0.9fr 1fr;
+}
+
+.aud-cabecalho .aud-num { text-align: center; }
+
+/* Linhas da tabela de sorvetes — usa a mesma estrutura mas com colunas próprias */
+.aud-linha.aud-linha-sorv {
+  /* Produto / INI / +ABAST / -FIN / =CALC / PDV / DIF / Status */
+  grid-template-columns: 2.2fr 0.7fr 0.85fr 0.7fr 0.85fr 0.7fr 0.9fr 1fr;
+}
+
+.aud-linha.aud-linha-virada:not(.aud-linha-erro-confirmado) {
+  /* Produto / FIN ANT / INI ATUAL / DIF / Status */
+  grid-template-columns: 2.2fr 1fr 1fr 0.9fr 1fr;
+}
+
+/* Separador de grupo (CERVEJAS, GELATOS, EMBALAGENS, etc) */
+.aud-grupo-sep {
+  background: var(--cinza-bg);
+  padding: 7px 14px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--vinho);
+  font-weight: 700;
+  border-bottom: 1px solid var(--cinza-borda);
+}
+
+.aud-grupo-icon {
+  color: var(--amarelo);
+  margin-right: 4px;
+}
+
+/* Aviso de produtos não cadastrados */
+.aud-aviso-naocad {
+  background: #fff8e6;
+  border: 1px solid var(--amarelo-status);
+  border-left: 4px solid var(--amarelo-status);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 14px 0;
+}
+
+.aud-aviso-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--vinho);
+  margin-bottom: 6px;
+}
+
+.aud-aviso-ico { font-size: 16px; }
+
+.aud-aviso-naocad small {
+  display: block;
+  font-size: 11px;
+  color: var(--cinza-texto);
+  margin-bottom: 6px;
+}
+
+.aud-aviso-lista {
+  margin: 8px 0 0 24px;
+  padding: 0;
+  font-size: 12px;
+  color: var(--preto);
+}
+
+.aud-aviso-lista li {
+  margin-bottom: 3px;
+}
+
+/* Equação compacta de virada (5 cards em vez de 9) */
+.aud-equacao-virada {
+  /* o estilo base já fica bom — só ajusta gap para ficar mais espaçado */
+}
+
+/* Mobile: tabela de sorvetes com colunas mais apertadas */
+@media (max-width: 768px) {
+  .aud-cabecalho.aud-cabecalho-sorv,
+  .aud-linha.aud-linha-sorv {
+    grid-template-columns: 1.6fr 0.6fr 0.7fr 0.6fr 0.7fr 0.6fr 0.8fr 0.9fr;
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+  .aud-cabecalho.aud-cabecalho-virada,
+  .aud-linha.aud-linha-virada:not(.aud-linha-erro-confirmado) {
+    grid-template-columns: 1.6fr 0.9fr 0.9fr 0.8fr 0.9fr;
+    font-size: 11px;
+    padding: 8px 10px;
+  }
+  .aud-sorv-titulo h3 { font-size: 14px; }
+}
