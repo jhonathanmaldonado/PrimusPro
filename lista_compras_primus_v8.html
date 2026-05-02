@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lista de Compras — Primus Peixaria</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,sans-serif;font-size:14px;color:#222;background:#f5f5f5;padding:1.5rem}
+.app{max-width:860px;margin:0 auto;background:#fff;border-radius:12px;padding:1.5rem;box-shadow:0 2px 12px #0001}
+.toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:1.25rem;padding-bottom:1rem;border-bottom:1px solid #e0e0e0}
+.toolbar-title{font-size:16px;font-weight:700;flex:1;color:#1F4E79}
+button{cursor:pointer;border:1px solid #bbb;background:#fff;color:#333;border-radius:8px;padding:6px 14px;font-size:13px;font-family:Arial,sans-serif}
+button:hover{background:#f0f0f0}
+button.primary{background:#1F4E79;color:#fff;border-color:#1F4E79}
+button.primary:hover{background:#163a5e}
+button:disabled{opacity:0.6;cursor:not-allowed}
+.section{margin-bottom:1.25rem;border:1px solid #ddd;border-radius:10px;overflow:hidden}
+.section-header{padding:8px 14px;font-weight:700;font-size:13px;display:flex;justify-content:space-between;align-items:center}
+table{width:100%;border-collapse:collapse}
+th{font-size:12px;font-weight:700;color:#555;text-align:left;padding:6px 12px;border-bottom:1px solid #e8e8e8;background:#f7f7f7}
+th:last-child,td:last-child{text-align:center;width:40px}
+th:nth-child(2),td:nth-child(2){width:90px}
+th:nth-child(3),td:nth-child(3){width:120px}
+td{padding:5px 12px;border-bottom:1px solid #f0f0f0;font-size:13px}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafafa}
+input[type=number]{width:85px;padding:3px 8px;font-size:13px;border:1px solid #ccc;border-radius:6px;font-family:Arial,sans-serif}
+input[type=number]:focus{outline:none;box-shadow:0 0 0 2px #1F4E7940;border-color:#1F4E79}
+input[type=text]{padding:5px 10px;font-size:13px;border:1px solid #ccc;border-radius:6px;font-family:Arial,sans-serif}
+input[type=text]:focus{outline:none;box-shadow:0 0 0 2px #1F4E7940;border-color:#1F4E79}
+select{padding:5px 10px;font-size:13px;border:1px solid #ccc;border-radius:6px;background:#fff;font-family:Arial,sans-serif}
+.add-panel{background:#f0f6ff;border-top:1px solid #cde;padding:1rem;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+.add-panel label{font-size:12px;color:#555;display:block;margin-bottom:3px}
+.field{display:flex;flex-direction:column}
+.badge-count{font-size:11px;font-weight:400;opacity:0.75}
+.remove-btn{background:none;border:none;padding:0 4px;font-size:18px;cursor:pointer;color:#aaa;border-radius:4px;line-height:1}
+.remove-btn:hover{color:#c0392b;background:#fdecea}
+.add-section-title{font-size:13px;font-weight:700;color:#185FA5;padding:8px 14px;background:#e6f1fb;border-top:1px solid #c3d9f0}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="toolbar">
+    <span class="toolbar-title">Lista de Compras — Primus Peixaria</span>
+    <button onclick="clearAll()">Limpar quantidades</button>
+    <button class="primary" id="btn-pdf" onclick="gerarPDF()">Gerar PDF</button>
+  </div>
+  <div id="list"></div>
+  <div class="section" style="border-color:#b3cfe8">
+    <div class="add-section-title">Adicionar novo produto</div>
+    <div class="add-panel">
+      <div class="field"><label>Nome do produto</label><input type="text" id="new-name" placeholder="Ex: Alho poró" style="width:190px"></div>
+      <div class="field"><label>Tipo/Embalagem</label><input type="text" id="new-tipo" placeholder="Ex: und" style="width:100px"></div>
+      <div class="field"><label>Categoria</label>
+        <select id="new-cat">
+          <option>Mercearia / Secos</option>
+          <option>Frios / Laticínios</option>
+          <option>Carnes</option>
+          <option>Hortifruti</option>
+          <option>CEASA</option>
+          <option>Limpeza / Descartáveis</option>
+          <option>Embalagens / Outros</option>
+        </select>
+      </div>
+      <button class="primary" onclick="addItem()" style="margin-top:18px">+ Adicionar</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+var CATS = [
+  {name:"Mercearia / Secos",color:"#1F4E79",items:[
+    {n:"Arroz",t:"frd"},{n:"Feijão 1kg",t:"frd"},{n:"Açúcar",t:"frd"},{n:"Vinagre (Neval/Vitalia)",t:"cx"},
+    {n:"Fubá de milho (Mika 1kg)",t:"frd"},{n:"Farinha de arroz (Urbano)",t:"frd"},{n:"Sal (Lebre/Cisne)",t:"frd"},
+    {n:"Leite de coco Sococo 200g",t:"frd"},{n:"Azeite vermelho",t:"und"},{n:"Azeite extra virgem",t:"und"},
+    {n:"Óleo (Liza/Concórdia/Soya)",t:"cx"},{n:"Café 3 Corações",t:"und"},{n:"Nata Imbaúba 300g",t:"und"},
+    {n:"Macarrão espaguete",t:"frd"},{n:"Macarrão pene/parafuso",t:"frd"},{n:"Leite condensado",t:"und"},
+    {n:"Creme de leite 1L",t:"und"},{n:"Leite Integral",t:"cx"},{n:"Pimenta Calabresa",t:"und"},
+    {n:"Pimenta do reino",t:"und"},{n:"Alcaparras",t:"balde"},{n:"Catchup (Cepera)",t:"und"},
+    {n:"Maionese (Quero/Soya)",t:"balde"},{n:"Extrato de tomate 2kg",t:"und"},{n:"Mostarda Cepera",t:"und"},
+    {n:"Maionese Quero",t:"cx"},{n:"Chocolate Melken Meio Amargo",t:"und"},{n:"Ovos",t:"cartela"},{n:"Farinha Tio Chico",t:"und"}
+  ]},
+  {name:"Frios / Laticínios",color:"#2E75B6",items:[
+    {n:"Frango à passarinho",t:"pacote"},{n:"Peito de Frango",t:"pacote"},{n:"Linguiça de pernil",t:"pacote"},
+    {n:"Manteiga (Itambé ou Pira)",t:"pote"},{n:"Batata Crimkle Bem Brasil",t:"pacote"},{n:"Mussarela",t:"Kg"},
+    {n:"Leite em pó desnatado",t:"fardo"},{n:"Creme de leite 0% lactose",t:"cx"},{n:"Iogurte 0% lac Verde Campo",t:"und"},
+    {n:"Leite 0% lac Piracanjuba",t:"cx"},{n:"Leite em pó 0% lac Itambé",t:"und"},{n:"Catupiry grande",t:"und"}
+  ]},
+  {name:"Carnes",color:"#C55A11",items:[
+    {n:"Sobrecoxa de frango",t:""}
+  ]},
+  {name:"Hortifruti",color:"#375623",items:[
+    {n:"Batata Inglesa",t:"Kg"},{n:"Cenoura",t:"Kg"},{n:"Abóbora Cabotiã",t:"und"},
+    {n:"Repolho Roxo / Verde",t:"und"},{n:"Manjericão",t:"und"},{n:"Manga Palmer",t:"kg"}
+  ]},
+  {name:"CEASA",color:"#375623",items:[
+    {n:"Cebola",t:"saco"},{n:"Tomates",t:"caixa"},{n:"Alho",t:"saco"},{n:"Banana da Terra",t:"caixa"},
+    {n:"Pimenta de Cheiro",t:"pacote"},{n:"Limão",t:"saco"},{n:"Laranja",t:"saco"},
+    {n:"Cebolinha industrial",t:"und"},{n:"Salsa industrial",t:"und"},{n:"Coentro industrial",t:"und"},
+    {n:"Alface crespa",t:"und"},{n:"Alface roxa",t:"und"},{n:"Rúcula",t:"und"},{n:"Mostarda",t:"und"}
+  ]},
+  {name:"Limpeza / Descartáveis",color:"#7030A0",items:[
+    {n:"Copo café",t:"und"},{n:"Detergente NEUTRO",t:"fardo"},{n:"Água sanitária",t:"und"},
+    {n:"Bucha (Brilhus) amarela",t:"und"},{n:"Bucha (Brilhus) roxa",t:"und"},{n:"Álcool 70%",t:"fardo"},
+    {n:"Touca descartável",t:"pacote"},{n:"Kit festa",t:"pacote"},{n:"Colherzinha p/ entrada",t:"pacote"},
+    {n:"Papel Toalha (Mili)",t:"fardo"},{n:"Perflex",t:"und"},{n:"Kit talher (G e F) Delivery",t:"pacote"}
+  ]},
+  {name:"Embalagens / Outros",color:"#ED7D31",items:[
+    {n:"Cachaça - Velho",t:"und"},{n:"Lemon pepper BR Spice",t:"und"},
+    {n:"Luva Vinílica s/ Pó — M",t:"caixa"},{n:"Luva Vinílica s/ Pó — G",t:"caixa"},{n:"Luva Vinílica s/ Pó — GG",t:"caixa"},
+    {n:"Embalagem Delivery Pequena Redonda",t:"und"},{n:"Embalagem Delivery Média Redonda",t:"und"},
+    {n:"Embalagem Delivery Quadrada c/ Divisória",t:"und"},{n:"Embalagem Pequena 50ml p/ Molho",t:"und"},
+    {n:"Papel Manteiga",t:"und"},{n:"Papel Dover",t:"und"},{n:"Copinho de Café",t:"und"},
+    {n:"Bobina Saco Picotado 1kg",t:"rolo"},{n:"Bobina Saco Picotado 3kg",t:"rolo"},{n:"Bobina Saco Picotado 5kg",t:"rolo"},
+    {n:"Papel Manteiga Timbrado 20x27",t:"und"},{n:"Papel Manteiga Timbrado 20x22",t:"und"},
+    {n:"Bobina Térmica Branca",t:"rolo"},{n:"Bobina Suflex",t:"rolo"},{n:"Bobina Nimbot",t:"rolo"},
+    {n:"Carbono Suflex",t:"und"},{n:"Perflex",t:"und"},
+    {n:"Talher Delivery",t:"pacote"},{n:"Colherzinha de Molho",t:"pacote"},
+    {n:"Vela de Aniversário",t:"und"},{n:"Kit Aniversário",t:"pacote"},
+    {n:"Saco Plástico 30x40",t:"pacote"},{n:"Saco Plástico 10x25",t:"pacote"},
+    {n:"Filme PVC Grande",t:"rolo"},{n:"Saco Kraft",t:"und"},
+    {n:"Gás para Maçarico",t:"und"},{n:"Espátula Descartável",t:"und"},
+    {n:"Papel Alumínio",t:"rolo"},{n:"Folha Plástica Interfolhada 32x40",t:"und"}
+  ]}
+];
+
+var saved = null;
+try{ saved = JSON.parse(localStorage.getItem('primus_lista')); }catch(e){}
+var totalSaved = saved ? saved.reduce(function(a,c){return a+c.items.length;},0) : 0;
+var totalNew = CATS.reduce(function(a,c){return a+c.items.length;},0);
+var data = (saved && totalSaved >= totalNew) ? saved : JSON.parse(JSON.stringify(CATS));
+
+function save(){ try{ localStorage.setItem('primus_lista', JSON.stringify(data)); }catch(e){} }
+
+function render(){
+  var el = document.getElementById('list');
+  var html = '';
+  for(var ci=0; ci<data.length; ci++){
+    var cat = data[ci];
+    html += '<div class="section">';
+    html += '<div class="section-header" style="background:'+cat.color+'18;color:'+cat.color+'">';
+    html += cat.name+' <span class="badge-count">'+cat.items.length+' itens</span></div>';
+    html += '<table><tr><th>Item</th><th>Tipo</th><th>Quantidade</th><th></th></tr>';
+    for(var ii=0; ii<cat.items.length; ii++){
+      var item = cat.items[ii];
+      html += '<tr>';
+      html += '<td>'+item.n+'</td>';
+      html += '<td style="color:#777">'+item.t+'</td>';
+      html += '<td><input type="number" min="0" step="1" value="'+(item.q||'')+'" placeholder="—" data-ci="'+ci+'" data-ii="'+ii+'" onchange="updateQty(this)"></td>';
+      html += '<td><button class="remove-btn" onclick="removeItem('+ci+','+ii+')" title="Remover">&#215;</button></td>';
+      html += '</tr>';
+    }
+    html += '</table></div>';
+  }
+  el.innerHTML = html;
+}
+
+function updateQty(input){
+  var ci = parseInt(input.getAttribute('data-ci'));
+  var ii = parseInt(input.getAttribute('data-ii'));
+  data[ci].items[ii].q = input.value;
+  save();
+}
+
+function addItem(){
+  var n = document.getElementById('new-name').value.trim();
+  var t = document.getElementById('new-tipo').value.trim();
+  var cat = document.getElementById('new-cat').value;
+  if(!n) return;
+  for(var i=0;i<data.length;i++){
+    if(data[i].name===cat){ data[i].items.push({n:n,t:t}); break; }
+  }
+  save(); render();
+  document.getElementById('new-name').value='';
+  document.getElementById('new-tipo').value='';
+}
+
+function removeItem(ci,ii){ data[ci].items.splice(ii,1); save(); render(); }
+function clearAll(){ data.forEach(function(c){c.items.forEach(function(i){delete i.q});}); save(); render(); }
+
+// Converte hex #RRGGBB para array [r,g,b] 0-255
+function hexRGB(hex){
+  var r = parseInt(hex.slice(1,3),16);
+  var g = parseInt(hex.slice(3,5),16);
+  var b = parseInt(hex.slice(5,7),16);
+  return [r,g,b];
+}
+
+function sanitize(str){
+  // Remove caracteres que jsPDF não suporta sem fonte unicode
+  return (str||'').replace(/[àáâãä]/g,'a').replace(/[èéêë]/g,'e')
+    .replace(/[ìíîï]/g,'i').replace(/[òóôõö]/g,'o').replace(/[ùúûü]/g,'u')
+    .replace(/[ÀÁÂÃ]/g,'A').replace(/[ÈÉÊ]/g,'E').replace(/[ÍÎ]/g,'I')
+    .replace(/[ÓÔÕ]/g,'O').replace(/[ÚÛ]/g,'U')
+    .replace(/ç/g,'c').replace(/Ç/g,'C')
+    .replace(/ñ/g,'n').replace(/[—–]/g,'-').replace(/×/g,'x');
+}
+
+function gerarPDF(){
+  var btn = document.getElementById('btn-pdf');
+  btn.disabled = true;
+  btn.textContent = 'Gerando...';
+
+  setTimeout(function(){
+    try{
+      var doc = new window.jspdf.jsPDF({orientation:'portrait', unit:'mm', format:'a4'});
+      var pageW = 210;
+      var pageH = 297;
+      var margin = 8;
+      var colGap = 4;
+      var colW = (pageW - margin*2 - colGap) / 2;
+      var col1X = margin;
+      var col2X = margin + colW + colGap;
+      var rowH = 4.5;
+      var headerH = 5.5;
+      var thH = 4;
+      var fontSize = 7;
+
+      // Título
+      doc.setFontSize(11);
+      doc.setFont('helvetica','bold');
+      doc.setTextColor(31,78,121);
+      doc.text('Lista de Compras - Primus Peixaria', margin, margin+4);
+      // Linha separadora
+      doc.setDrawColor(31,78,121);
+      doc.setLineWidth(0.5);
+      doc.line(margin, margin+6, pageW-margin, margin+6);
+
+      // Data
+      var hoje = new Date();
+      var dataStr = hoje.toLocaleDateString('pt-BR');
+      doc.setFontSize(7);
+      doc.setFont('helvetica','normal');
+      doc.setTextColor(120,120,120);
+      doc.text(dataStr, pageW-margin, margin+4, {align:'right'});
+
+      var startY = margin + 9;
+
+      // col1: 0,1,2,3 — col2: 4,5,6
+      var cols = [[0,1,2,3],[4,5,6]];
+      var colXs = [col1X, col2X];
+
+      for(var ci=0; ci<cols.length; ci++){
+        var x = colXs[ci];
+        var y = startY;
+        var catIdxs = cols[ci];
+
+        for(var k=0; k<catIdxs.length; k++){
+          var cat = data[catIdxs[k]];
+          var rgb = hexRGB(cat.color);
+
+          // Header da categoria
+          doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+          doc.rect(x, y, colW, headerH, 'F');
+          doc.setFontSize(7.5);
+          doc.setFont('helvetica','bold');
+          doc.setTextColor(255,255,255);
+          doc.text(sanitize(cat.name), x+2, y+headerH-1.5);
+          y += headerH;
+
+          // Cabeçalho da tabela
+          doc.setFillColor(240,240,240);
+          doc.rect(x, y, colW, thH, 'F');
+          doc.setFontSize(6);
+          doc.setFont('helvetica','bold');
+          doc.setTextColor(80,80,80);
+          doc.text('Item', x+2, y+thH-1.2);
+          doc.text('Tipo', x+colW*0.62, y+thH-1.2);
+          doc.text('Qtde', x+colW*0.82, y+thH-1.2);
+          y += thH;
+
+          // Linhas dos itens
+          for(var ii=0; ii<cat.items.length; ii++){
+            var item = cat.items[ii];
+            var bgColor = (ii%2===0) ? [255,255,255] : [250,250,250];
+            doc.setFillColor(bgColor[0],bgColor[1],bgColor[2]);
+            doc.rect(x, y, colW, rowH, 'F');
+            doc.setFontSize(fontSize);
+            doc.setFont('helvetica','normal');
+            doc.setTextColor(30,30,30);
+            // truncar nome se muito longo
+            var nome = sanitize(item.n);
+            var maxNomeW = colW * 0.58;
+            while(doc.getTextWidth(nome) > maxNomeW && nome.length > 3){
+              nome = nome.slice(0,-1);
+            }
+            if(nome !== sanitize(item.n)) nome += '.';
+            doc.text(nome, x+2, y+rowH-1.2);
+            doc.setTextColor(120,120,120);
+            doc.text(sanitize(item.t||''), x+colW*0.62, y+rowH-1.2);
+            // Quantidade
+            doc.setTextColor(30,30,30);
+            var qtde = item.q ? String(item.q) : '';
+            doc.text(qtde, x+colW*0.82, y+rowH-1.2);
+            // linha de qtde vazia — underline
+            if(!qtde){
+              doc.setDrawColor(180,180,180);
+              doc.setLineWidth(0.2);
+              doc.line(x+colW*0.82, y+rowH-0.8, x+colW*0.97, y+rowH-0.8);
+            }
+            // borda inferior linha
+            doc.setDrawColor(230,230,230);
+            doc.setLineWidth(0.1);
+            doc.line(x, y+rowH, x+colW, y+rowH);
+            y += rowH;
+          }
+          y += 2; // espaço entre categorias
+        }
+      }
+
+      // Borda separadora entre colunas
+      doc.setDrawColor(200,200,200);
+      doc.setLineWidth(0.3);
+      doc.line(col2X-colGap/2, startY, col2X-colGap/2, pageH-margin);
+
+      doc.save('lista_compras_primus.pdf');
+    }catch(err){
+      alert('Erro ao gerar PDF: ' + err.message);
+    }
+    btn.disabled = false;
+    btn.textContent = 'Gerar PDF';
+  }, 50);
+}
+
+render();
+</script>
+</body>
+</html>
