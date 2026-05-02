@@ -1289,12 +1289,29 @@ function atualizarExplorador() {
     let pesoValor = 1;
     let pesoQtd   = 1;
 
+    // NOTA SOBRE PROPORCIONALIDADE: cada filtro abaixo aplica um peso ao dia.
+    // Em algumas combinações filtro × dimensão, o resultado é matematicamente
+    // EXATO (não estimativa), e a flag `usouProporcao` NÃO deve ser ativada.
+    //
+    // Combinações que produzem valor REAL:
+    //   - filtro vendedor + dim dia/dimensão vendedor (cruzamento existe no PDV)
+    //   - filtro subgrupo + dim dia/grupo/produto (cruzamentos existem)
+    //   - filtro produto  + dim dia/grupo/subgrupo (produto é único, soma exata)
+    //
+    // Combinações que produzem valor ESTIMADO (rateio):
+    //   - qualquer coisa com dim hora (PDV não cruza hora × {prd,vd,sg})
+    //   - filtros cruzados que o PDV não traz (ex: vendedor × subgrupo)
+
     if (fVend && dimensao !== 'vendedor') {
       const vd = (v.vendedores || []).find(x => x.nome === fVend);
       if (!vd) return;
       pesoValor *= vd.total / totalDia;
       pesoQtd   *= (qtdDia ? vd.qtd / qtdDia : 0);
-      usouProporcao = true;
+      // Vendedor + dia é cruzamento direto do PDV (cada relatório já vem
+      // com vendedor.total do dia). Outras dimensões: estimado.
+      if (dimensao !== 'dia') {
+        usouProporcao = true;
+      }
     }
 
     if (fSubgrupo && dimensao !== 'subgrupo') {
@@ -1302,7 +1319,11 @@ function atualizarExplorador() {
       if (!sg) return;
       pesoValor *= sg.total / totalDia;
       pesoQtd   *= (qtdDia ? sg.qtd / qtdDia : 0);
-      usouProporcao = true;
+      // Subgrupo + dia/grupo/produto é cruzamento que o PDV traz (com mapa
+      // produto-subgrupo, conseguimos restringir produtos exatamente). Demais: estimado.
+      if (dimensao !== 'dia' && dimensao !== 'grupo' && dimensao !== 'produto') {
+        usouProporcao = true;
+      }
     }
 
     if (fProduto && dimensao !== 'produto') {
@@ -1310,7 +1331,11 @@ function atualizarExplorador() {
       if (!prd) return;
       pesoValor *= prd.total / totalDia;
       pesoQtd   *= (qtdDia ? prd.qtd / qtdDia : 0);
-      usouProporcao = true;
+      // Produto + dia/grupo/subgrupo é exato (produto é único, soma do dia
+      // multiplicada pela proporção dá o valor real do produto). Demais: estimado.
+      if (dimensao !== 'dia' && dimensao !== 'grupo' && dimensao !== 'subgrupo') {
+        usouProporcao = true;
+      }
     }
 
     // Passo 2: fonte com filtro direto aplicado quando coincide com a dimensão
