@@ -2795,6 +2795,54 @@ body {
   flex-shrink: 0;
 }
 
+/* Quando tem 2 botões (Corrigir FIN + Corrigir INI), agrupa lado a lado */
+.aud-corrigir-botoes {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+/* Box "Corrigir mesmo assim" — para divergências sem confirmação automática.
+   Cor amarela mais clara pra sinalizar "atenção, sem confiança alta". */
+.aud-corrigir-manual {
+  margin-top: 6px;
+}
+
+.aud-btn-toggle-manual {
+  font-size: 10px !important;
+  padding: 5px 10px !important;
+  background: transparent !important;
+  border: 1px dashed var(--cinza-borda) !important;
+  color: var(--cinza-texto) !important;
+}
+
+.aud-btn-toggle-manual:hover {
+  border-color: var(--amarelo) !important;
+  color: var(--vinho) !important;
+}
+
+.aud-corrigir-manual-box {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: #fffbf0;
+  border: 1.5px dashed #e8c87a;
+  border-radius: 8px;
+}
+
+.aud-corr-aviso {
+  font-size: 11px;
+  color: #8a5a10;
+  line-height: 1.4;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #f0dca8;
+}
+
+.aud-corr-aviso strong {
+  color: #6e3f08;
+}
+
 .btn-sm {
   font-size: 11px;
   padding: 6px 12px;
