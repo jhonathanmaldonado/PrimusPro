@@ -402,6 +402,29 @@
   .pq-rel-row-header { display:flex; justify-content:space-between; align-items:center;
     font-weight:600; color:var(--text1); margin-bottom:4px; }
   .pq-rel-row-meta { font-size:12px; color:var(--text3); }
+
+  /* ── Parquinho: ajustes v2 ── */
+  .pq-card-crianca-destaque { font-size:17px; font-weight:800; color:var(--wine);
+    font-family:'Playfair Display',serif; }
+  .pq-card-resp { font-size:12px; color:var(--text3); }
+  .pq-card-edit-btn { background:none; border:1.5px solid var(--border); border-radius:var(--radius);
+    padding:5px 12px; font-size:12px; color:var(--text2); cursor:pointer; transition:all .15s; }
+  .pq-card-edit-btn:hover { border-color:var(--gold); color:var(--gold2); }
+  .pq-modal-edit { background:var(--surface); border:1.5px solid var(--border);
+    border-radius:var(--radius); padding:14px; margin-top:8px; display:none; flex-direction:column; gap:8px; }
+  .pq-modal-edit.open { display:flex; }
+  .pq-btn-disabled { opacity:.5; pointer-events:none; }
+  /* Relatório: lista colapsável */
+  .pq-rel-toggle { display:flex; justify-content:space-between; align-items:center;
+    padding:10px 14px; background:var(--surface); border:1.5px solid var(--border);
+    border-radius:var(--radius); cursor:pointer; margin-bottom:0; font-size:13px;
+    font-weight:600; color:var(--text2); user-select:none; }
+  .pq-rel-toggle:hover { border-color:var(--wine); color:var(--wine); }
+  .pq-rel-lista-body { border:1.5px solid var(--border); border-top:none;
+    border-radius:0 0 var(--radius) var(--radius); display:none; }
+  .pq-rel-lista-body.open { display:block; }
+  .pq-rel-lista-body .pq-rel-row { border-radius:0; border:none; border-bottom:1px solid var(--border); margin-bottom:0; }
+  .pq-rel-lista-body .pq-rel-row:last-child { border-bottom:none; }
 </style>
 <link rel="manifest" href="./fila-manifest.json">
 <meta name="mobile-web-app-capable" content="yes">
@@ -2545,12 +2568,15 @@ function pqCardHTML(r, mostrarAcoes) {
     ? Math.round((saida - entrada) / 60000)
     : Math.round((Date.now() - entrada.getTime()) / 60000);
   const payLabel = { credito:'Crédito', debito:'Débito', dinheiro:'Dinheiro', pix:'Pix' };
+  const editId = 'pqedit_' + r.docId;
   return `<div class="pq-card">
     <div class="pq-card-header">
-      <span class="pq-card-nome">${r.responsavel}</span>
+      <div>
+        <div class="pq-card-crianca-destaque">👶 ${r.crianca}</div>
+        <div class="pq-card-resp">👤 ${r.responsavel}</div>
+      </div>
       <span class="pq-card-mesa">Mesa ${r.mesa}</span>
     </div>
-    <div class="pq-card-crianca">👶 ${r.crianca}</div>
     <div class="pq-card-meta">
       <span>📞 ${r.tel}</span>
       <span class="pq-card-pay">💳 ${payLabel[r.pagamento] || r.pagamento}</span>
@@ -2564,16 +2590,71 @@ function pqCardHTML(r, mostrarAcoes) {
       ${saida
         ? '<span class="pq-badge-saida">✓ Saiu</span>'
         : `<span class="pq-badge-ativo">● Ativo</span>
-           ${mostrarAcoes ? `<button class="btn btn-primary" style="padding:6px 14px;font-size:12px;" onclick="registrarSaidaPq('${r.docId}')">Registrar Saída</button>` : ''}`}
+           ${mostrarAcoes ? `
+             <button class="btn btn-primary" id="saida_${r.docId}" style="padding:6px 14px;font-size:12px;"
+               onclick="registrarSaidaPq('${r.docId}')">Registrar Saída</button>
+             <button class="pq-card-edit-btn" onclick="pqToggleEdit('${editId}')">✏️ Editar</button>
+           ` : ''}`}
     </div>
+    ${mostrarAcoes && !saida ? `
+    <div class="pq-modal-edit" id="${editId}">
+      <div style="font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;">Editar registro</div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <label style="font-size:12px;color:var(--text2);flex-shrink:0;">Criança:</label>
+        <input type="text" id="edit_crianca_${r.docId}" value="${r.crianca}" style="flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--bg);color:var(--text1);">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <label style="font-size:12px;color:var(--text2);flex-shrink:0;">Mesa:</label>
+        <input type="text" id="edit_mesa_${r.docId}" value="${r.mesa}" style="flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:var(--radius-sm);font-size:13px;background:var(--bg);color:var(--text1);">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button class="btn" style="flex:0.4;font-size:12px;" onclick="pqToggleEdit('${editId}')">Cancelar</button>
+        <button class="btn btn-primary" style="flex:1;font-size:12px;" onclick="pqSalvarEdicao('${r.docId}','${editId}')">Salvar</button>
+        <button class="btn" style="flex:0.4;font-size:12px;border-color:var(--danger);color:var(--danger);"
+          onclick="pqExcluirRegistro('${r.docId}')">🗑 Excluir</button>
+      </div>
+    </div>` : ''}
   </div>`;
 }
 
 // ── Registrar saída ──
 window.registrarSaidaPq = async (docId) => {
   if (!confirm('Confirmar saída da criança?')) return;
-  await updateDoc(doc(db, 'parquinho', docId), { saida: serverTimestamp() });
-  toast('✅ Saída registrada!');
+  // Proteção duplo clique — desabilita o botão imediatamente
+  const btn = document.getElementById('saida_' + docId);
+  if (btn) { btn.classList.add('pq-btn-disabled'); btn.textContent = 'Salvando…'; }
+  try {
+    await updateDoc(doc(db, 'parquinho', docId), { saida: serverTimestamp() });
+    toast('✅ Saída registrada!');
+  } catch(e) {
+    toast('❌ Erro ao registrar saída');
+    if (btn) { btn.classList.remove('pq-btn-disabled'); btn.textContent = 'Registrar Saída'; }
+  }
+};
+
+window.pqToggleEdit = (editId) => {
+  const el = document.getElementById(editId);
+  if (el) el.classList.toggle('open');
+};
+
+window.pqSalvarEdicao = async (docId, editId) => {
+  const novaCrianca = document.getElementById('edit_crianca_' + docId)?.value.trim();
+  const novaMesa    = document.getElementById('edit_mesa_' + docId)?.value.trim();
+  if (!novaCrianca || !novaMesa) { toast('⚠️ Preencha todos os campos'); return; }
+  try {
+    await updateDoc(doc(db, 'parquinho', docId), { crianca: novaCrianca, mesa: novaMesa });
+    toast('✅ Registro atualizado!');
+    const el = document.getElementById(editId);
+    if (el) el.classList.remove('open');
+  } catch(e) { toast('❌ Erro ao salvar edição'); }
+};
+
+window.pqExcluirRegistro = async (docId) => {
+  if (!confirm('Excluir este registro? Esta ação não pode ser desfeita.')) return;
+  try {
+    await deleteDoc(doc(db, 'parquinho', docId));
+    toast('🗑 Registro excluído');
+  } catch(e) { toast('❌ Erro ao excluir'); }
 };
 
 // ── Reset diário do Parquinho (chamado pelo resetarFila) ──
@@ -2641,6 +2722,13 @@ function renderPqDashboard() {
 }
 
 // ── Relatório por período ──
+window.pqToggleLista = (btn) => {
+  const body = btn.nextElementSibling;
+  body.classList.toggle('open');
+  const arrow = btn.querySelector('.pq-toggle-arrow');
+  if (arrow) arrow.textContent = body.classList.contains('open') ? '▲' : '▼';
+};
+
 window.setPqRel = (filtro, el) => {
   pqRelFiltro = filtro;
   document.querySelectorAll('.pq-rel-chip').forEach(c => c.classList.remove('active'));
@@ -2729,10 +2817,10 @@ async function carregarRelPq(filtro) {
     return;
   }
 
-  // Lista ordenada mais recente primeiro
+  // Lista colapsável — ordenada mais recente primeiro
   const sortedDesc = [...sorted].reverse();
   const payLabel = { credito:'Crédito', debito:'Débito', dinheiro:'Dinheiro', pix:'Pix' };
-  listEl.innerHTML = sortedDesc.map(r => {
+  const linhas = sortedDesc.map(r => {
     const e = r.entrada?.toDate ? r.entrada.toDate() : new Date(r.entrada);
     const s = r.saida?.toDate   ? r.saida.toDate()   : null;
     const hE = e.toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
@@ -2740,7 +2828,7 @@ async function carregarRelPq(filtro) {
     const min = s ? Math.round((s - e)/60000) : null;
     return `<div class="pq-rel-row">
       <div class="pq-rel-row-header">
-        <span>${r.responsavel} · 👶 ${r.crianca}</span>
+        <span><b>👶 ${r.crianca}</b> · ${r.responsavel}</span>
         <span style="color:var(--gold2)">Mesa ${r.mesa}</span>
       </div>
       <div class="pq-rel-row-meta">
@@ -2748,6 +2836,14 @@ async function carregarRelPq(filtro) {
       </div>
     </div>`;
   }).join('');
+
+  listEl.innerHTML = `
+    <div class="pq-rel-toggle" onclick="pqToggleLista(this)">
+      <span>📋 Ver lista detalhada (${sortedDesc.length} registros)</span>
+      <span class="pq-toggle-arrow">▼</span>
+    </div>
+    <div class="pq-rel-lista-body">${linhas}</div>
+  `;
 }
 
 // ── Modal: abrir ──
