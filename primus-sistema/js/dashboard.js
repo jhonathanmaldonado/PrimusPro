@@ -2,6 +2,7 @@
 // Carrega vendas do Firestore, calcula KPIs e renderiza gráficos com Chart.js
 
 import { listarVendas, ultimaContagem, listarContagens } from './db.js';
+import { buscarSubgrupoOficial } from './produto-subgrupo-map.js';
 
 // Cache em memória das vendas carregadas (evita consultas repetidas)
 let vendasCache = [];
@@ -1104,71 +1105,92 @@ function construirMapaProdutoSubgrupo(vendas) {
 
   // Regras heurísticas — cada produto é classificado pelo nome.
   // Ordem importa: regras mais específicas vêm primeiro.
+  // Regras de classificação. Cada produto é resolvido em 2 etapas:
+  //   1. Consulta a TABELA OFICIAL (produto-subgrupo-map.js) — fonte de verdade
+  //      extraída diretamente do GESTOR FOOD. Cobre todo o cardápio atual.
+  //   2. Se não encontrar (produto novo ainda não cadastrado na tabela),
+  //      cai numa HEURÍSTICA por palavra-chave como rede de segurança.
+  // Pra atualizar a tabela oficial: edite produto-subgrupo-map.js.
   function classificar(nome) {
+    // Etapa 1: tabela oficial (case-insensitive, tolerante a acentos/pontuação)
+    const oficial = buscarSubgrupoOficial(nome);
+    if (oficial) return oficial;
+
+    // Etapa 2: fallback heurístico — só pra produtos novos que ainda não
+    // foram adicionados na tabela oficial. Quando aparecer, atualize o map.
     const up = nome.toUpperCase();
 
     // ENTRADAS
     if (['BOLINHO DE PEIXE','PASTEL DE PEIXE','PASTEL DE CARNE',
          'CALDO DE PEIXE','MIX DE PETISCOS','BATATA FRITA',
-         'PORCAO DE VENTRECHA','UNIDADE DE FILE','UNIDADE DE VENTRECHA'
+         'PORCAO DE VENTRECHA','PINTADO A PALITO',
+         'COSTELINHA','CROQUETE','MOJIQUINHA'
         ].some(x => up.includes(x))) return 'ENTRADAS';
 
     // PRATOS KIDS
-    if (up.includes('KIDS') && !up.includes('PASSAPORT')) return 'PRATOS KIDS';
+    if (up.includes('KIDS')) return 'PRATOS KIDS';
 
-    // PASSAPORT KIDS (subgrupo próprio — não é "entrada" nem "kids")
-    // O PDV classifica como "PRATOS KIDS" — confirma-se pelos dados
-    if (up.includes('PASSAPORT')) return 'PRATOS KIDS';
+    // GUARNICOES (ARROZ, FAROFA, FEIJAO, PIRAO, BANANA TERRA, VINAGRETE,
+    // UNIDADE DE FILE/VENTRECHA — note: agora UNIDADE DE FILE é GUARNIÇÃO,
+    // não ENTRADA, conforme PDV)
+    if (['ARROZ','FAROFA','FEIJAO','PIRAO','BANANA DA TERRA','VINAGRETE',
+         'UNIDADE DE FILE','UNIDADE DE VENTRECHA','GUARNICAO'
+        ].some(x => up.includes(x))) return 'GUARNICOES';
 
-    // PRATOS COMPARTILHADOS (INTEIRAS e alguns sem o "INTEIRA" explícito)
-    if (up.includes('INTEIRA') ||
-        up.includes('COMBINADO') ||
-        up === 'PEIXADA ESPECIAL') return 'PRATOS COMPARTILHADOS';
+    // SUGESTOES DO CHEFE (pintados grelhados/parmegiana, file de pintado,
+    // ventrecha frita — TODOS os "PINTADO A/PARMEGIANA/GRELHADO" e
+    // "VENTRECHA FRITA", inclusive metades 1/2)
+    if ((up.includes('PINTADO') && (up.includes('PARMEGIANA') || up.includes('GRELHAD') || up.includes('FILE DE PINTADO'))) ||
+        up.includes('VENTRECHA FRITA') ||
+        up.includes('FILE MIGNON FIT')) return 'SUGESTOES DO CHEFE';
 
-    // ESPECIALIDADES DA CASA (metades de peixada/ventrecha)
-    if (up.startsWith('1/2 ') ||
-        up.includes('MOQUECA DE BANANA') ||
-        up.includes('PINTADO A PALITO')) return 'ESPECIALIDADES DA CASA';
+    // ESPECIALIDADES DA CASA — peixadas (cuiabana, especial, primus, só file)
+    if (up.includes('PEIXADA')) return 'ESPECIALIDADES DA CASA';
+
+    // PRATOS COMPARTILHADOS — escabeche, ventrecha+file, file+mojica, ventrecha+mojica
+    if (up.includes('ESCABECHE') ||
+        (up.includes('VENTRECHA') && (up.includes('FILE') || up.includes('MOJICA'))) ||
+        (up.includes('FILE') && up.includes('MOJICA')) ||
+        up.includes('COMBINADO')) return 'PRATOS COMPARTILHADOS';
 
     // PRATOS INDIVIDUAIS
-    // Tanto o geral quanto o detalhado usam "INDIVIDUAL" no nome
-    // (ex: "INDIVIDUAL PINTADO A PARMEGIANA" / "INDIVIDUAL PINTADO PARMEGIANA")
-    if (up.includes('INDIVIDUAL')) return 'PRATOS INDIVIDUAIS';
+    if (up.includes('INDIVIDUAL') ||
+        up.includes('MOQUECA DE BANANA') ||
+        up.includes('PICADINHO DE FILE')) return 'PRATOS INDIVIDUAIS';
 
-    // SUGESTOES DO CHEFE
-    if (up.includes('FILE MIGNON FIT') || up.includes('COSTELINHA')) return 'SUGESTOES DO CHEFE';
-
-    // GUARNICOES
-    if (up.includes('GUARNICAO')) return 'GUARNICOES';
-
-    // CERVEJAS
-    if (['HEINEKEN','ORIGINAL','LOUVADA','STELLA','KOMBUCHA','CDB'].some(x => up.includes(x))) {
+    // CERVEJAS (NÃO inclui KOMBUCHA — kombucha é REFRIGERANTE no PDV)
+    if (['HEINEKEN','ORIGINAL','LOUVADA','STELLA'].some(x => up.includes(x))) {
       return 'CERVEJAS';
     }
 
-    // REFRIGERANTES E SUCOS (TONICA pega AGUA TONICA e AGGUA TONICA com typo)
-    if (['COCA COLA','SPRITE','FANTA','KUAT','SUCO','SODA','CHA GELADO','AGUA','PREMIUM','TONICA']
-        .some(x => up.includes(x))) return 'REFRIGERANTES E SUCOS';
+    // REFRIGERANTES E SUCOS (inclui KOMBUCHA, AGUA, SCHWEPPES, etc)
+    if (['COCA COLA','SPRITE','FANTA','KUAT','SUCO','CHA GELADO',
+         'AGUA','PREMIUM','TONICA','KOMBUCHA','SCHWEPPES'
+        ].some(x => up.includes(x))) return 'REFRIGERANTES E SUCOS';
 
-    // CAFE ESPRESSO
-    if (['CAFE','CAPPUCCINO','CHOCOLATE PROTEICO'].some(x => up.includes(x))) return 'CAFE ESPRESSO';
+    // CAFE ESPRESSO (NÃO inclui CHOCOLATE PROTEICO — esse é SORVETE)
+    if (up.includes('CAFE') || up.includes('CAPPUCCINO')) return 'CAFE ESPRESSO';
 
-    // DOSES
-    if (['DOSE','SHOT'].some(x => up.includes(x))) return 'DOSES';
+    // SORVETES (inclui CHOCOLATE PROTEICO)
+    if (['GELATO','SORBET','IOGURTE','PALETA','CHOCOLATE PROTEICO']
+        .some(x => up.includes(x))) return 'SORVETES';
 
-    // DRINKS
-    if (['CAIPIRINHA','CAIPIROSKA'].some(x => up.includes(x))) return 'DRINKS';
+    // DOSES (inclui CDB, COPO CUZUMEL, COPO DE GELO, SHOT, DOSE)
+    if (['DOSE','SHOT','CDB','COPO CUZUMEL','COPO DE GELO']
+        .some(x => up.includes(x))) return 'DOSES';
 
-    // SORVETES (gelatos, sorbets, iogurtes congelados e similares)
-    // Inclui IOGURTE porque alguns produtos da carta de sorvetes têm "iogurte" no nome
-    // (ex: "Iogurte com Frutas Vermelhas") e o PDV não usa "GELATO" pra esses
-    if (['GELATO','SORBET','IOGURTE','PALETA'].some(x => up.includes(x))) return 'SORVETES';
+    // DRINKS (inclui APEROL, GIN, SODA ITALIANA, TAXA DE ROLHA)
+    if (['CAIPIRINHA','CAIPIROSKA','APEROL','GIN','SODA ITALIANA','TAXA DE ROLHA']
+        .some(x => up.includes(x))) return 'DRINKS';
 
     // SOBREMESAS
     if (up.includes('BROWNIE')) return 'SOBREMESAS';
 
-    // DIVERSOS (embalagens, copo, reposicao)
-    if (['EMBALAGEM','COPO','REPOSICAO'].some(x => up.includes(x))) return 'DIVERSOS';
+    // SALADAS
+    if (up.includes('SALADA')) return 'SALADAS';
+
+    // DIVERSOS (embalagens, espátula, kit festa, passaport kids, copo)
+    if (['EMBALAGEM','ESPATULA','KIT FESTA','PASSAPORT'].some(x => up.includes(x))) return 'DIVERSOS';
 
     return null;
   }
