@@ -153,12 +153,13 @@ export async function inicializarDashboard() {
           <div class="filtro-group">
             <label>Dimensão</label>
             <select id="expl-dimensao">
+              <option value="dia">Por dia</option>
+              <option value="produto">Por produto</option>
               <option value="vendedor">Por vendedor</option>
+              <option disabled>──────────</option>
               <option value="grupo">Por grupo</option>
               <option value="subgrupo">Por subgrupo</option>
-              <option value="produto">Por produto</option>
               <option value="hora">Por hora</option>
-              <option value="dia">Por dia</option>
             </select>
           </div>
           <div class="filtro-group">
