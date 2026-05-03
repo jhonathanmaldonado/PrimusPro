@@ -1784,6 +1784,7 @@ function imprimirPagamentos(tipo) {
   if(!dados) { alert('Clique em Atualizar primeiro para carregar os dados.'); return; }
   const { de, ate, lbl, registrados, diaristas, totalGeral, totalRegistrado, totalDiarista, totalPix, totalDinheiro } = dados;
   const fmtR = v => 'R$ ' + (v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+
   const lista = tipo === 'todos' ? [...registrados, ...diaristas] : diaristas;
   const titulo = tipo === 'todos' ? 'Pagamentos — Todos os Funcionários' : 'Pagamentos — Diaristas (Frequentes)';
   const totalImpresso = tipo === 'todos' ? totalGeral : totalDiarista;
@@ -1793,21 +1794,25 @@ function imprimirPagamentos(tipo) {
        {titulo:'👤 Frequentes — Diaristas', itens:diaristas, total:totalDiarista}]
     : [{titulo:'👤 Frequentes — Diaristas', itens:diaristas, total:totalDiarista}];
 
+  // Contagem de Pix
+  const qtdPix = lista.filter(t => t.pix && t.pix.toUpperCase() !== 'DINHEIRO' &&
+    !t.pix.toLowerCase().includes('itaú') && !t.pix.toLowerCase().includes('salário') && !t.pix.toLowerCase().includes('salario')).length;
+
   let resumoHTML = `<div class="resumo-grid">
-    <div class="resumo-box"><div class="label">Total</div><div class="valor">${fmtR(totalImpresso)}</div><div class="sub">${lista.length} funcionários</div></div>
-    <div class="resumo-box"><div class="label">📱 Via Pix</div><div class="valor">${fmtR(totalPix)}</div><div class="sub">a transferir</div></div>
-    <div class="resumo-box"><div class="label">💵 Dinheiro</div><div class="valor">${fmtR(totalDinheiro)}</div><div class="sub">em espécie</div></div>
+    <div class="resumo-box"><div class="label">Total Geral</div><div class="valor">${fmtR(totalImpresso)}</div><div class="sub">${lista.length} funcionários</div></div>
+    <div class="resumo-box pix"><div class="label">📱 Via Pix</div><div class="valor">${fmtR(totalPix)}</div><div class="sub">${qtdPix} transferência${qtdPix!==1?'s':''}</div></div>
+    <div class="resumo-box din"><div class="label">💵 Dinheiro</div><div class="valor">${fmtR(totalDinheiro)}</div><div class="sub">${lista.filter(t=>t.pix?.toUpperCase()==='DINHEIRO').length} func. em espécie</div></div>
   </div>`;
 
   let tabelaHTML = '';
   grupos.forEach(g => {
     if(!g.itens.length) return;
-    tabelaHTML += `<div class="grupo-header"><span class="titulo">${g.titulo}</span><span class="gtotal">${fmtR(g.total)}</span></div>
+    tabelaHTML += `<div class="grupo-header"><span class="gtitulo">${g.titulo}</span><span class="gtotal">${fmtR(g.total)}</span></div>
     <table><thead><tr>
-      <th>Funcionário</th><th>Chave Pix / Pagamento</th><th style="text-align:center">Dias</th>
-      <th style="text-align:right">Diárias</th><th style="text-align:right">Gorjeta</th>
-      <th style="text-align:right">Consumo</th><th style="text-align:right">Total</th>
-      <th style="text-align:center">✓</th>
+      <th>Funcionário</th><th>Chave Pix / Pagamento</th>
+      <th style="text-align:center">Dias</th><th style="text-align:right">Diárias</th>
+      <th style="text-align:right">Gorjeta</th><th style="text-align:right">Consumo</th>
+      <th style="text-align:right">Total</th><th style="text-align:center">✓</th>
     </tr></thead><tbody>`;
     g.itens.forEach(t => {
       const pixLow = (t.pix||'').toLowerCase();
@@ -1815,9 +1820,9 @@ function imprimirPagamentos(tipo) {
         ? 'Conta Salário Itaú' : t.pix?.toUpperCase()==='DINHEIRO' ? '💵 Dinheiro' : t.pix || '—';
       const dias = t.dias.sort().map(d=>d.split('-').reverse().slice(0,2).join('/')).join(', ');
       tabelaHTML += `<tr>
-        <td><div class="nome">${t.nome}</div><div class="cargo">${t.cargo}</div><div class="diasdatas">${dias}</div></td>
+        <td><span class="nome">${t.nome}</span> <span class="cargo">${t.cargo}</span><div class="diasdatas">${dias}</div></td>
         <td class="pix">${metodo}</td>
-        <td style="text-align:center">${t.dias.length}</td>
+        <td style="text-align:center;font-size:10px">${t.dias.length}</td>
         <td style="text-align:right">${fmtR(t.diarias)}</td>
         <td style="text-align:right">${fmtR(t.gorjeta)}</td>
         <td style="text-align:right;color:#c0392b">${t.consumo>0?fmtR(t.consumo):'—'}</td>
@@ -1832,44 +1837,44 @@ function imprimirPagamentos(tipo) {
   win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
   <title>${titulo}</title>
   <style>
-    @page{size:A4 portrait;margin:10mm 12mm}
+    @page{size:A4 portrait;margin:8mm 10mm}
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#222;background:#fff}
-    .header{display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:8px;border-bottom:2.5px solid #C8782A;margin-bottom:10px}
-    .header h1{font-size:14px;font-weight:800;color:#C8782A}
-    .header .sub{font-size:10px;color:#888;margin-top:2px}
-    .header .logo{font-size:22px;font-weight:900;color:#C8782A;letter-spacing:-1px}
-    .resumo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:10px}
-    .resumo-box{border:1px solid #e0d8d0;border-radius:6px;padding:6px 10px;background:#faf7f4}
-    .resumo-box .label{font-size:9px;color:#888;text-transform:uppercase;letter-spacing:.5px}
-    .resumo-box .valor{font-size:16px;font-weight:800;color:#C8782A}
-    .resumo-box .sub{font-size:9px;color:#aaa}
-    .grupo-header{display:flex;justify-content:space-between;align-items:center;background:#f5f0eb;border-radius:6px;padding:5px 10px;margin:10px 0 4px;border-left:3px solid #C8782A}
-    .grupo-header .titulo{font-size:11px;font-weight:800;color:#333}
-    .grupo-header .gtotal{font-size:13px;font-weight:800;color:#C8782A}
-    table{width:100%;border-collapse:collapse;margin-bottom:4px}
-    th{font-size:9px;text-transform:uppercase;letter-spacing:.5px;color:#888;border-bottom:1.5px solid #ddd;padding:3px 5px;font-weight:700;background:#fdf9f5}
-    td{font-size:10px;padding:4px 5px;border-bottom:1px solid #f0ebe5;vertical-align:middle}
-    tr:hover td{background:#fdf9f5}
-    .nome{font-weight:700;font-size:11px;color:#222}
-    .cargo{display:inline-block;font-size:8px;font-weight:700;padding:1px 5px;border-radius:10px;background:#ede8e0;color:#666;text-transform:uppercase;margin-top:1px}
-    .diasdatas{font-size:8px;color:#aaa;margin-top:1px}
-    .pix{font-size:10px;color:#1a6fa8;max-width:140px}
-    .caixa{width:14px;height:14px;border:1.5px solid #bbb;border-radius:3px;margin:0 auto}
-    .footer{margin-top:10px;padding-top:6px;border-top:1px solid #ddd;display:flex;justify-content:space-between;font-size:9px;color:#aaa}
+    body{font-family:'Segoe UI',Arial,sans-serif;font-size:10px;color:#222;background:#fff}
+    .header{display:flex;justify-content:space-between;align-items:flex-end;padding-bottom:6px;border-bottom:2px solid #C8782A;margin-bottom:7px}
+    .header h1{font-size:13px;font-weight:800;color:#C8782A}
+    .header .sub{font-size:9px;color:#888;margin-top:1px}
+    .header .logo{font-size:20px;font-weight:900;color:#C8782A;letter-spacing:-1px}
+    .resumo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:7px}
+    .resumo-box{border:1px solid #e0d8d0;border-radius:5px;padding:5px 8px;background:#faf7f4}
+    .resumo-box.pix{border-color:#b8d8f0;background:#f0f7fd}
+    .resumo-box.din{border-color:#d0e8d0;background:#f4faf4}
+    .resumo-box .label{font-size:8px;color:#888;text-transform:uppercase;letter-spacing:.5px}
+    .resumo-box .valor{font-size:14px;font-weight:800;color:#C8782A}
+    .resumo-box .sub{font-size:8px;color:#aaa}
+    .grupo-header{display:flex;justify-content:space-between;align-items:center;background:#f5f0eb;border-radius:5px;padding:4px 8px;margin:7px 0 3px;border-left:3px solid #C8782A}
+    .gtitulo{font-size:10px;font-weight:800;color:#333}
+    .gtotal{font-size:12px;font-weight:800;color:#C8782A}
+    table{width:100%;border-collapse:collapse}
+    th{font-size:8px;text-transform:uppercase;letter-spacing:.4px;color:#888;border-bottom:1.5px solid #ddd;padding:2px 4px;font-weight:700;background:#fdf9f5}
+    td{font-size:9px;padding:3px 4px;border-bottom:1px solid #f0ebe5;vertical-align:middle;line-height:1.3}
+    .nome{font-weight:700;font-size:10px;color:#222}
+    .cargo{display:inline-block;font-size:7px;font-weight:700;padding:1px 4px;border-radius:8px;background:#ede8e0;color:#666;text-transform:uppercase;vertical-align:middle}
+    .diasdatas{font-size:7.5px;color:#bbb;margin-top:1px}
+    .pix{font-size:9px;color:#1a6fa8;max-width:130px}
+    .caixa{width:12px;height:12px;border:1.5px solid #bbb;border-radius:2px;margin:0 auto}
+    .footer{margin-top:7px;padding-top:5px;border-top:1px solid #ddd;display:flex;justify-content:space-between;font-size:8px;color:#aaa}
     @media print{body{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
   </style></head><body>
   <div class="header">
     <div><h1>${titulo}</h1><div class="sub">${de} → ${ate} · ${lista.length} funcionários</div></div>
     <div class="logo">Primus</div>
   </div>
-  ${resumoHTML}
-  ${tabelaHTML}
+  ${resumoHTML}${tabelaHTML}
   <div class="footer">
     <span>Peixaria Primus — Sistema de Gestão</span>
     <span>Impresso em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span>
   </div>
-  <script>setTimeout(()=>window.print(),300)<\/script>
+  <script>setTimeout(()=>window.print(),250)<\/script>
   </body></html>`);
   win.document.close();
 }
