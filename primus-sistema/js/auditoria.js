@@ -1112,11 +1112,56 @@ function renderLinhaOperacional(r) {
     ? `<div class="aud-diag-cell ${diag.cls}" title="${diag.titulo}">${diag.txt}</div>`
     : '';
 
+  // ===== ÁREA DE CORREÇÃO MANUAL =====
+  // Aparece quando o sistema diagnosticou "erro_contagem" (D-1 e DIF com sinais
+  // opostos e magnitudes próximas). O gestor decide qual contagem do DIA atual
+  // ajustar:
+  //   - Corrigir INI: assume que a INI foi contada baixa/alta → o ajuste sobe/desce
+  //                   o INI pra alinhar com FIN do dia anterior. Resolve a divergência
+  //                   E o D-1 ao mesmo tempo (matemática mais coerente).
+  //   - Corrigir FIN: assume que a FIN foi contada errada → ajusta a FIN pra
+  //                   zerar a divergência. O D-1 continua existindo (foi erro
+  //                   da contagem anterior, não desta).
+  let areaCorrecaoOpHtml = '';
+  if (r.diagnostico === 'erro_contagem') {
+    const novoIni = r.ini - r.d1;       // sobe/desce ini pra alinhar com FIN anterior
+    const novoFin = r.real - r.diferenca; // sobe/desce fin pra zerar a divergência
+    areaCorrecaoOpHtml = `
+      <div class="aud-corrigir-manual">
+        <button class="btn btn-ghost btn-sm aud-btn-toggle-manual"
+                id="aud-btn-toggle-op-${r.slug}"
+                onclick="window.__aud_toggleCorrigirManualOp('${r.slug}')">
+          💡 Aceitar sugestão e corrigir
+        </button>
+        <div class="aud-corrigir-manual-box" id="aud-corr-manual-op-${r.slug}" style="display:none">
+          <div class="aud-corr-aviso">
+            <strong>📊 Análise:</strong> ontem (D-1) faltou <strong>${fmtSgn(r.d1)}</strong> e hoje sobrou <strong>${fmtSgn(r.diferenca)}</strong>. Os sinais opostos sugerem erro de contagem em uma das duas contagens deste dia.
+            <br><br>
+            <strong>⚠️ Atenção:</strong> a correção abaixo é uma sugestão matemática. Se houver dúvida sobre qual contagem está errada, investigue antes de aplicar.
+          </div>
+          <div class="aud-corrigir-botoes">
+            <button class="btn btn-primary btn-sm"
+                    onclick="window.__aud_corrigirOpErro('${r.slug}', 'ini')"
+                    title="Ajusta INI do dia atual de ${fmtInt(r.ini)} pra ${fmtInt(novoIni)} (alinha com FIN do dia anterior — recomendado)">
+            🔄 Corrigir INI (${fmtInt(r.ini)} → ${fmtInt(novoIni)})
+          </button>
+          <button class="btn btn-ghost btn-sm"
+                  onclick="window.__aud_corrigirOpErro('${r.slug}', 'fin')"
+                  title="Ajusta FIN do dia atual de ${fmtInt(r.real)} pra ${fmtInt(novoFin)} (zera a divergência mas D-1 permanece)">
+            🔄 Corrigir FIN (${fmtInt(r.real)} → ${fmtInt(novoFin)})
+          </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   return `
     <div class="aud-linha aud-linha-${r.status}${diag ? ' aud-linha-com-diag' : ''}">
       <div class="aud-nome">
         ${r.nome}
         ${diagHtml}
+        ${areaCorrecaoOpHtml}
       </div>
       <div class="aud-num">${fmtInt(r.ini)}</div>
       <div class="aud-num aud-num-pos">${r.recebido > 0 ? '+' + fmtInt(r.recebido) : '—'}</div>
@@ -1244,15 +1289,15 @@ function renderLinhaVirada(r) {
   const difClasse = r.diferenca < 0 ? 'aud-dif-neg' :
                     r.diferenca > 0 ? 'aud-dif-pos' : 'aud-dif-zero';
 
-  // ===== ÁREA DE CORREÇÃO =====
-  // 3 cenários:
-  //   A. Erro confirmado pelo sistema (matemática D-1) → 2 botões diretos (vermelho)
-  //   B. Diferença sem confirmação → botão "Quero corrigir mesmo assim" (amarelo)
-  //   C. Sem diferença → nada
+  // ===== ÁREA DE CORREÇÃO (apenas Cenário A: erro confirmado) =====
+  // O botão "corrigir manualmente" foi MOVIDO para a tela operacional —
+  // lá ele aparece quando há diagnóstico "Provável erro de contagem (D-1)",
+  // que é o lugar mais natural pra o gestor agir após executar a auditoria
+  // do dia. Aqui na virada mantemos só o caso de matemática confirmada,
+  // que é raro e merece destaque vermelho.
   let areaCorrecaoHtml = '';
 
   if (r.erroContagemConfirmado) {
-    // Cenário A: alta confiança
     const difOp = r.difOperacionalAnterior;
     areaCorrecaoHtml = `
       <div class="aud-erro-confirmado">
@@ -1272,35 +1317,6 @@ function renderLinhaVirada(r) {
                   title="Ajusta INI do dia atual pra ${fmtInt(r.fimAnterior)}">
             🔄 Corrigir INI (${fmtInt(r.iniAtual)} → ${fmtInt(r.fimAnterior)})
           </button>
-        </div>
-      </div>
-    `;
-  } else if (Math.abs(r.diferenca || 0) >= 1 && r.status !== 'sem_dados') {
-    // Cenário B: divergência sem confirmação automática — gestor decide se quer corrigir
-    areaCorrecaoHtml = `
-      <div class="aud-corrigir-manual">
-        <button class="btn btn-ghost btn-sm aud-btn-toggle-manual"
-                id="aud-btn-toggle-${r.slug}"
-                onclick="window.__aud_toggleCorrigirManual('${r.slug}')">
-          💡 Quero corrigir mesmo assim
-        </button>
-        <div class="aud-corrigir-manual-box" id="aud-corr-manual-${r.slug}" style="display:none">
-          <div class="aud-corr-aviso">
-            <strong>⚠️ Atenção:</strong> sem confirmação automática (a auditoria operacional do dia anterior não está fechada, ou a matemática D-1 não bate).
-            <br>Corrigir aqui pode <strong>mascarar um sumiço/quebra real</strong>. Só corrija se você tiver certeza de que foi erro de contagem.
-          </div>
-          <div class="aud-corrigir-botoes">
-            <button class="btn btn-primary btn-sm"
-                    onclick="window.__aud_corrigirErro('${r.slug}', 'fin', false)"
-                    title="Ajusta FIN do dia anterior pra ${fmtInt(r.iniAtual)}">
-              🔄 Corrigir FIN (${fmtInt(r.fimAnterior)} → ${fmtInt(r.iniAtual)})
-            </button>
-            <button class="btn btn-primary btn-sm"
-                    onclick="window.__aud_corrigirErro('${r.slug}', 'ini', false)"
-                    title="Ajusta INI do dia atual pra ${fmtInt(r.fimAnterior)}">
-              🔄 Corrigir INI (${fmtInt(r.iniAtual)} → ${fmtInt(r.fimAnterior)})
-            </button>
-          </div>
         </div>
       </div>
     `;
@@ -2411,6 +2427,142 @@ window.__aud_toggleCorrigirManual = function(slug) {
   const aberto = box.style.display !== 'none';
   box.style.display = aberto ? 'none' : 'block';
   if (btn) btn.textContent = aberto ? '💡 Quero corrigir mesmo assim' : '✕ Cancelar';
+};
+
+/**
+ * Toggle do box de correção da TELA OPERACIONAL.
+ * Aparece quando o sistema diagnostica "erro_contagem" (D-1 vs DIF opostos).
+ */
+window.__aud_toggleCorrigirManualOp = function(slug) {
+  const box = document.getElementById(`aud-corr-manual-op-${slug}`);
+  const btn = document.getElementById(`aud-btn-toggle-op-${slug}`);
+  if (!box) return;
+  const aberto = box.style.display !== 'none';
+  box.style.display = aberto ? 'none' : 'block';
+  if (btn) btn.textContent = aberto ? '💡 Aceitar sugestão e corrigir' : '✕ Cancelar';
+};
+
+/**
+ * Corrige uma das contagens do DIA OPERACIONAL atual (modo operacional).
+ * Diferente do __aud_corrigirErro (que mexe na FIN do dia anterior ou INI atual,
+ * mais usado pela virada), este aqui mexe nas contagens do PRÓPRIO DIA da
+ * auditoria operacional.
+ *
+ * Parâmetros:
+ *  - slug: identificador do produto
+ *  - alvo: 'ini' (corrige INI deste dia, alinha com FIN do dia anterior)
+ *           'fin' (corrige FIN deste dia, zera a divergência)
+ */
+window.__aud_corrigirOpErro = async function(slug, alvo) {
+  const item = resultadoAuditoria.find(r => r.slug === slug);
+  if (!item) {
+    alert('Item não encontrado.');
+    return;
+  }
+
+  if (modoAtual !== 'operacional') {
+    alert('Esta correção só é válida no modo operacional.');
+    return;
+  }
+
+  const { contagemIni, contagemFin } = contextoAuditoria;
+  let contagemAlvo, valorAtual, valorNovo, dataAlvoLabel, descricao;
+
+  if (alvo === 'ini') {
+    if (!contagemIni) {
+      alert('Contagem INI não disponível.');
+      return;
+    }
+    // Alinha INI com FIN do dia anterior: novoIni = ini - d1
+    valorAtual = item.ini;
+    valorNovo  = item.ini - (item.d1 || 0);
+    contagemAlvo = contagemIni;
+    dataAlvoLabel = fmtData(dataInicio);
+    descricao = `INI de ${fmtData(dataInicio)}: ${valorAtual} → ${valorNovo}`;
+  } else if (alvo === 'fin') {
+    if (!contagemFin) {
+      alert('Contagem FIN não disponível.');
+      return;
+    }
+    // Zera a divergência: novoFin = fin - dif
+    valorAtual = item.real;
+    valorNovo  = item.real - item.diferenca;
+    contagemAlvo = contagemFin;
+    dataAlvoLabel = fmtData(dataFim);
+    descricao = `FIN de ${fmtData(dataFim)}: ${valorAtual} → ${valorNovo}`;
+  } else {
+    alert('Alvo inválido (use "ini" ou "fin").');
+    return;
+  }
+
+  // Confirmação
+  const confirmado = confirm(
+    `🔄 CORRIGIR CONTAGEM\n\n` +
+    `Produto: ${item.nome}\n` +
+    `Alvo: ${alvo === 'ini' ? 'INI deste dia' : 'FIN deste dia'}\n` +
+    `Data: ${dataAlvoLabel}\n\n` +
+    `Valor atual: ${valorAtual}\n` +
+    `Novo valor: ${valorNovo}\n\n` +
+    `📊 Análise: D-1 = ${fmtSgn(item.d1)} / DIF = ${fmtSgn(item.diferenca)}\n` +
+    `${alvo === 'ini'
+        ? '✅ Esta opção (INI) resolve a divergência E elimina o D-1.'
+        : '⚠️ Esta opção (FIN) zera a DIF mas o D-1 permanece.'}\n\n` +
+    `A correção fica registrada no histórico. Confirmar?`
+  );
+
+  if (!confirmado) return;
+
+  try {
+    // Copia os itens atuais da contagem e atualiza só o item alvo
+    const novosItens = { ...contagemAlvo.itens };
+    const chaveAtual = Object.keys(novosItens).find(k =>
+      k === slug || k.startsWith(`${slug}__`)
+    );
+
+    if (!chaveAtual) {
+      alert('Estrutura da contagem não reconhecida. Contate o administrador.');
+      return;
+    }
+
+    // Atualiza o valor do item (mesma lógica de __aud_corrigirErro)
+    const valorObj = novosItens[chaveAtual];
+    if (valorObj && typeof valorObj === 'object') {
+      if (chaveAtual.endsWith('__fin') && 'final' in valorObj) {
+        valorObj.final = valorNovo;
+      } else if (chaveAtual.endsWith('__ini') && 'qtd' in valorObj) {
+        valorObj.qtd = valorNovo;
+      } else if ('fr' in valorObj || 'est' in valorObj || 'total' in valorObj) {
+        valorObj.fr = valorNovo;
+        valorObj.est = 0;
+        valorObj.total = valorNovo;
+      } else {
+        alert('Formato da contagem não reconhecido.');
+        return;
+      }
+    } else {
+      novosItens[chaveAtual] = valorNovo;
+    }
+
+    // Grava a correção
+    const sessao = getSessao();
+    const motivo = `Correção operacional via D-1: ${descricao}`;
+    await corrigirItemContagem(contagemAlvo.id, novosItens, {
+      responsavel: sessao?.nome || 'Gestor',
+      motivo,
+      itemSlug: slug,
+      valorAntigo: valorAtual,
+      valorNovo: valorNovo
+    });
+
+    alert(`✅ Correção aplicada!\n\n${descricao}\n\nRecalculando auditoria...`);
+
+    // Re-executa a auditoria pra atualizar a tela
+    await executarAuditoria();
+
+  } catch (e) {
+    console.error(e);
+    alert(`❌ Erro ao corrigir: ${e.message}`);
+  }
 };
 
 // ========================================================================
