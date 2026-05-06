@@ -1122,13 +1122,13 @@ function renderizarTabelaOperacional() {
     <div class="aud-lista">
       <div class="aud-linha aud-cab">
         <div>Produto</div>
+        <div title="Variação na virada (INI atual − FIN do dia anterior). 'n/c' = não calculado (sem FIN anterior).">D-1</div>
         <div title="Contagem inicial">INI</div>
         <div title="Recebido no período">+REC</div>
         <div title="Vendido no período (PDV)">−VEN</div>
         <div title="Estoque esperado ao final">=ESP</div>
         <div title="Contagem real ao final">REAL</div>
         <div title="Diferença (Real − Esperado)">DIF</div>
-        <div title="Variação na virada (INI atual − FIN do dia anterior). 'n/c' = não calculado (sem FIN anterior).">D-1</div>
         <div>Status</div>
       </div>
       ${Object.entries(grupos).map(([grupo, itens]) => `
@@ -1245,13 +1245,13 @@ function renderLinhaOperacional(r) {
         ${diagHtml}
         ${areaCorrecaoOpHtml}
       </div>
+      ${cellD1Html}
       <div class="aud-num">${fmtInt(r.ini)}</div>
       <div class="aud-num aud-num-pos">${r.recebido > 0 ? '+' + fmtInt(r.recebido) : '—'}</div>
       <div class="aud-num aud-num-neg">${r.vendido > 0 ? '−' + fmtInt(r.vendido) : '—'}</div>
       <div class="aud-num aud-num-esp">${fmtInt(r.esperado)}</div>
       <div class="aud-num aud-num-real">${fmtInt(r.real)}</div>
       <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}</div>
-      ${cellD1Html}
       <div>${statusBadge}</div>
     </div>
   `;
