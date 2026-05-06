@@ -55,11 +55,11 @@
   <div class="card">
     <h2>1. Atualizar Percentuais de Gorjeta <span class="tag tag-auto">Automático</span></h2>
     <div class="item"><span class="lbl">Garçom</span><span class="val">45%</span></div>
-    <div class="item"><span class="lbl">Bar</span><span class="val">7%</span></div>
+    <div class="item"><span class="lbl">Bar</span><span class="val">6%</span></div>
     <div class="item"><span class="lbl">Cozinheiro</span><span class="val">10%</span></div>
     <div class="item"><span class="lbl">Cumim</span><span class="val">5%</span></div>
     <div class="item"><span class="lbl">Gerente</span><span class="val">10%</span></div>
-    <div class="item"><span class="lbl">Aux. Bar</span><span class="val">3%</span></div>
+    <div class="item"><span class="lbl">Aux. Bar</span><span class="val">2,5%</span></div>
     <div class="item"><span class="lbl">Casa (retido)</span><span class="val">25%</span></div>
     <div class="item"><span class="lbl">Demais cargos</span><span class="val">0%</span></div>
     <button onclick="atualizarGorjeta()">✅ Salvar Percentuais no Firebase</button>
@@ -203,11 +203,11 @@ async function atualizarGorjeta() {
   try {
     const regras = {
       'Garçom':       { percentual: 0.45, descricao: 'Garçom' },
-      'Bar':          { percentual: 0.07, descricao: 'Bar' },
+      'Bar':          { percentual: 0.06, descricao: 'Bar' },
       'Cozinheiro':   { percentual: 0.10, descricao: 'Cozinheiro' },
       'Cumim':        { percentual: 0.05, descricao: 'Cumim' },
       'Gerente':      { percentual: 0.10, descricao: 'Gerente' },
-      'Aux. Bar':     { percentual: 0.03, descricao: 'Aux. Bar' },
+      'Aux. Bar':     { percentual: 0.025, descricao: 'Aux. Bar' },
       // Demais cargos recebem 0%
       'Caixa':        { percentual: 0.00, descricao: 'Caixa' },
       'Recepcionista':{ percentual: 0.00, descricao: 'Recepcionista' },
@@ -219,9 +219,9 @@ async function atualizarGorjeta() {
     // Total distribuído: 45+7+10+5+10+3 = 80% → Casa fica com 20%
     await db.collection('configuracoes').doc('gorjeta').set({
       regras,
-      percentualCasa: 0.20,
-      totalDistribuido: 0.80,
-      descricao: 'Garçom 45% | Bar 7% | Cozinha 10% | Cumim 5% | Gerente 10% | Aux.Bar 3% | Casa 20%',
+      percentualCasa: 0.215,
+      totalDistribuido: 0.785,
+      descricao: 'Garçom 45% | Bar 6% | Cozinha 10% | Cumim 5% | Gerente 10% | Aux.Bar 2,5% | Casa 21,5%',
       atualizadoEm: firebase.firestore.FieldValue.serverTimestamp()
     });
     showAlert('gorjetaAlert', '✅ Percentuais atualizados com sucesso!', 'success');
