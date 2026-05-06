@@ -3252,3 +3252,177 @@ body {
   }
   .aud-sorv-titulo h3 { font-size: 14px; }
 }
+
+/* ========================================================================
+   AUDITORIA — EDIÇÃO MANUAL DE CONTAGENS (INI / REC / FIN)
+   ======================================================================== */
+
+/* Botão "✏️" inline na linha da auditoria operacional */
+.aud-btn-editar {
+  background: transparent;
+  border: 1px solid var(--cinza-borda);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  cursor: pointer;
+  margin-left: 8px;
+  opacity: 0.5;
+  transition: all 0.15s;
+}
+.aud-btn-editar:hover {
+  opacity: 1;
+  border-color: var(--vinho);
+  background: var(--ks-bg);
+}
+
+.aud-nome-texto {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* Modal de edição */
+.aud-edit-aviso {
+  background: #fff8e1;
+  border-left: 3px solid #f5a800;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #5d4a1f;
+  line-height: 1.5;
+  margin-bottom: 18px;
+}
+
+.aud-edit-campos {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.aud-edit-linha {
+  display: grid;
+  grid-template-columns: 100px 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.aud-edit-linha label {
+  font-family: 'Raleway', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--vinho);
+}
+
+.aud-edit-linha label small {
+  display: block;
+  font-weight: 400;
+  font-size: 10px;
+  color: var(--cinza-texto);
+  font-family: 'DM Mono', monospace;
+}
+
+.aud-edit-linha input[type="number"] {
+  border: 1.5px solid var(--cinza-borda);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-family: 'DM Mono', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  text-align: right;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.aud-edit-linha input[type="number"]:focus {
+  border-color: var(--vinho);
+}
+
+.aud-edit-original {
+  font-size: 10px;
+  color: var(--cinza-texto);
+  font-family: 'DM Mono', monospace;
+  white-space: nowrap;
+}
+
+/* Preview do recálculo */
+.aud-edit-preview {
+  background: var(--cinza-bg);
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin: 16px 0;
+}
+
+.aud-edit-preview-titulo {
+  font-family: 'Raleway', sans-serif;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--vinho);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.aud-edit-preview-tabela {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.aud-edit-preview-linha {
+  display: grid;
+  grid-template-columns: 80px 1fr 30px 1fr;
+  gap: 8px;
+  font-family: 'DM Mono', monospace;
+  font-size: 12px;
+  align-items: center;
+}
+
+.aud-edit-preview-linha > span:first-child {
+  font-weight: 700;
+  color: var(--vinho);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.aud-edit-preview-linha > span:nth-child(2),
+.aud-edit-preview-linha > span:nth-child(4) {
+  text-align: right;
+}
+
+.aud-edit-preview-linha > span:nth-child(3) {
+  text-align: center;
+  color: var(--cinza-texto);
+}
+
+.aud-edit-preview-linha small {
+  color: var(--cinza-texto);
+  font-size: 10px;
+}
+
+.aud-edit-preview-cab > span {
+  font-weight: 700;
+  color: var(--cinza-texto) !important;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.aud-edit-preview-dif {
+  border-top: 1px dashed var(--cinza-borda);
+  padding-top: 6px;
+  margin-top: 4px;
+}
+
+@media (max-width: 600px) {
+  .aud-edit-linha {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .aud-edit-original {
+    text-align: right;
+  }
+  .aud-edit-preview-linha {
+    grid-template-columns: 60px 1fr 20px 1fr;
+    font-size: 11px;
+  }
+}
