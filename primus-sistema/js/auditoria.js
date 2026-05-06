@@ -13,7 +13,8 @@ import {
   listarContagens, listarVendas, listarRecebimentos,
   salvarAuditoriaFechada, buscarAuditoriaFechada,
   listarAuditoriasFechadas, excluirAuditoriaFechada,
-  corrigirItemContagem
+  corrigirItemContagem,
+  registrarRecebimento, excluirRecebimento
 } from './db.js';
 import { slugify } from './produtos.js';
 import { obterBebidas, obterSorvetes } from './produtos-store.js';
@@ -191,6 +192,54 @@ export async function inicializarAuditoria() {
         </div>
       </div>
     </div>
+
+    <!-- Modal de edição de contagens (INI / REC / FIN) -->
+    <div class="modal-backdrop" id="aud-modal-editar">
+      <div class="modal-box" style="max-width:520px">
+        <button class="modal-close" id="aud-modal-editar-close">✕</button>
+        <div class="modal-head">
+          <h3>✏️ Editar valores</h3>
+          <p id="aud-editar-produto-nome"></p>
+        </div>
+        <div style="padding:20px 24px 24px">
+          <div class="aud-edit-aviso">
+            <strong>⚠️ Atenção:</strong> a edição altera as contagens originais salvas. Use só pra corrigir erros de registro (ex: recebimento duplicado, valor digitado errado). Para divergências reais (sumiço, quebra), <strong>não edite</strong> — registre a observação no fechamento.
+          </div>
+
+          <div class="aud-edit-campos">
+            <div class="aud-edit-linha">
+              <label>INI <small>(contagem inicial)</small></label>
+              <input type="number" id="aud-edit-ini" min="0" step="1">
+              <span class="aud-edit-original" id="aud-edit-ini-orig"></span>
+            </div>
+            <div class="aud-edit-linha">
+              <label>REC <small>(recebimentos)</small></label>
+              <input type="number" id="aud-edit-rec" min="0" step="1">
+              <span class="aud-edit-original" id="aud-edit-rec-orig"></span>
+            </div>
+            <div class="aud-edit-linha">
+              <label>FIN <small>(contagem final)</small></label>
+              <input type="number" id="aud-edit-fin" min="0" step="1">
+              <span class="aud-edit-original" id="aud-edit-fin-orig"></span>
+            </div>
+          </div>
+
+          <div class="aud-edit-preview" id="aud-edit-preview">
+            <!-- preenchido pelo JS dinamicamente -->
+          </div>
+
+          <div class="aud-fechar-campo">
+            <label>📝 Motivo da edição <small>(obrigatório)</small></label>
+            <textarea id="aud-edit-motivo" rows="2" placeholder="Ex: Recebido duplicado — entrega chegou no dia anterior depois do barman ir embora."></textarea>
+          </div>
+
+          <div class="aud-pdf-botoes">
+            <button class="btn btn-ghost" id="aud-edit-cancelar">Cancelar</button>
+            <button class="btn btn-primary" id="aud-edit-confirmar">💾 Salvar edição</button>
+          </div>
+        </div>
+      </div>
+    </div>
   `;
 
   // Listeners do toggle
@@ -229,6 +278,18 @@ export async function inicializarAuditoria() {
   document.getElementById('aud-modal-fechar').onclick = e => {
     if (e.target.id === 'aud-modal-fechar') fecharModalFechar();
   };
+
+  // Listeners do modal de edição (INI / REC / FIN)
+  document.getElementById('aud-modal-editar-close').onclick = fecharModalEditar;
+  document.getElementById('aud-edit-cancelar').onclick      = fecharModalEditar;
+  document.getElementById('aud-edit-confirmar').onclick     = confirmarEdicao;
+  document.getElementById('aud-modal-editar').onclick = e => {
+    if (e.target.id === 'aud-modal-editar') fecharModalEditar();
+  };
+  // Recalcula preview ao mudar qualquer campo
+  ['aud-edit-ini', 'aud-edit-rec', 'aud-edit-fin'].forEach(id => {
+    document.getElementById(id).oninput = atualizarPreviewEdicao;
+  });
 
   // Aplica modo inicial
   aplicarModo();
@@ -1159,7 +1220,10 @@ function renderLinhaOperacional(r) {
   return `
     <div class="aud-linha aud-linha-${r.status}${diag ? ' aud-linha-com-diag' : ''}">
       <div class="aud-nome">
-        ${r.nome}
+        <span class="aud-nome-texto">${r.nome}</span>
+        <button class="aud-btn-editar"
+                onclick="window.__aud_abrirEdicao('${r.slug}')"
+                title="Editar valores INI / REC / FIN deste produto">✏️</button>
         ${diagHtml}
         ${areaCorrecaoOpHtml}
       </div>
@@ -2564,6 +2628,328 @@ window.__aud_corrigirOpErro = async function(slug, alvo) {
     alert(`❌ Erro ao corrigir: ${e.message}`);
   }
 };
+
+// ========================================================================
+// EDIÇÃO MANUAL DE CONTAGENS (INI / REC / FIN)
+// ========================================================================
+//
+// Permite editar item por item os valores que entram na auditoria operacional.
+// Casos de uso: recebimento duplicado, valor digitado errado, ajuste pontual.
+// IMPORTANTE: edição altera as contagens originais salvas. Cada operação
+// é registrada com motivo (auditoria interna no Firebase).
+
+let _edicaoEmAndamento = null;  // { slug, valoresOriginais }
+
+window.__aud_abrirEdicao = function(slug) {
+  const item = resultadoAuditoria.find(r => r.slug === slug);
+  if (!item) {
+    alert('Item não encontrado.');
+    return;
+  }
+  if (modoAtual !== 'operacional') {
+    alert('A edição de valores está disponível apenas no modo operacional.');
+    return;
+  }
+
+  _edicaoEmAndamento = {
+    slug,
+    valoresOriginais: {
+      ini: item.ini || 0,
+      recebido: item.recebido || 0,
+      vendido: item.vendido || 0,  // somente leitura no modal (vem do PDV)
+      real: item.real || 0
+    }
+  };
+
+  // Preenche o modal
+  document.getElementById('aud-editar-produto-nome').textContent =
+    `${item.nome} · ${fmtData(dataInicio)}`;
+  document.getElementById('aud-edit-ini').value  = item.ini || 0;
+  document.getElementById('aud-edit-rec').value  = item.recebido || 0;
+  document.getElementById('aud-edit-fin').value  = item.real || 0;
+
+  document.getElementById('aud-edit-ini-orig').textContent = `original: ${item.ini || 0}`;
+  document.getElementById('aud-edit-rec-orig').textContent = `original: ${item.recebido || 0}`;
+  document.getElementById('aud-edit-fin-orig').textContent = `original: ${item.real || 0}`;
+
+  document.getElementById('aud-edit-motivo').value = '';
+
+  atualizarPreviewEdicao();
+
+  document.getElementById('aud-modal-editar').classList.add('open');
+};
+
+function fecharModalEditar() {
+  document.getElementById('aud-modal-editar').classList.remove('open');
+  _edicaoEmAndamento = null;
+}
+
+/**
+ * Recalcula o preview ao vivo conforme o usuário muda os valores no modal.
+ * Mostra ESP, REAL e DIF antes vs depois.
+ */
+function atualizarPreviewEdicao() {
+  if (!_edicaoEmAndamento) return;
+  const { valoresOriginais } = _edicaoEmAndamento;
+
+  const ini = parseInt(document.getElementById('aud-edit-ini').value, 10) || 0;
+  const rec = parseInt(document.getElementById('aud-edit-rec').value, 10) || 0;
+  const fin = parseInt(document.getElementById('aud-edit-fin').value, 10) || 0;
+  const vendido = valoresOriginais.vendido || 0;
+
+  // Cálculos antes
+  const espAntes = (valoresOriginais.ini || 0) + (valoresOriginais.recebido || 0) - vendido;
+  const difAntes = (valoresOriginais.real || 0) - espAntes;
+
+  // Cálculos depois
+  const espDepois = ini + rec - vendido;
+  const difDepois = fin - espDepois;
+
+  const corDif = (d) => {
+    if (d === 0) return 'aud-dif-zero';
+    return d < 0 ? 'aud-dif-neg' : 'aud-dif-pos';
+  };
+
+  document.getElementById('aud-edit-preview').innerHTML = `
+    <div class="aud-edit-preview-titulo">📊 Preview do recálculo</div>
+    <div class="aud-edit-preview-tabela">
+      <div class="aud-edit-preview-linha aud-edit-preview-cab">
+        <span></span>
+        <span>Antes</span>
+        <span>→</span>
+        <span>Depois</span>
+      </div>
+      <div class="aud-edit-preview-linha">
+        <span>VEN (PDV)</span>
+        <span>${fmtInt(vendido)}</span>
+        <span>=</span>
+        <span>${fmtInt(vendido)} <small>(não muda)</small></span>
+      </div>
+      <div class="aud-edit-preview-linha">
+        <span>ESP</span>
+        <span>${fmtInt(espAntes)}</span>
+        <span>→</span>
+        <span><strong>${fmtInt(espDepois)}</strong></span>
+      </div>
+      <div class="aud-edit-preview-linha">
+        <span>REAL</span>
+        <span>${fmtInt(valoresOriginais.real || 0)}</span>
+        <span>→</span>
+        <span><strong>${fmtInt(fin)}</strong></span>
+      </div>
+      <div class="aud-edit-preview-linha aud-edit-preview-dif">
+        <span>DIF</span>
+        <span class="${corDif(difAntes)}">${fmtSgn(difAntes)}</span>
+        <span>→</span>
+        <span class="${corDif(difDepois)}"><strong>${fmtSgn(difDepois)}</strong></span>
+      </div>
+    </div>
+  `;
+}
+
+async function confirmarEdicao() {
+  if (!_edicaoEmAndamento) {
+    alert('Edição não inicializada.');
+    return;
+  }
+
+  const slug = _edicaoEmAndamento.slug;
+  const item = resultadoAuditoria.find(r => r.slug === slug);
+  if (!item) {
+    alert('Item não encontrado.');
+    return;
+  }
+
+  const ini = parseInt(document.getElementById('aud-edit-ini').value, 10);
+  const rec = parseInt(document.getElementById('aud-edit-rec').value, 10);
+  const fin = parseInt(document.getElementById('aud-edit-fin').value, 10);
+  const motivo = document.getElementById('aud-edit-motivo').value.trim();
+
+  // Validações
+  if (isNaN(ini) || isNaN(rec) || isNaN(fin)) {
+    alert('Todos os campos devem ser números válidos.');
+    return;
+  }
+  if (ini < 0 || rec < 0 || fin < 0) {
+    alert('Valores não podem ser negativos.');
+    return;
+  }
+  if (!motivo) {
+    alert('O motivo da edição é obrigatório.');
+    document.getElementById('aud-edit-motivo').focus();
+    return;
+  }
+
+  const { contagemIni, contagemFin } = contextoAuditoria;
+  if (!contagemIni || !contagemFin) {
+    alert('Contagens INI/FIN não disponíveis no contexto. Recarregue a auditoria.');
+    return;
+  }
+
+  const valOriginais = _edicaoEmAndamento.valoresOriginais;
+  const mudouIni = ini !== valOriginais.ini;
+  const mudouRec = rec !== valOriginais.recebido;
+  const mudouFin = fin !== valOriginais.real;
+
+  if (!mudouIni && !mudouRec && !mudouFin) {
+    alert('Nenhum valor foi alterado.');
+    return;
+  }
+
+  // Confirmação final
+  const partes = [];
+  if (mudouIni) partes.push(`INI: ${valOriginais.ini} → ${ini}`);
+  if (mudouRec) partes.push(`REC: ${valOriginais.recebido} → ${rec}`);
+  if (mudouFin) partes.push(`FIN: ${valOriginais.real} → ${fin}`);
+
+  const confirmado = confirm(
+    `💾 SALVAR EDIÇÃO\n\n` +
+    `Produto: ${item.nome}\n` +
+    `Data: ${fmtData(dataInicio)}\n\n` +
+    `Mudanças:\n  • ${partes.join('\n  • ')}\n\n` +
+    `Motivo: ${motivo}\n\n` +
+    `Confirmar?`
+  );
+  if (!confirmado) return;
+
+  try {
+    const sessao = getSessao();
+    const sessaoNome = sessao?.nome || 'Gestor';
+
+    // 1) Edita INI (se mudou)
+    if (mudouIni) {
+      await aplicarEdicaoContagem(contagemIni, slug, ini,
+        `Edição manual: INI ${valOriginais.ini} → ${ini}. Motivo: ${motivo}`,
+        sessaoNome, valOriginais.ini);
+    }
+
+    // 2) Edita FIN (se mudou)
+    if (mudouFin) {
+      await aplicarEdicaoContagem(contagemFin, slug, fin,
+        `Edição manual: FIN ${valOriginais.real} → ${fin}. Motivo: ${motivo}`,
+        sessaoNome, valOriginais.real);
+    }
+
+    // 3) Edita REC (se mudou) — caso especial: REC vem de "recebimentos",
+    // não de contagem. Estratégia: deletar todos os recebimentos atuais do
+    // produto no período e criar UM novo com o valor desejado (se > 0).
+    if (mudouRec) {
+      await aplicarEdicaoRecebimento(slug, item.nome, rec, motivo, sessaoNome);
+    }
+
+    alert(`✅ Edição salva!\n\nRecalculando auditoria...`);
+    fecharModalEditar();
+    await executarAuditoria();
+
+  } catch (e) {
+    console.error(e);
+    alert(`❌ Erro ao salvar edição: ${e.message}`);
+  }
+}
+
+/**
+ * Aplica edição num documento de contagem (INI ou FIN).
+ * Atualiza a chave do slug com o novo valor preservando a estrutura
+ * (compatível com bebidas { fr, est, total } e sorvetes { qtd } / { final, abast, vendeu }).
+ */
+async function aplicarEdicaoContagem(contagem, slug, novoValor, motivo, responsavel, valorAntigo) {
+  const novosItens = { ...contagem.itens };
+  const chaveAtual = Object.keys(novosItens).find(k =>
+    k === slug || k.startsWith(`${slug}__`)
+  );
+
+  if (!chaveAtual) {
+    // Item não existia na contagem ainda — cria estrutura padrão de bebidas
+    novosItens[slug] = { fr: novoValor, est: 0, total: novoValor };
+  } else {
+    const valorObj = novosItens[chaveAtual];
+    if (valorObj && typeof valorObj === 'object') {
+      if (chaveAtual.endsWith('__fin') && 'final' in valorObj) {
+        valorObj.final = novoValor;
+      } else if (chaveAtual.endsWith('__ini') && 'qtd' in valorObj) {
+        valorObj.qtd = novoValor;
+      } else if ('fr' in valorObj || 'est' in valorObj || 'total' in valorObj) {
+        valorObj.fr = novoValor;
+        valorObj.est = 0;
+        valorObj.total = novoValor;
+      } else {
+        throw new Error('Formato da contagem não reconhecido.');
+      }
+    } else {
+      novosItens[chaveAtual] = novoValor;
+    }
+  }
+
+  await corrigirItemContagem(contagem.id, novosItens, {
+    responsavel, motivo, itemSlug: slug,
+    valorAntigo, valorNovo: novoValor
+  });
+}
+
+/**
+ * Aplica edição de recebimentos do produto.
+ *
+ * O REC tem 2 fontes possíveis no sistema:
+ *   1) Coleção "recebimentos" (cada doc é uma entrega registrada via Lista de Compras)
+ *   2) Campo "rec" dentro do objeto do produto na contagem FIN (registrado direto pelo barman)
+ *
+ * Estratégia: ZERAR ambas as fontes, e depois (se novoValor > 0) criar um único
+ * recebimento na coleção com o valor desejado. Assim o REC efetivo fica = novoValor.
+ */
+async function aplicarEdicaoRecebimento(slug, nomeProduto, novoValor, motivo, responsavel) {
+  const { contagemFin } = contextoAuditoria;
+
+  // 1) Zera o campo "rec" dentro da contagem FIN (caso o barman tenha
+  //    registrado lá direto)
+  if (contagemFin?.itens) {
+    const novosItens = { ...contagemFin.itens };
+    let mudou = false;
+    Object.entries(novosItens).forEach(([chave, v]) => {
+      if (chave === slug && typeof v === 'object' && v !== null && (v.rec || 0) > 0) {
+        v.rec = 0;
+        mudou = true;
+      }
+    });
+    if (mudou) {
+      await corrigirItemContagem(contagemFin.id, novosItens, {
+        responsavel,
+        motivo: `Edição de REC: zerou campo rec da contagem FIN. Motivo: ${motivo}`,
+        itemSlug: slug,
+        valorAntigo: null,
+        valorNovo: 0
+      });
+    }
+  }
+
+  // 2) Apaga todos os recebimentos da coleção "recebimentos" no período
+  const recebimentos = await listarRecebimentos(dataInicio, dataFim);
+  for (const r of recebimentos) {
+    const temItem = (r.itens || []).some(i => i.slug === slug);
+    if (!temItem) continue;
+    // Se o doc só tem este produto, deleta o doc inteiro
+    if (r.itens.length === 1 && r.itens[0].slug === slug) {
+      await excluirRecebimento(r.id);
+    } else {
+      // Se tem outros produtos, deletar todo o doc seria perigoso (perderia
+      // os outros). Por enquanto, alertamos e seguimos — gestor deve resolver
+      // pela Lista de Compras nesse caso raro.
+      console.warn(`Recebimento ${r.id} tem múltiplos produtos. Edição manual necessária na Lista de Compras.`);
+    }
+  }
+
+  // 3) Cria um novo recebimento com o valor desejado (se > 0)
+  if (novoValor > 0) {
+    await registrarRecebimento({
+      data: dataInicio,
+      fornecedor: '— Edição manual via auditoria —',
+      itens: [{
+        slug,
+        nome: nomeProduto,
+        qtd: novoValor
+      }]
+    });
+  }
+}
 
 // ========================================================================
 // FECHAMENTO DE AUDITORIA
