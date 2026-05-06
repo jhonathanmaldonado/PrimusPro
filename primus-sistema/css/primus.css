@@ -2082,7 +2082,7 @@ body {
 }
 .aud-linha {
   display: grid;
-  grid-template-columns: 2.2fr 0.7fr 0.8fr 0.8fr 0.8fr 0.8fr 1.1fr 1fr;
+  grid-template-columns: 2.2fr 0.7fr 0.8fr 0.8fr 0.8fr 0.8fr 1.1fr 0.7fr 1fr;
   gap: 8px;
   padding: 9px 14px;
   align-items: center;
@@ -2113,6 +2113,27 @@ body {
 .aud-linha.aud-linha-semdados { opacity: 0.5; }
 .aud-linha:hover:not(.aud-cab) { background: #fafafa; }
 .aud-linha.aud-linha-critico:hover { background: rgba(181, 69, 27, 0.09); }
+
+/* ===== COLUNA D-1 (variação na virada — INI atual − FIN dia anterior) ===== */
+.aud-d1-nc {
+  color: var(--cinza-texto);
+  font-style: italic;
+  opacity: 0.6;
+  font-size: 11px;
+}
+.aud-d1-ok {
+  color: #2e7d32;          /* verde do ok */
+  font-weight: 700;
+  font-size: 14px;
+}
+.aud-d1-neg {
+  color: var(--vermelho);  /* sumiu na virada */
+  font-weight: 700;
+}
+.aud-d1-pos {
+  color: #c97f00;          /* apareceu na virada (atenção) */
+  font-weight: 700;
+}
 
 .aud-grupo-header {
   background: var(--preto);
