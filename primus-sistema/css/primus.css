@@ -2082,7 +2082,7 @@ body {
 }
 .aud-linha {
   display: grid;
-  grid-template-columns: 2.2fr 0.7fr 0.8fr 0.8fr 0.8fr 0.8fr 1.1fr 0.7fr 1fr;
+  grid-template-columns: 2.2fr 0.7fr 0.7fr 0.8fr 0.8fr 0.8fr 0.8fr 1.1fr 1fr;
   gap: 8px;
   padding: 9px 14px;
   align-items: center;
