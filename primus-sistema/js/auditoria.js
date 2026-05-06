@@ -1128,6 +1128,7 @@ function renderizarTabelaOperacional() {
         <div title="Estoque esperado ao final">=ESP</div>
         <div title="Contagem real ao final">REAL</div>
         <div title="Diferença (Real − Esperado)">DIF</div>
+        <div title="Variação na virada (INI atual − FIN do dia anterior). 'n/c' = não calculado (sem FIN anterior).">D-1</div>
         <div>Status</div>
       </div>
       ${Object.entries(grupos).map(([grupo, itens]) => `
@@ -1217,6 +1218,23 @@ function renderLinhaOperacional(r) {
     `;
   }
 
+  // Célula D-1
+  // - null → "n/c" (não calculado: não tem FIN do dia anterior)
+  // - 0    → ✓ verde (virada perfeita)
+  // - ≠ 0  → valor formatado com sinal (vermelho se negativo, amarelo se positivo)
+  let cellD1Html;
+  if (r.d1 === null || r.d1 === undefined) {
+    cellD1Html = '<div class="aud-num aud-d1-nc" title="Sem FIN do dia anterior pra comparar">n/c</div>';
+  } else if (r.d1 === 0) {
+    cellD1Html = '<div class="aud-num aud-d1-ok" title="Virada perfeita (INI atual = FIN do dia anterior)">✓</div>';
+  } else {
+    const d1Cls = r.d1 < 0 ? 'aud-d1-neg' : 'aud-d1-pos';
+    const d1Title = r.d1 < 0
+      ? `Sumiu ${Math.abs(r.d1)} entre o fechamento de ontem e a abertura de hoje`
+      : `Apareceu ${r.d1} entre o fechamento de ontem e a abertura de hoje`;
+    cellD1Html = `<div class="aud-num ${d1Cls}" title="${d1Title}">${fmtSgn(r.d1)}</div>`;
+  }
+
   return `
     <div class="aud-linha aud-linha-${r.status}${diag ? ' aud-linha-com-diag' : ''}">
       <div class="aud-nome">
@@ -1233,6 +1251,7 @@ function renderLinhaOperacional(r) {
       <div class="aud-num aud-num-esp">${fmtInt(r.esperado)}</div>
       <div class="aud-num aud-num-real">${fmtInt(r.real)}</div>
       <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}</div>
+      ${cellD1Html}
       <div>${statusBadge}</div>
     </div>
   `;
