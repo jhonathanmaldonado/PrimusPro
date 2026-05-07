@@ -714,13 +714,14 @@ function fecharModalSalvar() {
 async function tratarSalvar(comPdf) {
   fecharModalSalvar();
 
+  // 🔧 Gera o PDF ANTES de mover (enquanto a lista_em_criacao ainda existe)
+  if (comPdf) {
+    gerarPdfLista();
+  }
+
   try {
     const qtdItens = await salvarListaParaAtual();
     showToast(`✓ Lista salva (${qtdItens} itens)`, 'success');
-
-    if (comPdf) {
-      gerarPdfLista();
-    }
 
     // Muda automaticamente para a aba "Lista Atual"
     setTimeout(() => switchTab('atual'), 400);
