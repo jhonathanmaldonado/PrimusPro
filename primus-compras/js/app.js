@@ -27,6 +27,7 @@ import {
   atualizarPrecoListaAtual,
   atualizarCompradoListaAtual,
   atualizarQtdListaAtual,
+  removerItemListaAtual,
   finalizarCompra,
   deletarHistorico,
   seedCatalogoSeVazio,
@@ -454,8 +455,8 @@ function renderListaAtual() {
       <th class="col-qtd">Qtd</th>
       <th class="col-pago">Preço pago</th>
       <th class="col-subtotal">Subtotal</th>
+      <th class="col-action"></th>
     </tr></thead><tbody>`;
-
     for (const item of itensNaListaAtual) {
       const estado = listaAtualMap[item.id];
       const qtd = parseFloat(estado.qtd) || 0;
@@ -641,7 +642,17 @@ async function toggleComprado(itemId, comprado) {
     showToast('⚠ Erro: ' + e.message, 'error');
   }
 }
-
+async function removerDaListaAtual(itemId) {
+  const item = itens.find(i => i.id === itemId);
+  if (!item) return;
+  if (!confirm(`Remover "${item.nome}" desta compra?\n\n(O item continua no catálogo para próximas listas.)`)) return;
+  try {
+    await removerItemListaAtual(itemId);
+    showToast(`✓ "${item.nome}" removido da lista`, 'success');
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
+  }
+}
 function toggleCatCriar(catId) {
   collapsedCriar[catId] = !collapsedCriar[catId];
   renderListaCriar();
@@ -993,6 +1004,7 @@ function setupEventos() {
     const target = e.target.closest('[data-action]');
     if (!target) return;
     if (target.dataset.action === 'toggle-cat-atual') toggleCatAtual(target.dataset.catId);
+    else if (target.dataset.action === 'remover-da-atual') removerDaListaAtual(target.dataset.itemId);
   });
 
   // Delegação - histórico
