@@ -254,7 +254,7 @@ async function onLogado({ user, perfil }) {
 
 async function ofertaSeedSeVazio() {
   try {
-    const resp = await fetch('../seed-catalog.json');
+    const resp = await fetch('seed-catalog.json');
     if (!resp.ok) return;
     const seedData = await resp.json();
     const total = seedData.reduce((s, c) => s + c.itens.length, 0);
