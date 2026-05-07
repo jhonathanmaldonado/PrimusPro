@@ -3,7 +3,6 @@
 // ============================================================================
 
 import {
-  getFirestore,
   doc,
   setDoc,
   getDoc,
@@ -13,17 +12,14 @@ import {
   deleteDoc,
   collection,
   query,
-  where,
   orderBy,
   onSnapshot,
   serverTimestamp,
-  writeBatch,
-  Timestamp
+  writeBatch
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
+import { db } from './firebase-init.js';
 import { WORKSPACE_ID } from './firebase-config.js';
-
-const db = getFirestore();
 
 // ============================================================================
 // HELPERS DE PATH
@@ -36,7 +32,7 @@ const listaAtualCol = () => collection(db, ...wsPath(), 'lista_atual');
 const historicoCol = () => collection(db, ...wsPath(), 'historico');
 
 // ============================================================================
-// CONTEXTO DO USUÁRIO ATUAL (preenchido pelo app.js após login)
+// CONTEXTO DO USUÁRIO ATUAL
 // ============================================================================
 
 let _userCtx = null;
@@ -87,7 +83,6 @@ export async function atualizarCategoria(id, dados) {
 }
 
 export async function deletarCategoria(id) {
-  // ⚠️ Atenção: não está deletando os itens da categoria. O app.js deve avisar.
   const ref = doc(db, ...wsPath(), 'categorias', id);
   await deleteDoc(ref);
 }
@@ -136,19 +131,13 @@ export async function atualizarItem(id, dados) {
 export async function deletarItem(id) {
   const ref = doc(db, ...wsPath(), 'itens', id);
   await deleteDoc(ref);
-  // Também remove da lista atual se estiver lá
   const listaRef = doc(db, ...wsPath(), 'lista_atual', id);
   try { await deleteDoc(listaRef); } catch (e) { /* não estava na lista */ }
 }
 
 // ============================================================================
-// LISTA ATUAL (estado de compra)
+// LISTA ATUAL
 // ============================================================================
-
-/**
- * O id do doc em lista_atual é o MESMO id do item no catálogo.
- * Isso simplifica join e evita duplicatas.
- */
 
 export function observarListaAtual(callback) {
   return onSnapshot(listaAtualCol(), (snap) => {
@@ -159,7 +148,6 @@ export function observarListaAtual(callback) {
 
 export async function setItemListaAtual(itemId, { qtd, preco, comprado, observacao }) {
   const ref = doc(db, ...wsPath(), 'lista_atual', itemId);
-  // Se qtd for 0 ou vazio E preco vazio E não comprado, removemos da lista
   const qtdNum = parseFloat(qtd) || 0;
   const precoNum = parseFloat(preco) || 0;
   const obs = observacao || '';
@@ -204,10 +192,6 @@ export function observarHistorico(callback, limite = 50) {
   });
 }
 
-/**
- * Finaliza compra: cria doc no histórico e limpa lista_atual.
- * Recebe os itens enriquecidos com nome/categoria/etc do catálogo.
- */
 export async function finalizarCompra(itensEnriquecidos, total) {
   if (!itensEnriquecidos.length) {
     throw new Error('Lista vazia');
@@ -222,12 +206,10 @@ export async function finalizarCompra(itensEnriquecidos, total) {
     itens: itensEnriquecidos
   });
 
-  // Atualiza ultimoPreco / precoAnterior em cada item do catálogo
   const batch = writeBatch(db);
   for (const it of itensEnriquecidos) {
     if (!it.itemId || !it.preco) continue;
     const itemRef = doc(db, ...wsPath(), 'itens', it.itemId);
-    // Lê o doc atual pra mover ultimoPreco → precoAnterior
     const atualSnap = await getDoc(itemRef);
     if (!atualSnap.exists()) continue;
     const atual = atualSnap.data();
@@ -240,7 +222,6 @@ export async function finalizarCompra(itensEnriquecidos, total) {
   }
   await batch.commit();
 
-  // Limpa lista_atual
   await limparListaAtual();
 
   return histRef.id;
@@ -252,13 +233,9 @@ export async function deletarHistorico(id) {
 }
 
 // ============================================================================
-// SEED INICIAL DO CATÁLOGO (importação do v9)
+// SEED INICIAL DO CATÁLOGO
 // ============================================================================
 
-/**
- * Importa o seed-catalog.json no workspace.
- * Cria categorias e itens em batch. Só roda se ainda não houver categorias.
- */
 export async function seedCatalogoSeVazio(seedData) {
   const catsExistentes = await getDocs(categoriasCol());
   if (!catsExistentes.empty) {
