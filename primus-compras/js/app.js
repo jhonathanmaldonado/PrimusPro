@@ -42,8 +42,8 @@ import {
 
 let categorias = [];
 let itens = [];
-let listaEmCriacaoMap = {};   // { itemId: {qtd, ...} }
-let listaAtualMap = {};        // { itemId: {qtd, preco, comprado, ...} }
+let listaEmCriacaoMap = {};
+let listaAtualMap = {};
 let historico = [];
 
 let userCtx = null;
@@ -212,7 +212,6 @@ async function onLogado({ user, perfil }) {
 
   mostrarApp();
 
-  // Carrega config de média
   try {
     mediaN = await getConfigMediaN();
     $('media-n').value = mediaN;
@@ -310,7 +309,6 @@ function renderListaCriar() {
 
   let html = '';
 
-  // Alerta se já tem lista atual em andamento
   if (temListaAtualAtiva()) {
     html += `<div class="alerta-bloqueio">
       ⚠️ <span><strong>Atenção:</strong> Você tem uma <strong>Lista Atual</strong> em andamento. Finalize-a antes de salvar uma nova lista.</span>
@@ -404,7 +402,6 @@ function renderResumoCriar() {
 function renderListaAtual() {
   const el = $('list-atual');
 
-  // Empty state
   if (!Object.keys(listaAtualMap).length) {
     el.innerHTML = `<div class="empty-state">
       <div class="empty-state-icon">🛒</div>
@@ -414,7 +411,6 @@ function renderListaAtual() {
     return;
   }
 
-  // Agrupa itens por categoria, mas só os que estão na lista_atual
   let html = '';
   let anyMatch = false;
 
@@ -457,6 +453,7 @@ function renderListaAtual() {
       <th class="col-subtotal">Subtotal</th>
       <th class="col-action"></th>
     </tr></thead><tbody>`;
+
     for (const item of itensNaListaAtual) {
       const estado = listaAtualMap[item.id];
       const qtd = parseFloat(estado.qtd) || 0;
@@ -476,6 +473,7 @@ function renderListaAtual() {
       html += `<td class="col-qtd"><input type="number" class="qty" min="0" step="0.01" value="${qtd || ''}" data-action="update-qtd-atual" data-item-id="${item.id}"></td>`;
       html += `<td class="col-pago"><div class="price-wrap"><input type="number" class="price" min="0" step="0.01" value="${preco || ''}" placeholder="0,00" data-action="update-preco-atual" data-item-id="${item.id}"></div></td>`;
       html += `<td class="col-subtotal">${sub > 0 ? fmtMoeda(sub) : '—'}</td>`;
+      html += `<td class="col-action"><button class="icon-btn danger" data-action="remover-da-atual" data-item-id="${item.id}" title="Remover desta compra">×</button></td>`;
       html += `</tr>`;
     }
     html += `</tbody></table></div></div>`;
@@ -642,6 +640,7 @@ async function toggleComprado(itemId, comprado) {
     showToast('⚠ Erro: ' + e.message, 'error');
   }
 }
+
 async function removerDaListaAtual(itemId) {
   const item = itens.find(i => i.id === itemId);
   if (!item) return;
@@ -653,6 +652,7 @@ async function removerDaListaAtual(itemId) {
     showToast('⚠ Erro: ' + e.message, 'error');
   }
 }
+
 function toggleCatCriar(catId) {
   collapsedCriar[catId] = !collapsedCriar[catId];
   renderListaCriar();
@@ -725,7 +725,6 @@ function fecharModalSalvar() {
 async function tratarSalvar(comPdf) {
   fecharModalSalvar();
 
-  // 🔧 Gera o PDF ANTES de mover (enquanto a lista_em_criacao ainda existe)
   if (comPdf) {
     gerarPdfLista();
   }
@@ -733,8 +732,6 @@ async function tratarSalvar(comPdf) {
   try {
     const qtdItens = await salvarListaParaAtual();
     showToast(`✓ Lista salva (${qtdItens} itens)`, 'success');
-
-    // Muda automaticamente para a aba "Lista Atual"
     setTimeout(() => switchTab('atual'), 400);
   } catch (e) {
     showToast('⚠ ' + e.message, 'error');
@@ -742,11 +739,10 @@ async function tratarSalvar(comPdf) {
 }
 
 // ============================================================================
-// PDF (versão simples)
+// PDF
 // ============================================================================
 
 function gerarPdfLista() {
-  // Gera HTML imprimível
   const w = window.open('', '_blank');
   let html = `
     <html>
