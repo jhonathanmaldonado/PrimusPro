@@ -2,7 +2,6 @@
 // APP.JS — Orquestrador principal do app
 // ============================================================================
 
-// Importa firebase-init PRIMEIRO para garantir inicialização
 import './firebase-init.js';
 
 import {
@@ -43,6 +42,9 @@ let searchTerm = '';
 let currentTab = 'lista';
 
 let unsubsRefs = [];
+
+// 🔧 Flag para evitar race condition durante criação de conta
+let criandoConta = false;
 
 // ============================================================================
 // HELPERS
@@ -170,6 +172,10 @@ async function tratarCriarWorkspace() {
   btn.disabled = true;
   btn.textContent = 'Criando...';
 
+  // 🔧 Ativa flag para evitar logout automático durante criação
+  criandoConta = true;
+  console.log('[tratarCriarWorkspace] flag criandoConta = true');
+
   try {
     await criarWorkspaceEDono({
       adminCode,
@@ -178,8 +184,27 @@ async function tratarCriarWorkspace() {
       username,
       pin
     });
-    showToast('✓ Conta criada! Fazendo login...', 'success');
+    console.log('[tratarCriarWorkspace] sucesso!');
+    showToast('✓ Conta criada! Carregando...', 'success');
+
+    // 🔧 Aguarda 1 segundo para garantir que tudo foi salvo
+    await new Promise(r => setTimeout(r, 1000));
+
+    // Desativa flag
+    criandoConta = false;
+    console.log('[tratarCriarWorkspace] flag criandoConta = false');
+
+    // Força um reload do auth state
+    const auth = (await import('https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js')).getAuth();
+    if (auth.currentUser) {
+      // Dispara manualmente o onLogado
+      const { carregarPerfil } = await import('./auth.js');
+      const perfil = await carregarPerfil(auth.currentUser.uid);
+      onLogado({ user: auth.currentUser, perfil });
+    }
   } catch (e) {
+    criandoConta = false;
+    console.error('[tratarCriarWorkspace] erro:', e);
     err.textContent = e.message || 'Erro ao criar conta';
     err.classList.add('show');
     btn.disabled = false;
@@ -196,6 +221,11 @@ async function tratarLogout() {
 
 async function onLogado({ user, perfil }) {
   if (!perfil) {
+    // 🔧 Se está criando conta, ignora a falta de perfil temporariamente
+    if (criandoConta) {
+      console.log('[onLogado] perfil ainda não criado, mas flag criandoConta=true. Ignorando.');
+      return;
+    }
     showToast('⚠ Perfil não encontrado. Contate o administrador.', 'error');
     await logout();
     return;
@@ -724,6 +754,11 @@ function init() {
 
   observarAuth(estado => {
     if (!estado) {
+      // Se está criando conta, ignora o estado deslogado momentâneo
+      if (criandoConta) {
+        console.log('[observarAuth] deslogado mas criandoConta=true. Ignorando.');
+        return;
+      }
       userCtx = null;
       setUserContext(null);
       mostrarLogin();
