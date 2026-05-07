@@ -39,17 +39,17 @@ import {
 // ESTADO LOCAL
 // ============================================================================
 
-let categorias = [];           // [{id, nome, cor, ordem}]
-let itens = [];                // [{id, nome, tipo, categoriaId, ...}]
-let listaAtualMap = {};        // { itemId: {qtd, preco, comprado, ...} }
+let categorias = [];
+let itens = [];
+let listaAtualMap = {};
 let historico = [];
 
-let userCtx = null;            // { uid, nome, role, ... }
-let collapsed = {};            // { categoriaId: true }
+let userCtx = null;
+let collapsed = {};
 let searchTerm = '';
 let currentTab = 'lista';
 
-let unsubsRefs = [];           // unsubscribers de listeners ativos
+let unsubsRefs = [];
 
 // ============================================================================
 // HELPERS
@@ -123,11 +123,10 @@ function mostrarLogin() {
   $('form-login').style.display = 'block';
   $('form-criar').style.display = 'none';
 
-  // Verifica se workspace já tem dono — se não, mostra link de criar
   workspaceTemDono().then(temDono => {
     $('link-criar-workspace').style.display = temDono ? 'none' : 'block';
   }).catch(() => {
-    $('link-criar-workspace').style.display = 'block'; // Em caso de erro, mostra
+    $('link-criar-workspace').style.display = 'block';
   });
 }
 
@@ -150,7 +149,6 @@ async function tratarLogin() {
 
   try {
     await login(username, pin);
-    // observarAuth vai detectar o login e chamar onLogado
   } catch (e) {
     err.textContent = e.message || 'Erro ao fazer login';
     err.classList.add('show');
@@ -188,7 +186,6 @@ async function tratarCriarWorkspace() {
       pin
     });
     showToast('✓ Conta criada! Fazendo login...', 'success');
-    // observarAuth vai detectar o login automaticamente
   } catch (e) {
     err.textContent = e.message || 'Erro ao criar conta';
     err.classList.add('show');
@@ -199,7 +196,6 @@ async function tratarCriarWorkspace() {
 
 async function tratarLogout() {
   if (!confirm('Sair da conta?')) return;
-  // Limpa listeners
   unsubsRefs.forEach(u => u && u());
   unsubsRefs = [];
   await logout();
@@ -220,25 +216,22 @@ async function onLogado({ user, perfil }) {
   };
   setUserContext(userCtx);
 
-  // Atualiza UI do header
   $('user-name').textContent = perfil.nome;
   $('user-role').textContent = perfil.role === 'dono' ? 'Dono' : 'Membro';
   $('user-avatar').textContent = (perfil.nome || '?').charAt(0).toUpperCase();
 
   mostrarApp();
 
-  // Se for o primeiro login do dono e o catálogo estiver vazio, oferece importar seed
   if (perfil.role === 'dono') {
     await ofertaSeedSeVazio();
   }
 
-  // Inicia listeners em tempo real
   iniciarListeners();
 }
 
 async function ofertaSeedSeVazio() {
   try {
-    const resp = await fetch('seed-catalog.json');
+    const resp = await fetch('../seed-catalog.json');
     if (!resp.ok) return;
     const seedData = await resp.json();
     const total = seedData.reduce((s, c) => s + c.itens.length, 0);
@@ -261,31 +254,27 @@ async function ofertaSeedSeVazio() {
 }
 
 // ============================================================================
-// LISTENERS EM TEMPO REAL (sincronização Firestore)
+// LISTENERS EM TEMPO REAL
 // ============================================================================
 
 function iniciarListeners() {
-  // Categorias
   unsubsRefs.push(observarCategorias((cats) => {
     categorias = cats;
     popularSelectCategoria();
     renderLista();
   }));
 
-  // Itens (catálogo)
   unsubsRefs.push(observarItens((its) => {
     itens = its;
     renderLista();
   }));
 
-  // Lista atual (estado de compra)
   unsubsRefs.push(observarListaAtual((lista) => {
     listaAtualMap = {};
     lista.forEach(i => { listaAtualMap[i.id] = i; });
     renderLista();
   }));
 
-  // Histórico
   unsubsRefs.push(observarHistorico((hist) => {
     historico = hist;
     if (currentTab === 'historico') renderHistorico();
@@ -315,7 +304,7 @@ function renderLista() {
     if (searchTerm && itensCat.length === 0) continue;
 
     const todosItensCat = itens.filter(i => i.categoriaId === cat.id);
-    if (!searchTerm && todosItensCat.length === 0) continue; // categoria vazia sem busca: pula
+    if (!searchTerm && todosItensCat.length === 0) continue;
 
     anyMatch = true;
     const isCollapsed = collapsed[cat.id] && !searchTerm;
@@ -485,7 +474,6 @@ async function adicionarItem() {
     return;
   }
 
-  // ordem = última posição na categoria + 1
   const itensCat = itens.filter(i => i.categoriaId === catId);
   const proxOrdem = itensCat.length;
 
@@ -584,7 +572,6 @@ async function tratarLimparLista() {
 }
 
 async function tratarFinalizarCompra() {
-  // Coleta itens com qtd > 0 e enriquece com dados do catálogo
   const itensEnriquecidos = [];
   let total = 0;
 
@@ -643,11 +630,10 @@ function switchTab(tab) {
 }
 
 // ============================================================================
-// EVENTOS GLOBAIS (delegação)
+// EVENTOS
 // ============================================================================
 
 function setupEventos() {
-  // ========== Login ==========
   $('btn-login').addEventListener('click', tratarLogin);
   $('login-pin').addEventListener('keydown', e => { if (e.key === 'Enter') tratarLogin(); });
   $('login-username').addEventListener('keydown', e => {
@@ -665,27 +651,22 @@ function setupEventos() {
   $('btn-criar').addEventListener('click', tratarCriarWorkspace);
   $('criar-pin').addEventListener('keydown', e => { if (e.key === 'Enter') tratarCriarWorkspace(); });
 
-  // ========== Header / logout ==========
   $('user-chip').addEventListener('click', tratarLogout);
 
-  // ========== Tabs ==========
   document.querySelectorAll('.tab').forEach(t => {
     t.addEventListener('click', () => switchTab(t.dataset.tab));
   });
 
-  // ========== Toolbar ==========
   $('btn-recolher').addEventListener('click', () => expandirOuRecolherTodas(false));
   $('btn-expandir').addEventListener('click', () => expandirOuRecolherTodas(true));
   $('btn-limpar').addEventListener('click', tratarLimparLista);
   $('btn-finalizar').addEventListener('click', tratarFinalizarCompra);
   $('btn-add-item').addEventListener('click', adicionarItem);
 
-  // Adicionar com Enter
   ['new-name', 'new-tipo'].forEach(id => {
     $(id).addEventListener('keydown', e => { if (e.key === 'Enter') adicionarItem(); });
   });
 
-  // ========== Busca ==========
   $('search').addEventListener('input', e => {
     searchTerm = e.target.value.trim();
     renderLista();
@@ -696,7 +677,6 @@ function setupEventos() {
     renderLista();
   });
 
-  // ========== Lista (delegação) ==========
   $('list').addEventListener('change', e => {
     const action = e.target.dataset.action;
     const itemId = e.target.dataset.itemId;
@@ -713,7 +693,6 @@ function setupEventos() {
     else if (action === 'remover-item') removerItem(target.dataset.itemId);
   });
 
-  // ========== Histórico (delegação) ==========
   $('history-list').addEventListener('click', e => {
     const target = e.target.closest('[data-action]');
     if (!target) return;
@@ -721,7 +700,6 @@ function setupEventos() {
     else if (target.dataset.action === 'excluir-compra') excluirCompraConfirm(target.dataset.histId);
   });
 
-  // ========== Atalhos ==========
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       if ($('search').value) {
@@ -737,7 +715,6 @@ function setupEventos() {
     }
   });
 
-  // PIN: só números
   ['login-pin', 'criar-pin'].forEach(id => {
     $(id).addEventListener('input', e => {
       e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
@@ -753,15 +730,12 @@ function init() {
   setupEventos();
   mostrarSplash();
 
-  // Observa mudanças de auth
   observarAuth(estado => {
     if (!estado) {
-      // Deslogado
       userCtx = null;
       setUserContext(null);
       mostrarLogin();
     } else {
-      // Logado
       onLogado(estado);
     }
   });
