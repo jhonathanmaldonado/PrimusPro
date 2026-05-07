@@ -2,16 +2,9 @@
 // APP.JS — Orquestrador principal do app
 // ============================================================================
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
-import { getAuth } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
+// Importa firebase-init PRIMEIRO para garantir inicialização
+import './firebase-init.js';
 
-import { firebaseConfig, WORKSPACE_ID } from './firebase-config.js';
-
-// Inicializa Firebase ANTES de importar módulos que dependem dele
-const app = initializeApp(firebaseConfig);
-getAuth(app);
-
-// Agora importa módulos que usam getFirestore()/getAuth()
 import {
   login,
   logout,
@@ -27,12 +20,12 @@ import {
   observarListaAtual,
   observarHistorico,
   criarItem,
-  atualizarCampoListaAtual,
   setItemListaAtual,
   finalizarCompra,
   limparListaAtual,
   seedCatalogoSeVazio,
-  deletarHistorico
+  deletarHistorico,
+  deletarItem
 } from './db.js';
 
 // ============================================================================
@@ -548,7 +541,6 @@ async function removerItem(itemId) {
   if (!item) return;
   if (!confirm(`Remover "${item.nome}" do catálogo? Esta ação não pode ser desfeita.`)) return;
   try {
-    const { deletarItem } = await import('./db.js');
     await deletarItem(itemId);
     showToast('✓ Item removido', 'success');
   } catch (e) {
