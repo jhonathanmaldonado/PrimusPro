@@ -1,0 +1,151 @@
+[
+  {
+    "nome": "Mercearia / Secos",
+    "cor": "#7A1F38",
+    "itens": [
+      { "nome": "Arroz", "tipo": "frd" },
+      { "nome": "Feijão 1kg", "tipo": "frd" },
+      { "nome": "Açúcar", "tipo": "frd" },
+      { "nome": "Vinagre (Neval/Vitalia)", "tipo": "cx" },
+      { "nome": "Fubá de milho (Mika 1kg)", "tipo": "frd" },
+      { "nome": "Farinha de arroz (Urbano)", "tipo": "frd" },
+      { "nome": "Sal (Lebre/Cisne)", "tipo": "frd" },
+      { "nome": "Leite de coco Sococo 200g", "tipo": "frd" },
+      { "nome": "Azeite vermelho", "tipo": "und" },
+      { "nome": "Azeite extra virgem", "tipo": "und" },
+      { "nome": "Óleo (Liza/Concórdia/Soya)", "tipo": "cx" },
+      { "nome": "Café 3 Corações", "tipo": "und" },
+      { "nome": "Nata Imbaúba 300g", "tipo": "und" },
+      { "nome": "Macarrão espaguete", "tipo": "frd" },
+      { "nome": "Macarrão pene/parafuso", "tipo": "frd" },
+      { "nome": "Leite condensado", "tipo": "und" },
+      { "nome": "Creme de leite 1L", "tipo": "und" },
+      { "nome": "Leite Integral", "tipo": "cx" },
+      { "nome": "Pimenta Calabresa", "tipo": "und" },
+      { "nome": "Pimenta do reino", "tipo": "und" },
+      { "nome": "Alcaparras", "tipo": "balde" },
+      { "nome": "Catchup (Cepera)", "tipo": "und" },
+      { "nome": "Maionese (Quero/Soya)", "tipo": "balde" },
+      { "nome": "Extrato de tomate 2kg", "tipo": "und" },
+      { "nome": "Mostarda Cepera", "tipo": "und" },
+      { "nome": "Maionese Quero", "tipo": "cx" },
+      { "nome": "Chocolate Melken Meio Amargo", "tipo": "und" },
+      { "nome": "Ovos", "tipo": "cartela" },
+      { "nome": "Farinha Tio Chico", "tipo": "und" }
+    ]
+  },
+  {
+    "nome": "Frios / Laticínios",
+    "cor": "#9D2F4D",
+    "itens": [
+      { "nome": "Frango à passarinho", "tipo": "pacote" },
+      { "nome": "Peito de Frango", "tipo": "pacote" },
+      { "nome": "Linguiça de pernil", "tipo": "pacote" },
+      { "nome": "Manteiga (Itambé ou Pira)", "tipo": "pote" },
+      { "nome": "Batata Crimkle Bem Brasil", "tipo": "pacote" },
+      { "nome": "Mussarela", "tipo": "Kg" },
+      { "nome": "Leite em pó desnatado", "tipo": "fardo" },
+      { "nome": "Creme de leite 0% lactose", "tipo": "cx" },
+      { "nome": "Iogurte 0% lac Verde Campo", "tipo": "und" },
+      { "nome": "Leite 0% lac Piracanjuba", "tipo": "cx" },
+      { "nome": "Leite em pó 0% lac Itambé", "tipo": "und" },
+      { "nome": "Catupiry grande", "tipo": "und" }
+    ]
+  },
+  {
+    "nome": "Carnes",
+    "cor": "#B42318",
+    "itens": [
+      { "nome": "Sobrecoxa de frango", "tipo": "" }
+    ]
+  },
+  {
+    "nome": "Hortifruti",
+    "cor": "#5C7C2E",
+    "itens": [
+      { "nome": "Batata Inglesa", "tipo": "Kg" },
+      { "nome": "Cenoura", "tipo": "Kg" },
+      { "nome": "Abóbora Cabotiã", "tipo": "und" },
+      { "nome": "Repolho Roxo / Verde", "tipo": "und" },
+      { "nome": "Manjericão", "tipo": "und" },
+      { "nome": "Manga Palmer", "tipo": "kg" }
+    ]
+  },
+  {
+    "nome": "CEASA",
+    "cor": "#7A8C2E",
+    "itens": [
+      { "nome": "Cebola", "tipo": "saco" },
+      { "nome": "Tomates", "tipo": "caixa" },
+      { "nome": "Alho", "tipo": "saco" },
+      { "nome": "Banana da Terra", "tipo": "caixa" },
+      { "nome": "Pimenta de Cheiro", "tipo": "pacote" },
+      { "nome": "Limão", "tipo": "saco" },
+      { "nome": "Laranja", "tipo": "saco" },
+      { "nome": "Cebolinha industrial", "tipo": "und" },
+      { "nome": "Salsa industrial", "tipo": "und" },
+      { "nome": "Coentro industrial", "tipo": "und" },
+      { "nome": "Alface crespa", "tipo": "und" },
+      { "nome": "Alface roxa", "tipo": "und" },
+      { "nome": "Rúcula", "tipo": "und" },
+      { "nome": "Mostarda", "tipo": "und" }
+    ]
+  },
+  {
+    "nome": "Limpeza / Descartáveis",
+    "cor": "#5e3a7a",
+    "itens": [
+      { "nome": "Copo café", "tipo": "und" },
+      { "nome": "Detergente NEUTRO", "tipo": "fardo" },
+      { "nome": "Água sanitária", "tipo": "und" },
+      { "nome": "Bucha (Brilhus) amarela", "tipo": "und" },
+      { "nome": "Bucha (Brilhus) roxa", "tipo": "und" },
+      { "nome": "Álcool 70%", "tipo": "fardo" },
+      { "nome": "Touca descartável", "tipo": "pacote" },
+      { "nome": "Kit festa", "tipo": "pacote" },
+      { "nome": "Colherzinha p/ entrada", "tipo": "pacote" },
+      { "nome": "Papel Toalha (Mili)", "tipo": "fardo" },
+      { "nome": "Perflex", "tipo": "und" },
+      { "nome": "Kit talher (G e F) Delivery", "tipo": "pacote" }
+    ]
+  },
+  {
+    "nome": "Embalagens / Outros",
+    "cor": "#c98e1f",
+    "itens": [
+      { "nome": "Cachaça - Velho", "tipo": "und" },
+      { "nome": "Lemon pepper BR Spice", "tipo": "und" },
+      { "nome": "Luva Vinílica s/ Pó — M", "tipo": "caixa" },
+      { "nome": "Luva Vinílica s/ Pó — G", "tipo": "caixa" },
+      { "nome": "Luva Vinílica s/ Pó — GG", "tipo": "caixa" },
+      { "nome": "Embalagem Delivery Pequena Redonda", "tipo": "und" },
+      { "nome": "Embalagem Delivery Média Redonda", "tipo": "und" },
+      { "nome": "Embalagem Delivery Quadrada c/ Divisória", "tipo": "und" },
+      { "nome": "Embalagem Pequena 50ml p/ Molho", "tipo": "und" },
+      { "nome": "Papel Manteiga", "tipo": "und" },
+      { "nome": "Papel Dover", "tipo": "und" },
+      { "nome": "Copinho de Café", "tipo": "und" },
+      { "nome": "Bobina Saco Picotado 1kg", "tipo": "rolo" },
+      { "nome": "Bobina Saco Picotado 3kg", "tipo": "rolo" },
+      { "nome": "Bobina Saco Picotado 5kg", "tipo": "rolo" },
+      { "nome": "Papel Manteiga Timbrado 20x27", "tipo": "und" },
+      { "nome": "Papel Manteiga Timbrado 20x22", "tipo": "und" },
+      { "nome": "Bobina Térmica Branca", "tipo": "rolo" },
+      { "nome": "Bobina Suflex", "tipo": "rolo" },
+      { "nome": "Bobina Nimbot", "tipo": "rolo" },
+      { "nome": "Carbono Suflex", "tipo": "und" },
+      { "nome": "Talher Delivery", "tipo": "pacote" },
+      { "nome": "Colherzinha de Molho", "tipo": "pacote" },
+      { "nome": "Vela de Aniversário", "tipo": "und" },
+      { "nome": "Kit Aniversário", "tipo": "pacote" },
+      { "nome": "Saco Plástico 30x40", "tipo": "pacote" },
+      { "nome": "Saco Plástico 10x25", "tipo": "pacote" },
+      { "nome": "Filme PVC Grande", "tipo": "rolo" },
+      { "nome": "Saco Kraft", "tipo": "und" },
+      { "nome": "Gás para Maçarico", "tipo": "und" },
+      { "nome": "Espátula Descartável", "tipo": "und" },
+      { "nome": "Papel Alumínio", "tipo": "rolo" },
+      { "nome": "Folha Plástica Interfolhada 32x40", "tipo": "und" }
+    ]
+  }
+]

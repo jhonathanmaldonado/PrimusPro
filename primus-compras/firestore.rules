@@ -1,0 +1,75 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Função helper: verifica se o usuário autenticado tem documento no workspace
+    function isWorkspaceMember(workspaceId) {
+      return request.auth != null
+          && exists(/databases/$(database)/documents/workspaces/$(workspaceId)/usuarios/$(request.auth.uid));
+    }
+
+    // Função helper: verifica se é dono
+    function isWorkspaceOwner(workspaceId) {
+      return isWorkspaceMember(workspaceId)
+          && get(/databases/$(database)/documents/workspaces/$(workspaceId)/usuarios/$(request.auth.uid)).data.role == 'dono';
+    }
+
+    // ===== WORKSPACE ROOT =====
+    match /workspaces/{workspaceId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if isWorkspaceOwner(workspaceId);
+    }
+
+    // ===== AUTH LOOKUP (lookup público de email técnico + segredo) =====
+    match /workspaces/{workspaceId}/auth_lookup/{usuarioId} {
+      allow read: if true;
+      allow create: if request.auth != null
+                    && (isWorkspaceOwner(workspaceId)
+                        || request.auth.uid == usuarioId);
+      allow update: if isWorkspaceOwner(workspaceId)
+                    || (request.auth != null && request.auth.uid == usuarioId)
+                    || (
+                      request.resource.data.diff(resource.data).affectedKeys()
+                        .hasOnly(['tentativasFalhas', 'bloqueadoAte', 'ultimaTentativa'])
+                    );
+      allow delete: if isWorkspaceOwner(workspaceId);
+    }
+
+    // ===== USUÁRIOS (perfis dentro do workspace) =====
+    match /workspaces/{workspaceId}/usuarios/{usuarioId} {
+      allow read: if isWorkspaceMember(workspaceId)
+                  || (request.auth != null && request.auth.uid == usuarioId);
+      allow create: if request.auth != null
+                    && (request.auth.uid == usuarioId || isWorkspaceOwner(workspaceId));
+      allow update: if isWorkspaceOwner(workspaceId)
+                    || (request.auth != null && request.auth.uid == usuarioId);
+      allow delete: if isWorkspaceOwner(workspaceId);
+    }
+
+    // ===== APARELHOS =====
+    match /workspaces/{workspaceId}/aparelhos/{deviceId} {
+      allow read: if isWorkspaceMember(workspaceId);
+      allow write: if isWorkspaceMember(workspaceId);
+    }
+
+    // ===== DADOS PRINCIPAIS (categorias, itens, lista_atual, histórico) =====
+    match /workspaces/{workspaceId}/categorias/{catId} {
+      allow read, write: if isWorkspaceMember(workspaceId);
+    }
+
+    match /workspaces/{workspaceId}/itens/{itemId} {
+      allow read, write: if isWorkspaceMember(workspaceId);
+    }
+
+    // ✨ NOVO: lista_atual — estado de compra (qtd, preço, comprado)
+    match /workspaces/{workspaceId}/lista_atual/{itemId} {
+      allow read, write: if isWorkspaceMember(workspaceId);
+    }
+
+    match /workspaces/{workspaceId}/historico/{histId} {
+      allow read, create: if isWorkspaceMember(workspaceId);
+      allow update, delete: if isWorkspaceOwner(workspaceId);
+    }
+  }
+}

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Lista de Compras — Peixaria Primus</title>
+<meta name="theme-color" content="#7A1F38">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============================================================================
+     SPLASH (carregamento inicial)
+     ============================================================================ -->
+<div id="splash">
+  <div class="splash-logo">P</div>
+  <div class="splash-text">Peixaria Primus</div>
+  <div style="margin-top:8px;font-size:11px;opacity:0.7">conectando...</div>
+</div>
+
+<!-- ============================================================================
+     TELA DE LOGIN
+     ============================================================================ -->
+<div class="auth-screen" id="auth-screen" style="display:none">
+  <div class="auth-card">
+    <div class="auth-logo">P</div>
+    <div class="auth-title">Peixaria Primus</div>
+    <div class="auth-subtitle" id="auth-subtitle">Lista de Compras</div>
+
+    <!-- FORM DE LOGIN -->
+    <div id="form-login">
+      <div class="auth-field">
+        <label>Usuário</label>
+        <input type="text" id="login-username" autocomplete="username" placeholder="seu usuário">
+      </div>
+      <div class="auth-field">
+        <label>PIN (4 dígitos)</label>
+        <input type="password" id="login-pin" class="pin" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" autocomplete="current-password" placeholder="••••">
+      </div>
+      <button class="auth-btn" id="btn-login">Entrar</button>
+      <div class="auth-error" id="login-error"></div>
+
+      <div class="auth-link" id="link-criar-workspace" style="display:none">
+        Primeiro acesso? <a id="goto-criar">Criar workspace</a>
+      </div>
+    </div>
+
+    <!-- FORM DE CRIAR WORKSPACE (primeiro dono) -->
+    <div id="form-criar" style="display:none">
+      <div class="auth-info show" style="margin-bottom:14px;margin-top:0">
+        <strong>Primeiro acesso:</strong> crie sua conta de dono. Você precisa do código de admin.
+      </div>
+      <div class="auth-field">
+        <label>Código de Admin</label>
+        <input type="password" id="criar-admin-code" placeholder="código fornecido">
+      </div>
+      <div class="auth-field">
+        <label>Seu nome</label>
+        <input type="text" id="criar-nome" placeholder="ex: Jhonathan">
+      </div>
+      <div class="auth-field">
+        <label>Usuário (login)</label>
+        <input type="text" id="criar-username" placeholder="ex: jhonathan" autocapitalize="none">
+      </div>
+      <div class="auth-field">
+        <label>PIN (4 dígitos)</label>
+        <input type="password" id="criar-pin" class="pin" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="••••">
+      </div>
+      <button class="auth-btn gold" id="btn-criar">Criar conta de dono</button>
+      <div class="auth-error" id="criar-error"></div>
+      <div class="auth-link">
+        <a id="goto-login">← Voltar para login</a>
+      </div>
+    </div>
+
+    <div class="auth-foot">
+      Cuiabá, MT
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================================
+     APP PRINCIPAL
+     ============================================================================ -->
+<div id="app-main" style="display:none">
+
+  <div class="brand">
+    <div class="brand-logo">P</div>
+    <div class="brand-text">
+      <div class="brand-title">Peixaria Primus</div>
+      <div class="brand-subtitle">Lista de Compras</div>
+    </div>
+    <div class="user-chip" id="user-chip" title="Clique para sair">
+      <div class="user-avatar" id="user-avatar">?</div>
+      <div>
+        <div class="user-name" id="user-name">—</div>
+        <div class="user-role" id="user-role">—</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app">
+    <div class="tabs">
+      <button class="tab active" data-tab="lista">📋 Lista atual</button>
+      <button class="tab" data-tab="historico">📚 Histórico</button>
+    </div>
+
+    <!-- ========== ABA: LISTA ========== -->
+    <div id="tab-lista">
+      <div class="toolbar">
+        <span class="toolbar-title">Lista de Compras</span>
+        <button class="btn btn-sm" id="btn-recolher">⊟ Recolher</button>
+        <button class="btn btn-sm" id="btn-expandir">⊞ Expandir</button>
+        <button class="btn" id="btn-limpar">🧹 Limpar</button>
+        <button class="btn btn-primary" id="btn-finalizar">✓ Finalizar compra</button>
+      </div>
+
+      <div class="summary">
+        <div class="stat">
+          <div class="stat-label">Itens na lista</div>
+          <div class="stat-value" id="stat-items">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Já comprados</div>
+          <div class="stat-value" id="stat-done">0</div>
+        </div>
+        <div class="stat gold">
+          <div class="stat-label">Total estimado</div>
+          <div class="stat-value" id="stat-total">R$ 0,00</div>
+        </div>
+      </div>
+
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" class="search-input" id="search" placeholder="Buscar item... (ex: arroz, frango, batata)">
+        <button class="search-clear" id="search-clear">×</button>
+      </div>
+
+      <div id="list"></div>
+
+      <!-- Painel de adicionar -->
+      <div class="add-section">
+        <div class="add-section-title">+ Adicionar novo produto ao catálogo</div>
+        <div class="add-panel">
+          <div class="field" style="flex:2;min-width:180px">
+            <label>Nome do produto</label>
+            <input type="text" id="new-name" placeholder="Ex: Alho poró">
+          </div>
+          <div class="field" style="flex:1;min-width:100px">
+            <label>Tipo/Embalagem</label>
+            <input type="text" id="new-tipo" placeholder="Ex: und">
+          </div>
+          <div class="field" style="flex:1;min-width:140px">
+            <label>Categoria</label>
+            <select id="new-cat"></select>
+          </div>
+          <button class="btn btn-primary" id="btn-add-item">+ Adicionar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== ABA: HISTÓRICO ========== -->
+    <div id="tab-historico" style="display:none">
+      <div class="toolbar">
+        <span class="toolbar-title">Compras finalizadas</span>
+      </div>
+      <div id="history-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================================
+     TOAST
+     ============================================================================ -->
+<div class="toast" id="toast"></div>
+
+<!-- ============================================================================
+     SCRIPTS
+     ============================================================================ -->
+<script type="module" src="app.js"></script>
+</body>
+</html>
