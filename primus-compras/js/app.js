@@ -1,5 +1,5 @@
 // ============================================================================
-// APP.JS — Orquestrador principal do app
+// APP.JS — Orquestrador principal (3 abas: Criar / Atual / Histórico)
 // ============================================================================
 
 import './firebase-init.js';
@@ -16,15 +16,23 @@ import {
   setUserContext,
   observarCategorias,
   observarItens,
+  observarListaEmCriacao,
   observarListaAtual,
   observarHistorico,
   criarItem,
-  setItemListaAtual,
+  deletarItem,
+  setItemListaEmCriacao,
+  limparListaEmCriacao,
+  salvarListaParaAtual,
+  atualizarPrecoListaAtual,
+  atualizarCompradoListaAtual,
+  atualizarQtdListaAtual,
   finalizarCompra,
-  limparListaAtual,
-  seedCatalogoSeVazio,
   deletarHistorico,
-  deletarItem
+  seedCatalogoSeVazio,
+  calcularMediaPrecos,
+  getConfigMediaN,
+  setConfigMediaN
 } from './db.js';
 
 // ============================================================================
@@ -33,18 +41,19 @@ import {
 
 let categorias = [];
 let itens = [];
-let listaAtualMap = {};
+let listaEmCriacaoMap = {};   // { itemId: {qtd, ...} }
+let listaAtualMap = {};        // { itemId: {qtd, preco, comprado, ...} }
 let historico = [];
 
 let userCtx = null;
-let collapsed = {};
-let searchTerm = '';
-let currentTab = 'lista';
+let collapsedCriar = {};
+let collapsedAtual = {};
+let searchCriar = '';
+let searchAtual = '';
+let currentTab = 'criar';
+let mediaN = 5;
 
 let unsubsRefs = [];
-
-// 🔧 Flag para evitar race condition durante criação de conta
-let criandoConta = false;
 
 // ============================================================================
 // HELPERS
@@ -73,27 +82,11 @@ function showToast(msg, tipo = '') {
   showToast._timer = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
-function getEstadoLista(itemId) {
-  return listaAtualMap[itemId] || { qtd: 0, preco: 0, comprado: false };
-}
-
-function subtotal(itemId) {
-  const e = getEstadoLista(itemId);
-  return (parseFloat(e.qtd) || 0) * (parseFloat(e.preco) || 0);
-}
-
-function categoriaTotal(catId) {
-  return itens
-    .filter(i => i.categoriaId === catId)
-    .reduce((s, i) => s + subtotal(i.id), 0);
-}
-
 function matchesSearch(item, term) {
   if (!term) return true;
   const t = term.toLowerCase();
   return (item.nome || '').toLowerCase().includes(t)
-      || (item.tipo || '').toLowerCase().includes(t)
-      || (item.fornecedorPreferido || '').toLowerCase().includes(t);
+      || (item.tipo || '').toLowerCase().includes(t);
 }
 
 // ============================================================================
@@ -172,10 +165,6 @@ async function tratarCriarWorkspace() {
   btn.disabled = true;
   btn.textContent = 'Criando...';
 
-  // 🔧 Ativa flag para evitar logout automático durante criação
-  criandoConta = true;
-  console.log('[tratarCriarWorkspace] flag criandoConta = true');
-
   try {
     await criarWorkspaceEDono({
       adminCode,
@@ -184,27 +173,9 @@ async function tratarCriarWorkspace() {
       username,
       pin
     });
-    console.log('[tratarCriarWorkspace] sucesso!');
-    showToast('✓ Conta criada! Carregando...', 'success');
-
-    // 🔧 Aguarda 1 segundo para garantir que tudo foi salvo
-    await new Promise(r => setTimeout(r, 1000));
-
-    // Desativa flag
-    criandoConta = false;
-    console.log('[tratarCriarWorkspace] flag criandoConta = false');
-
-    // Força um reload do auth state
-    const auth = (await import('https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js')).getAuth();
-    if (auth.currentUser) {
-      // Dispara manualmente o onLogado
-      const { carregarPerfil } = await import('./auth.js');
-      const perfil = await carregarPerfil(auth.currentUser.uid);
-      onLogado({ user: auth.currentUser, perfil });
-    }
+    showToast('✓ Conta criada!', 'success');
+    setTimeout(() => location.reload(), 800);
   } catch (e) {
-    criandoConta = false;
-    console.error('[tratarCriarWorkspace] erro:', e);
     err.textContent = e.message || 'Erro ao criar conta';
     err.classList.add('show');
     btn.disabled = false;
@@ -221,12 +192,7 @@ async function tratarLogout() {
 
 async function onLogado({ user, perfil }) {
   if (!perfil) {
-    // 🔧 Se está criando conta, ignora a falta de perfil temporariamente
-    if (criandoConta) {
-      console.log('[onLogado] perfil ainda não criado, mas flag criandoConta=true. Ignorando.');
-      return;
-    }
-    showToast('⚠ Perfil não encontrado. Contate o administrador.', 'error');
+    showToast('⚠ Perfil não encontrado.', 'error');
     await logout();
     return;
   }
@@ -245,6 +211,14 @@ async function onLogado({ user, perfil }) {
 
   mostrarApp();
 
+  // Carrega config de média
+  try {
+    mediaN = await getConfigMediaN();
+    $('media-n').value = mediaN;
+  } catch (e) {
+    console.error('Erro carregando config média:', e);
+  }
+
   if (perfil.role === 'dono') {
     await ofertaSeedSeVazio();
   }
@@ -262,13 +236,11 @@ async function ofertaSeedSeVazio() {
     if (confirm(
       `Importar catálogo inicial?\n\n` +
       `Vai importar ${seedData.length} categorias e ${total} itens.\n\n` +
-      `Você pode editar tudo depois. Importar agora?`
+      `Importar agora?`
     )) {
       const result = await seedCatalogoSeVazio(seedData);
       if (result.importado) {
         showToast(`✓ Importado: ${result.categorias} categorias, ${result.itens} itens`, 'success');
-      } else {
-        showToast('Catálogo já tem dados', '');
       }
     }
   } catch (e) {
@@ -284,18 +256,24 @@ function iniciarListeners() {
   unsubsRefs.push(observarCategorias((cats) => {
     categorias = cats;
     popularSelectCategoria();
-    renderLista();
+    renderTudo();
   }));
 
   unsubsRefs.push(observarItens((its) => {
     itens = its;
-    renderLista();
+    renderTudo();
+  }));
+
+  unsubsRefs.push(observarListaEmCriacao((lista) => {
+    listaEmCriacaoMap = {};
+    lista.forEach(i => { listaEmCriacaoMap[i.id] = i; });
+    renderListaCriar();
   }));
 
   unsubsRefs.push(observarListaAtual((lista) => {
     listaAtualMap = {};
     lista.forEach(i => { listaAtualMap[i.id] = i; });
-    renderLista();
+    renderListaAtual();
   }));
 
   unsubsRefs.push(observarHistorico((hist) => {
@@ -304,42 +282,162 @@ function iniciarListeners() {
   }));
 }
 
+function renderTudo() {
+  renderListaCriar();
+  renderListaAtual();
+}
+
 // ============================================================================
-// RENDER LISTA
+// RENDER: ABA CRIAR LISTA
 // ============================================================================
 
-function renderLista() {
-  const el = $('list');
+function getQtdEmCriacao(itemId) {
+  return parseFloat(listaEmCriacaoMap[itemId]?.qtd || 0);
+}
+
+function temListaAtualAtiva() {
+  return Object.keys(listaAtualMap).length > 0;
+}
+
+function renderListaCriar() {
+  const el = $('list-criar');
   if (!categorias.length) {
     el.innerHTML = '<div class="empty-msg">Carregando catálogo...</div>';
-    renderResumo();
+    renderResumoCriar();
     return;
   }
 
   let html = '';
+
+  // Alerta se já tem lista atual em andamento
+  if (temListaAtualAtiva()) {
+    html += `<div class="alerta-bloqueio">
+      ⚠️ <span><strong>Atenção:</strong> Você tem uma <strong>Lista Atual</strong> em andamento. Finalize-a antes de salvar uma nova lista.</span>
+    </div>`;
+  }
+
   let anyMatch = false;
 
   for (const cat of categorias) {
     const itensCat = itens
       .filter(i => i.categoriaId === cat.id)
-      .filter(i => matchesSearch(i, searchTerm));
+      .filter(i => matchesSearch(i, searchCriar));
 
-    if (searchTerm && itensCat.length === 0) continue;
+    if (searchCriar && itensCat.length === 0) continue;
 
     const todosItensCat = itens.filter(i => i.categoriaId === cat.id);
-    if (!searchTerm && todosItensCat.length === 0) continue;
+    if (!searchCriar && todosItensCat.length === 0) continue;
 
     anyMatch = true;
-    const isCollapsed = collapsed[cat.id] && !searchTerm;
-    const subtotalCat = categoriaTotal(cat.id);
-    const withQty = todosItensCat.filter(i => (parseFloat(getEstadoLista(i.id).qtd) || 0) > 0).length;
+    const isCollapsed = collapsedCriar[cat.id] && !searchCriar;
+    const withQty = todosItensCat.filter(i => getQtdEmCriacao(i.id) > 0).length;
 
     html += `<div class="section${isCollapsed ? ' collapsed' : ''}" data-cat="${cat.id}">`;
-    html += `<div class="section-header" style="background:${escHtml(cat.cor)}" data-action="toggle-cat" data-cat-id="${cat.id}">`;
+    html += `<div class="section-header" style="background:${escHtml(cat.cor)}" data-action="toggle-cat-criar" data-cat-id="${cat.id}">`;
     html += `<div class="section-info">`;
     html += `<span class="section-toggle">▼</span>`;
     html += `<span>${escHtml(cat.nome)}</span>`;
-    html += `<span class="badge-count">${searchTerm ? itensCat.length + ' / ' : ''}${todosItensCat.length} itens${withQty ? ' · ' + withQty + ' c/ qtd' : ''}</span>`;
+    html += `<span class="badge-count">${searchCriar ? itensCat.length + ' / ' : ''}${todosItensCat.length} itens${withQty ? ' · ' + withQty + ' c/ qtd' : ''}</span>`;
+    html += `</div>`;
+    html += `</div>`;
+
+    html += `<div class="section-body"><table>`;
+    html += `<thead><tr>
+      <th class="col-item">Item</th>
+      <th class="col-tipo">Tipo</th>
+      <th class="col-media">Méd. ${mediaN}</th>
+      <th class="col-ultimo">Última</th>
+      <th class="col-qtd">Qtd</th>
+      <th class="col-action"></th>
+    </tr></thead><tbody>`;
+
+    for (const item of itensCat) {
+      const qtd = getQtdEmCriacao(item.id);
+      const media = calcularMediaPrecos(item, mediaN);
+      const ultimo = item.ultimoPreco;
+
+      html += `<tr data-item-id="${item.id}">`;
+      html += `<td class="col-item">${escHtml(item.nome)}</td>`;
+      html += `<td class="col-tipo">${escHtml(item.tipo || '')}</td>`;
+      html += `<td class="col-media">${media ? `<span class="has-value">${fmtMoeda(media)}</span>` : `<span class="no-value">—</span>`}</td>`;
+      html += `<td class="col-ultimo">${ultimo ? `<span class="has-value">${fmtMoeda(ultimo)}</span>` : `<span class="no-value">—</span>`}</td>`;
+      html += `<td class="col-qtd"><input type="number" class="qty" min="0" step="0.01" value="${qtd || ''}" placeholder="—" data-action="update-qtd-criar" data-item-id="${item.id}"></td>`;
+      html += `<td class="col-action"><button class="icon-btn danger" data-action="remover-item" data-item-id="${item.id}" title="Remover do catálogo">×</button></td>`;
+      html += `</tr>`;
+    }
+    html += `</tbody></table></div></div>`;
+  }
+
+  if (!anyMatch) {
+    if (searchCriar) {
+      html = `<div class="empty-msg">Nenhum item encontrado para "<strong>${escHtml(searchCriar)}</strong>"</div>`;
+    } else {
+      html = `<div class="empty-msg">Catálogo vazio. Adicione itens abaixo para começar.</div>`;
+    }
+  }
+
+  el.innerHTML = html;
+  renderResumoCriar();
+  $('search-criar-clear').style.display = searchCriar ? 'block' : 'none';
+}
+
+function renderResumoCriar() {
+  let totalItens = 0;
+  let totalEstimado = 0;
+  for (const item of itens) {
+    const qtd = getQtdEmCriacao(item.id);
+    if (qtd > 0) {
+      totalItens++;
+      const media = calcularMediaPrecos(item, mediaN) || item.ultimoPreco || 0;
+      totalEstimado += qtd * media;
+    }
+  }
+  $('stat-criar-items').textContent = totalItens;
+  $('stat-criar-total').textContent = fmtMoeda(totalEstimado);
+}
+
+// ============================================================================
+// RENDER: ABA LISTA ATUAL
+// ============================================================================
+
+function renderListaAtual() {
+  const el = $('list-atual');
+
+  // Empty state
+  if (!Object.keys(listaAtualMap).length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">🛒</div>
+      <div class="empty-state-text">Nenhuma lista em andamento.<br>Crie uma na aba <strong>"Criar Lista"</strong> e salve para começar.</div>
+    </div>`;
+    renderResumoAtual();
+    return;
+  }
+
+  // Agrupa itens por categoria, mas só os que estão na lista_atual
+  let html = '';
+  let anyMatch = false;
+
+  for (const cat of categorias) {
+    const itensNaListaAtual = itens
+      .filter(i => i.categoriaId === cat.id)
+      .filter(i => listaAtualMap[i.id])
+      .filter(i => matchesSearch(i, searchAtual));
+
+    if (itensNaListaAtual.length === 0) continue;
+
+    anyMatch = true;
+    const isCollapsed = collapsedAtual[cat.id] && !searchAtual;
+    const subtotalCat = itensNaListaAtual.reduce((s, i) => {
+      const e = listaAtualMap[i.id];
+      return s + (parseFloat(e.qtd) || 0) * (parseFloat(e.preco) || 0);
+    }, 0);
+
+    html += `<div class="section${isCollapsed ? ' collapsed' : ''}">`;
+    html += `<div class="section-header" style="background:${escHtml(cat.cor)}" data-action="toggle-cat-atual" data-cat-id="${cat.id}">`;
+    html += `<div class="section-info">`;
+    html += `<span class="section-toggle">▼</span>`;
+    html += `<span>${escHtml(cat.nome)}</span>`;
+    html += `<span class="badge-count">${itensNaListaAtual.length} itens</span>`;
     html += `</div>`;
     if (subtotalCat > 0) {
       html += `<span class="cat-subtotal">${fmtMoeda(subtotalCat)}</span>`;
@@ -351,56 +449,57 @@ function renderLista() {
       <th class="col-check"></th>
       <th class="col-item">Item</th>
       <th class="col-tipo">Tipo</th>
+      <th class="col-media">Méd. ${mediaN}</th>
+      <th class="col-ultimo">Última</th>
       <th class="col-qtd">Qtd</th>
-      <th class="col-preco">Preço unit.</th>
+      <th class="col-pago">Preço pago</th>
       <th class="col-subtotal">Subtotal</th>
-      <th class="col-action"></th>
     </tr></thead><tbody>`;
 
-    for (const item of itensCat) {
-      const estado = getEstadoLista(item.id);
-      const sub = subtotal(item.id);
-      const doneCls = estado.comprado ? ' done' : '';
+    for (const item of itensNaListaAtual) {
+      const estado = listaAtualMap[item.id];
+      const qtd = parseFloat(estado.qtd) || 0;
+      const preco = parseFloat(estado.preco) || 0;
+      const sub = qtd * preco;
+      const comprado = !!estado.comprado;
+      const doneCls = comprado ? ' done' : '';
+      const media = calcularMediaPrecos(item, mediaN);
+      const ultimo = item.ultimoPreco;
 
       html += `<tr class="item-row${doneCls}" data-item-id="${item.id}">`;
-      html += `<td class="col-check"><input type="checkbox" class="check" ${estado.comprado ? 'checked' : ''} data-action="toggle-comprado" data-item-id="${item.id}" title="Marcar como comprado"></td>`;
+      html += `<td class="col-check"><input type="checkbox" class="check" ${comprado ? 'checked' : ''} data-action="toggle-comprado" data-item-id="${item.id}"></td>`;
       html += `<td class="col-item">${escHtml(item.nome)}</td>`;
       html += `<td class="col-tipo">${escHtml(item.tipo || '')}</td>`;
-      html += `<td class="col-qtd"><input type="number" class="qty" min="0" step="0.01" value="${estado.qtd || ''}" placeholder="—" data-action="update-qtd" data-item-id="${item.id}"></td>`;
-      html += `<td class="col-preco"><div class="price-wrap"><input type="number" class="price" min="0" step="0.01" value="${estado.preco || ''}" placeholder="0,00" data-action="update-preco" data-item-id="${item.id}"></div></td>`;
+      html += `<td class="col-media">${media ? `<span class="has-value">${fmtMoeda(media)}</span>` : `<span class="no-value">—</span>`}</td>`;
+      html += `<td class="col-ultimo">${ultimo ? `<span class="has-value">${fmtMoeda(ultimo)}</span>` : `<span class="no-value">—</span>`}</td>`;
+      html += `<td class="col-qtd"><input type="number" class="qty" min="0" step="0.01" value="${qtd || ''}" data-action="update-qtd-atual" data-item-id="${item.id}"></td>`;
+      html += `<td class="col-pago"><div class="price-wrap"><input type="number" class="price" min="0" step="0.01" value="${preco || ''}" placeholder="0,00" data-action="update-preco-atual" data-item-id="${item.id}"></div></td>`;
       html += `<td class="col-subtotal">${sub > 0 ? fmtMoeda(sub) : '—'}</td>`;
-      html += `<td class="col-action"><div class="action-btns"><button class="icon-btn danger" data-action="remover-item" data-item-id="${item.id}" title="Remover do catálogo">×</button></div></td>`;
       html += `</tr>`;
     }
     html += `</tbody></table></div></div>`;
   }
 
-  if (!anyMatch) {
-    if (searchTerm) {
-      html = `<div class="empty-msg">Nenhum item encontrado para "<strong>${escHtml(searchTerm)}</strong>"</div>`;
-    } else {
-      html = `<div class="empty-msg">Catálogo vazio. Adicione itens abaixo para começar.</div>`;
-    }
+  if (!anyMatch && searchAtual) {
+    html = `<div class="empty-msg">Nenhum item encontrado para "<strong>${escHtml(searchAtual)}</strong>"</div>`;
   }
 
   el.innerHTML = html;
-  renderResumo();
-  $('search-clear').style.display = searchTerm ? 'block' : 'none';
+  renderResumoAtual();
+  $('search-atual-clear').style.display = searchAtual ? 'block' : 'none';
 }
 
-function renderResumo() {
+function renderResumoAtual() {
   let totalItens = 0, doneItens = 0, totalGeral = 0;
-  for (const item of itens) {
-    const e = getEstadoLista(item.id);
-    if ((parseFloat(e.qtd) || 0) > 0) {
-      totalItens++;
-      if (e.comprado) doneItens++;
-    }
-    totalGeral += subtotal(item.id);
+  for (const itemId in listaAtualMap) {
+    const e = listaAtualMap[itemId];
+    totalItens++;
+    if (e.comprado) doneItens++;
+    totalGeral += (parseFloat(e.qtd) || 0) * (parseFloat(e.preco) || 0);
   }
-  $('stat-items').textContent = totalItens;
-  $('stat-done').textContent = doneItens + (totalItens > 0 ? ' / ' + totalItens : '');
-  $('stat-total').textContent = fmtMoeda(totalGeral);
+  $('stat-atual-items').textContent = totalItens;
+  $('stat-atual-done').textContent = doneItens + (totalItens > 0 ? ' / ' + totalItens : '');
+  $('stat-atual-total').textContent = fmtMoeda(totalGeral);
 }
 
 function popularSelectCategoria() {
@@ -423,7 +522,7 @@ function popularSelectCategoria() {
 function renderHistorico() {
   const el = $('history-list');
   if (!historico.length) {
-    el.innerHTML = `<div class="history-empty">📭 Nenhuma compra finalizada ainda.<br><br>Quando terminar uma lista, clique em <strong>"Finalizar compra"</strong> para arquivá-la aqui.</div>`;
+    el.innerHTML = `<div class="history-empty">📭 Nenhuma compra finalizada ainda.<br><br>Quando finalizar uma compra na <strong>Lista Atual</strong>, ela aparecerá aqui.</div>`;
     return;
   }
   let html = '<div class="section" style="border-color:var(--wine-soft)">';
@@ -480,7 +579,7 @@ async function excluirCompraConfirm(id) {
 }
 
 // ============================================================================
-// AÇÕES DA LISTA
+// AÇÕES
 // ============================================================================
 
 async function adicionarItem() {
@@ -511,65 +610,64 @@ async function adicionarItem() {
   }
 }
 
-async function atualizarQtd(itemId, valor) {
-  const v = parseFloat(valor) || 0;
-  const estado = getEstadoLista(itemId);
+async function atualizarQtdCriar(itemId, valor) {
   try {
-    await setItemListaAtual(itemId, {
-      qtd: v,
-      preco: estado.preco || 0,
-      comprado: estado.comprado || false
-    });
-  } catch (e) {
-    showToast('⚠ Erro ao salvar: ' + e.message, 'error');
-  }
-}
-
-async function atualizarPreco(itemId, valor) {
-  const v = parseFloat(valor) || 0;
-  const estado = getEstadoLista(itemId);
-  try {
-    await setItemListaAtual(itemId, {
-      qtd: estado.qtd || 0,
-      preco: v,
-      comprado: estado.comprado || false
-    });
-  } catch (e) {
-    showToast('⚠ Erro ao salvar: ' + e.message, 'error');
-  }
-}
-
-async function toggleComprado(itemId, comprado) {
-  const estado = getEstadoLista(itemId);
-  try {
-    await setItemListaAtual(itemId, {
-      qtd: estado.qtd || 0,
-      preco: estado.preco || 0,
-      comprado: !!comprado
-    });
+    await setItemListaEmCriacao(itemId, valor);
   } catch (e) {
     showToast('⚠ Erro: ' + e.message, 'error');
   }
 }
 
-function toggleCat(catId) {
-  collapsed[catId] = !collapsed[catId];
-  renderLista();
+async function atualizarPrecoAtual(itemId, valor) {
+  try {
+    await atualizarPrecoListaAtual(itemId, valor);
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
+  }
 }
 
-function expandirOuRecolherTodas(expandir) {
-  if (expandir) {
-    collapsed = {};
-  } else {
-    categorias.forEach(c => collapsed[c.id] = true);
+async function atualizarQtdAtual(itemId, valor) {
+  try {
+    await atualizarQtdListaAtual(itemId, valor);
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
   }
-  renderLista();
+}
+
+async function toggleComprado(itemId, comprado) {
+  try {
+    await atualizarCompradoListaAtual(itemId, comprado);
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
+  }
+}
+
+function toggleCatCriar(catId) {
+  collapsedCriar[catId] = !collapsedCriar[catId];
+  renderListaCriar();
+}
+
+function toggleCatAtual(catId) {
+  collapsedAtual[catId] = !collapsedAtual[catId];
+  renderListaAtual();
+}
+
+function expandirOuRecolherCriar(expandir) {
+  if (expandir) collapsedCriar = {};
+  else categorias.forEach(c => collapsedCriar[c.id] = true);
+  renderListaCriar();
+}
+
+function expandirOuRecolherAtual(expandir) {
+  if (expandir) collapsedAtual = {};
+  else categorias.forEach(c => collapsedAtual[c.id] = true);
+  renderListaAtual();
 }
 
 async function removerItem(itemId) {
   const item = itens.find(i => i.id === itemId);
   if (!item) return;
-  if (!confirm(`Remover "${item.nome}" do catálogo? Esta ação não pode ser desfeita.`)) return;
+  if (!confirm(`Remover "${item.nome}" do catálogo?`)) return;
   try {
     await deletarItem(itemId);
     showToast('✓ Item removido', 'success');
@@ -578,30 +676,154 @@ async function removerItem(itemId) {
   }
 }
 
-async function tratarLimparLista() {
-  const total = Object.keys(listaAtualMap).length;
+async function tratarLimparCriar() {
+  const total = Object.keys(listaEmCriacaoMap).length;
   if (total === 0) {
     showToast('Lista já está vazia');
     return;
   }
-  if (!confirm(`Limpar todas as ${total} entradas (qtd, preço, comprado)?\n\nO catálogo de produtos é mantido.`)) return;
+  if (!confirm(`Limpar todas as ${total} quantidades preenchidas?`)) return;
   try {
-    await limparListaAtual();
-    showToast('✓ Lista limpa', 'success');
+    await limparListaEmCriacao();
+    showToast('✓ Limpo', 'success');
   } catch (e) {
     showToast('⚠ Erro: ' + e.message, 'error');
   }
 }
+
+// ============================================================================
+// SALVAR LISTA (modal)
+// ============================================================================
+
+function abrirModalSalvar() {
+  if (temListaAtualAtiva()) {
+    showToast('⚠ Você tem uma Lista Atual em andamento. Finalize antes.', 'error');
+    return;
+  }
+  if (Object.keys(listaEmCriacaoMap).length === 0) {
+    showToast('⚠ Lista vazia. Preencha quantidades antes.', 'error');
+    return;
+  }
+  $('modal-salvar').classList.add('show');
+}
+
+function fecharModalSalvar() {
+  $('modal-salvar').classList.remove('show');
+}
+
+async function tratarSalvar(comPdf) {
+  fecharModalSalvar();
+
+  try {
+    const qtdItens = await salvarListaParaAtual();
+    showToast(`✓ Lista salva (${qtdItens} itens)`, 'success');
+
+    if (comPdf) {
+      gerarPdfLista();
+    }
+
+    // Muda automaticamente para a aba "Lista Atual"
+    setTimeout(() => switchTab('atual'), 400);
+  } catch (e) {
+    showToast('⚠ ' + e.message, 'error');
+  }
+}
+
+// ============================================================================
+// PDF (versão simples)
+// ============================================================================
+
+function gerarPdfLista() {
+  // Gera HTML imprimível
+  const w = window.open('', '_blank');
+  let html = `
+    <html>
+    <head>
+      <title>Lista de Compras - Peixaria Primus</title>
+      <style>
+        @page { margin: 1.5cm; }
+        body { font-family: Arial, sans-serif; font-size: 12px; color: #222; }
+        h1 { color: #7A1F38; font-size: 22px; margin-bottom: 4px; border-bottom: 2px solid #E9A93A; padding-bottom: 6px; }
+        .subtitle { font-size: 11px; color: #888; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 18px; }
+        h2 { color: #fff; background: #7A1F38; padding: 6px 10px; font-size: 13px; margin-top: 14px; margin-bottom: 0; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #faf6f3; font-size: 10px; text-transform: uppercase; padding: 5px 8px; text-align: left; border-bottom: 1px solid #ddd; color: #888; }
+        td { padding: 5px 8px; border-bottom: 1px solid #eee; }
+        .qtd { font-weight: 700; color: #7A1F38; text-align: right; }
+        .preco-ref { font-size: 10px; color: #888; text-align: right; }
+        .preco-blank { border-bottom: 1px solid #999; display: inline-block; width: 60px; }
+        .total { margin-top: 20px; padding: 12px; background: #fdf4e0; border-left: 4px solid #E9A93A; font-size: 14px; }
+        .total strong { color: #c98e1f; }
+        .footer { margin-top: 30px; font-size: 10px; color: #888; text-align: center; border-top: 1px solid #ddd; padding-top: 10px; }
+      </style>
+    </head>
+    <body>
+      <h1>Peixaria Primus — Lista de Compras</h1>
+      <div class="subtitle">${new Date().toLocaleDateString('pt-BR')} · ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</div>
+  `;
+
+  let totalEstimado = 0;
+  let totalItens = 0;
+
+  for (const cat of categorias) {
+    const itensCat = itens.filter(i => i.categoriaId === cat.id && getQtdEmCriacao(i.id) > 0);
+    if (itensCat.length === 0) continue;
+
+    html += `<h2 style="background:${cat.cor}">${escHtml(cat.nome)}</h2>`;
+    html += `<table><thead><tr>
+      <th>Item</th><th>Tipo</th><th style="text-align:right">Méd. ${mediaN}</th><th style="text-align:right">Última</th><th style="text-align:right">Qtd</th><th style="text-align:right">Preço pago</th>
+    </tr></thead><tbody>`;
+
+    for (const item of itensCat) {
+      const qtd = getQtdEmCriacao(item.id);
+      const media = calcularMediaPrecos(item, mediaN);
+      const ultimo = item.ultimoPreco;
+      const ref = media || ultimo || 0;
+      totalEstimado += qtd * ref;
+      totalItens++;
+
+      html += `<tr>
+        <td>${escHtml(item.nome)}</td>
+        <td>${escHtml(item.tipo || '')}</td>
+        <td class="preco-ref">${media ? fmtMoeda(media) : '—'}</td>
+        <td class="preco-ref">${ultimo ? fmtMoeda(ultimo) : '—'}</td>
+        <td class="qtd">${qtd}</td>
+        <td><span class="preco-blank"></span></td>
+      </tr>`;
+    }
+
+    html += `</tbody></table>`;
+  }
+
+  html += `
+    <div class="total">
+      <strong>${totalItens} itens</strong> · Estimativa baseada em médias: <strong>${fmtMoeda(totalEstimado)}</strong>
+    </div>
+    <div class="footer">Peixaria Primus · Cuiabá/MT</div>
+    </body></html>
+  `;
+
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => w.print(), 500);
+}
+
+// ============================================================================
+// FINALIZAR COMPRA
+// ============================================================================
 
 async function tratarFinalizarCompra() {
   const itensEnriquecidos = [];
   let total = 0;
 
   for (const item of itens) {
-    const estado = getEstadoLista(item.id);
-    if ((parseFloat(estado.qtd) || 0) <= 0) continue;
+    const estado = listaAtualMap[item.id];
+    if (!estado) continue;
+    const qtd = parseFloat(estado.qtd) || 0;
+    const preco = parseFloat(estado.preco) || 0;
+    if (qtd <= 0) continue;
     const cat = categorias.find(c => c.id === item.categoriaId);
-    const sub = subtotal(item.id);
+    const sub = qtd * preco;
     itensEnriquecidos.push({
       itemId: item.id,
       nome: item.nome,
@@ -609,9 +831,7 @@ async function tratarFinalizarCompra() {
       categoriaId: item.categoriaId,
       categoriaNome: cat?.nome || '?',
       categoriaCor: cat?.cor || '#7A1F38',
-      qtd: parseFloat(estado.qtd) || 0,
-      preco: parseFloat(estado.preco) || 0,
-      subtotal: sub,
+      qtd, preco, subtotal: sub,
       comprado: !!estado.comprado,
       fornecedor: item.fornecedorPreferido || ''
     });
@@ -623,14 +843,19 @@ async function tratarFinalizarCompra() {
     return;
   }
 
-  if (!confirm(
-    `Finalizar compra com ${itensEnriquecidos.length} itens (${fmtMoeda(total)})?\n\n` +
-    `A lista atual será arquivada no histórico e os campos de quantidade/preço/comprado serão limpos.`
-  )) return;
+  const semPreco = itensEnriquecidos.filter(i => !i.preco).length;
+  let msg = `Finalizar compra com ${itensEnriquecidos.length} itens (${fmtMoeda(total)})?`;
+  if (semPreco > 0) {
+    msg += `\n\n⚠ Atenção: ${semPreco} itens sem preço preenchido.`;
+  }
+  msg += '\n\nA lista será arquivada no histórico.';
+
+  if (!confirm(msg)) return;
 
   try {
     await finalizarCompra(itensEnriquecidos, total);
-    showToast('✓ Compra arquivada no histórico', 'success');
+    showToast('✓ Compra finalizada e arquivada', 'success');
+    setTimeout(() => switchTab('historico'), 400);
   } catch (e) {
     showToast('⚠ Erro: ' + e.message, 'error');
     console.error(e);
@@ -646,7 +871,8 @@ function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => {
     t.classList.toggle('active', t.dataset.tab === tab);
   });
-  $('tab-lista').style.display = tab === 'lista' ? 'block' : 'none';
+  $('tab-criar').style.display = tab === 'criar' ? 'block' : 'none';
+  $('tab-atual').style.display = tab === 'atual' ? 'block' : 'none';
   $('tab-historico').style.display = tab === 'historico' ? 'block' : 'none';
   if (tab === 'historico') renderHistorico();
 }
@@ -656,12 +882,12 @@ function switchTab(tab) {
 // ============================================================================
 
 function setupEventos() {
+  // Login
   $('btn-login').addEventListener('click', tratarLogin);
   $('login-pin').addEventListener('keydown', e => { if (e.key === 'Enter') tratarLogin(); });
   $('login-username').addEventListener('keydown', e => {
     if (e.key === 'Enter') $('login-pin').focus();
   });
-
   $('goto-criar').addEventListener('click', () => {
     $('form-login').style.display = 'none';
     $('form-criar').style.display = 'block';
@@ -673,48 +899,102 @@ function setupEventos() {
   $('btn-criar').addEventListener('click', tratarCriarWorkspace);
   $('criar-pin').addEventListener('keydown', e => { if (e.key === 'Enter') tratarCriarWorkspace(); });
 
+  // Header / logout
   $('user-chip').addEventListener('click', tratarLogout);
 
+  // Tabs
   document.querySelectorAll('.tab').forEach(t => {
     t.addEventListener('click', () => switchTab(t.dataset.tab));
   });
 
-  $('btn-recolher').addEventListener('click', () => expandirOuRecolherTodas(false));
-  $('btn-expandir').addEventListener('click', () => expandirOuRecolherTodas(true));
-  $('btn-limpar').addEventListener('click', tratarLimparLista);
-  $('btn-finalizar').addEventListener('click', tratarFinalizarCompra);
+  // Aba Criar
+  $('btn-criar-recolher').addEventListener('click', () => expandirOuRecolherCriar(false));
+  $('btn-criar-expandir').addEventListener('click', () => expandirOuRecolherCriar(true));
+  $('btn-criar-limpar').addEventListener('click', tratarLimparCriar);
+  $('btn-salvar-lista').addEventListener('click', abrirModalSalvar);
   $('btn-add-item').addEventListener('click', adicionarItem);
-
   ['new-name', 'new-tipo'].forEach(id => {
     $(id).addEventListener('keydown', e => { if (e.key === 'Enter') adicionarItem(); });
   });
-
-  $('search').addEventListener('input', e => {
-    searchTerm = e.target.value.trim();
-    renderLista();
+  $('search-criar').addEventListener('input', e => {
+    searchCriar = e.target.value.trim();
+    renderListaCriar();
   });
-  $('search-clear').addEventListener('click', () => {
-    $('search').value = '';
-    searchTerm = '';
-    renderLista();
+  $('search-criar-clear').addEventListener('click', () => {
+    $('search-criar').value = '';
+    searchCriar = '';
+    renderListaCriar();
   });
 
-  $('list').addEventListener('change', e => {
+  // Config média
+  $('media-n').addEventListener('change', async e => {
+    mediaN = parseInt(e.target.value, 10) || 5;
+    try {
+      await setConfigMediaN(mediaN);
+      renderTudo();
+      showToast(`✓ Média configurada para ${mediaN} compras`, 'success');
+    } catch (e) {
+      showToast('⚠ Erro: ' + e.message, 'error');
+    }
+  });
+
+  // Aba Atual
+  $('btn-atual-recolher').addEventListener('click', () => expandirOuRecolherAtual(false));
+  $('btn-atual-expandir').addEventListener('click', () => expandirOuRecolherAtual(true));
+  $('btn-finalizar').addEventListener('click', tratarFinalizarCompra);
+  $('search-atual').addEventListener('input', e => {
+    searchAtual = e.target.value.trim();
+    renderListaAtual();
+  });
+  $('search-atual-clear').addEventListener('click', () => {
+    $('search-atual').value = '';
+    searchAtual = '';
+    renderListaAtual();
+  });
+
+  // Modal salvar
+  $('btn-salvar-com-pdf').addEventListener('click', () => tratarSalvar(true));
+  $('btn-salvar-sem-pdf').addEventListener('click', () => tratarSalvar(false));
+  document.querySelectorAll('[data-close-modal]').forEach(b => {
+    b.addEventListener('click', () => {
+      $(b.dataset.closeModal).classList.remove('show');
+    });
+  });
+  $('modal-salvar').addEventListener('click', e => {
+    if (e.target.id === 'modal-salvar') fecharModalSalvar();
+  });
+
+  // Delegação - aba Criar
+  $('list-criar').addEventListener('change', e => {
     const action = e.target.dataset.action;
     const itemId = e.target.dataset.itemId;
     if (!action || !itemId) return;
-    if (action === 'update-qtd') atualizarQtd(itemId, e.target.value);
-    else if (action === 'update-preco') atualizarPreco(itemId, e.target.value);
-    else if (action === 'toggle-comprado') toggleComprado(itemId, e.target.checked);
+    if (action === 'update-qtd-criar') atualizarQtdCriar(itemId, e.target.value);
   });
-  $('list').addEventListener('click', e => {
+  $('list-criar').addEventListener('click', e => {
     const target = e.target.closest('[data-action]');
     if (!target) return;
     const action = target.dataset.action;
-    if (action === 'toggle-cat') toggleCat(target.dataset.catId);
+    if (action === 'toggle-cat-criar') toggleCatCriar(target.dataset.catId);
     else if (action === 'remover-item') removerItem(target.dataset.itemId);
   });
 
+  // Delegação - aba Atual
+  $('list-atual').addEventListener('change', e => {
+    const action = e.target.dataset.action;
+    const itemId = e.target.dataset.itemId;
+    if (!action || !itemId) return;
+    if (action === 'update-qtd-atual') atualizarQtdAtual(itemId, e.target.value);
+    else if (action === 'update-preco-atual') atualizarPrecoAtual(itemId, e.target.value);
+    else if (action === 'toggle-comprado') toggleComprado(itemId, e.target.checked);
+  });
+  $('list-atual').addEventListener('click', e => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+    if (target.dataset.action === 'toggle-cat-atual') toggleCatAtual(target.dataset.catId);
+  });
+
+  // Delegação - histórico
   $('history-list').addEventListener('click', e => {
     const target = e.target.closest('[data-action]');
     if (!target) return;
@@ -722,21 +1002,26 @@ function setupEventos() {
     else if (target.dataset.action === 'excluir-compra') excluirCompraConfirm(target.dataset.histId);
   });
 
+  // Atalhos
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      if ($('search').value) {
-        $('search').value = '';
-        searchTerm = '';
-        renderLista();
+      if ($('modal-salvar').classList.contains('show')) {
+        fecharModalSalvar();
+        return;
       }
-    }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'f' && currentTab === 'lista') {
-      e.preventDefault();
-      $('search').focus();
-      $('search').select();
+      if (currentTab === 'criar' && $('search-criar').value) {
+        $('search-criar').value = '';
+        searchCriar = '';
+        renderListaCriar();
+      } else if (currentTab === 'atual' && $('search-atual').value) {
+        $('search-atual').value = '';
+        searchAtual = '';
+        renderListaAtual();
+      }
     }
   });
 
+  // PIN: só números
   ['login-pin', 'criar-pin'].forEach(id => {
     $(id).addEventListener('input', e => {
       e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
@@ -754,11 +1039,6 @@ function init() {
 
   observarAuth(estado => {
     if (!estado) {
-      // Se está criando conta, ignora o estado deslogado momentâneo
-      if (criandoConta) {
-        console.log('[observarAuth] deslogado mas criandoConta=true. Ignorando.');
-        return;
-      }
       userCtx = null;
       setUserContext(null);
       mostrarLogin();
