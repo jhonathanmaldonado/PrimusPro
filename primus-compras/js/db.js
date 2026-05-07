@@ -258,17 +258,14 @@ export async function atualizarCompradoListaAtual(itemId, comprado) {
   }, { merge: true });
 }
 
-export async function atualizarQtdListaAtual(itemId, qtd) {
+export async function removerItemListaAtual(itemId) {
   const ref = doc(db, ...wsPath(), 'lista_atual', itemId);
-  const qtdNum = parseFloat(qtd) || 0;
-  if (qtdNum === 0) {
-    try { await deleteDoc(ref); } catch {}
-    return;
+  try {
+    await deleteDoc(ref);
+  } catch (e) {
+    console.error('Erro ao remover item:', e);
+    throw e;
   }
-  await setDoc(ref, {
-    qtd: qtdNum,
-    ...carimboAuditoria()
-  }, { merge: true });
 }
 
 export async function limparListaAtual() {
