@@ -9,25 +9,20 @@
 </head>
 <body>
 
-<!-- ============================================================================
-     SPLASH (carregamento inicial)
-     ============================================================================ -->
+<!-- SPLASH -->
 <div id="splash">
   <div class="splash-logo">P</div>
   <div class="splash-text">Peixaria Primus</div>
   <div style="margin-top:8px;font-size:11px;opacity:0.7">conectando...</div>
 </div>
 
-<!-- ============================================================================
-     TELA DE LOGIN
-     ============================================================================ -->
+<!-- TELA DE LOGIN -->
 <div class="auth-screen" id="auth-screen" style="display:none">
   <div class="auth-card">
     <div class="auth-logo">P</div>
     <div class="auth-title">Peixaria Primus</div>
     <div class="auth-subtitle" id="auth-subtitle">Lista de Compras</div>
 
-    <!-- FORM DE LOGIN -->
     <div id="form-login">
       <div class="auth-field">
         <label>Usuário</label>
@@ -45,7 +40,6 @@
       </div>
     </div>
 
-    <!-- FORM DE CRIAR WORKSPACE (primeiro dono) -->
     <div id="form-criar" style="display:none">
       <div class="auth-info show" style="margin-bottom:14px;margin-top:0">
         <strong>Primeiro acesso:</strong> crie sua conta de dono. Você precisa do código de admin.
@@ -73,15 +67,11 @@
       </div>
     </div>
 
-    <div class="auth-foot">
-      Cuiabá, MT
-    </div>
+    <div class="auth-foot">Cuiabá, MT</div>
   </div>
 </div>
 
-<!-- ============================================================================
-     APP PRINCIPAL
-     ============================================================================ -->
+<!-- APP PRINCIPAL -->
 <div id="app-main" style="display:none">
 
   <div class="brand">
@@ -101,44 +91,48 @@
 
   <div class="app">
     <div class="tabs">
-      <button class="tab active" data-tab="lista">📋 Lista atual</button>
+      <button class="tab active" data-tab="criar">📝 Criar Lista</button>
+      <button class="tab" data-tab="atual">🛒 Lista Atual</button>
       <button class="tab" data-tab="historico">📚 Histórico</button>
     </div>
 
-    <!-- ========== ABA: LISTA ========== -->
-    <div id="tab-lista">
+    <!-- ========== ABA: CRIAR LISTA ========== -->
+    <div id="tab-criar">
       <div class="toolbar">
-        <span class="toolbar-title">Lista de Compras</span>
-        <button class="btn btn-sm" id="btn-recolher">⊟ Recolher</button>
-        <button class="btn btn-sm" id="btn-expandir">⊞ Expandir</button>
-        <button class="btn" id="btn-limpar">🧹 Limpar</button>
-        <button class="btn btn-primary" id="btn-finalizar">✓ Finalizar compra</button>
+        <span class="toolbar-title">Criar Nova Lista</span>
+        <div class="config-media">
+          <label>Média das últimas:</label>
+          <select id="media-n">
+            <option value="3">3</option>
+            <option value="5" selected>5</option>
+            <option value="10">10</option>
+          </select>
+        </div>
+        <button class="btn btn-sm" id="btn-criar-recolher">⊟ Recolher</button>
+        <button class="btn btn-sm" id="btn-criar-expandir">⊞ Expandir</button>
+        <button class="btn" id="btn-criar-limpar">🧹 Limpar</button>
+        <button class="btn btn-primary" id="btn-salvar-lista">💾 Salvar Lista</button>
       </div>
 
       <div class="summary">
         <div class="stat">
-          <div class="stat-label">Itens na lista</div>
-          <div class="stat-value" id="stat-items">0</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">Já comprados</div>
-          <div class="stat-value" id="stat-done">0</div>
+          <div class="stat-label">Itens com qtd</div>
+          <div class="stat-value" id="stat-criar-items">0</div>
         </div>
         <div class="stat gold">
-          <div class="stat-label">Total estimado</div>
-          <div class="stat-value" id="stat-total">R$ 0,00</div>
+          <div class="stat-label">Total estimado (média)</div>
+          <div class="stat-value" id="stat-criar-total">R$ 0,00</div>
         </div>
       </div>
 
       <div class="search-wrap">
         <span class="search-icon">🔍</span>
-        <input type="text" class="search-input" id="search" placeholder="Buscar item... (ex: arroz, frango, batata)">
-        <button class="search-clear" id="search-clear">×</button>
+        <input type="text" class="search-input" id="search-criar" placeholder="Buscar item...">
+        <button class="search-clear" id="search-criar-clear">×</button>
       </div>
 
-      <div id="list"></div>
+      <div id="list-criar"></div>
 
-      <!-- Painel de adicionar -->
       <div class="add-section">
         <div class="add-section-title">+ Adicionar novo produto ao catálogo</div>
         <div class="add-panel">
@@ -159,6 +153,39 @@
       </div>
     </div>
 
+    <!-- ========== ABA: LISTA ATUAL ========== -->
+    <div id="tab-atual" style="display:none">
+      <div class="toolbar">
+        <span class="toolbar-title">Lista em compra</span>
+        <button class="btn btn-sm" id="btn-atual-recolher">⊟ Recolher</button>
+        <button class="btn btn-sm" id="btn-atual-expandir">⊞ Expandir</button>
+        <button class="btn btn-primary" id="btn-finalizar">✓ Finalizar Compra</button>
+      </div>
+
+      <div class="summary">
+        <div class="stat">
+          <div class="stat-label">Itens na lista</div>
+          <div class="stat-value" id="stat-atual-items">0</div>
+        </div>
+        <div class="stat">
+          <div class="stat-label">Comprados</div>
+          <div class="stat-value" id="stat-atual-done">0</div>
+        </div>
+        <div class="stat gold">
+          <div class="stat-label">Total pago</div>
+          <div class="stat-value" id="stat-atual-total">R$ 0,00</div>
+        </div>
+      </div>
+
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" class="search-input" id="search-atual" placeholder="Buscar item...">
+        <button class="search-clear" id="search-atual-clear">×</button>
+      </div>
+
+      <div id="list-atual"></div>
+    </div>
+
     <!-- ========== ABA: HISTÓRICO ========== -->
     <div id="tab-historico" style="display:none">
       <div class="toolbar">
@@ -169,14 +196,28 @@
   </div>
 </div>
 
-<!-- ============================================================================
-     TOAST
-     ============================================================================ -->
+<!-- MODAL: SALVAR + PDF -->
+<div class="modal-bg" id="modal-salvar">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">💾 Salvar Lista</span>
+      <button class="modal-close" data-close-modal="modal-salvar">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="margin-bottom:12px">A lista será movida para a aba <strong>"Lista Atual"</strong>, onde você preencherá os preços pagos durante a compra.</p>
+      <p style="margin-bottom:16px;color:var(--muted);font-size:13px">Deseja gerar um PDF da lista para imprimir/levar ao mercado?</p>
+
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-primary" id="btn-salvar-com-pdf" style="width:100%;padding:14px">💾 Salvar e gerar PDF</button>
+        <button class="btn" id="btn-salvar-sem-pdf" style="width:100%;padding:14px">💾 Apenas salvar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- TOAST -->
 <div class="toast" id="toast"></div>
 
-<!-- ============================================================================
-     SCRIPTS
-     ============================================================================ -->
 <script type="module" src="js/app.js"></script>
 </body>
 </html>
