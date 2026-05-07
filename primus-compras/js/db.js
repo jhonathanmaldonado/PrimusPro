@@ -1,5 +1,5 @@
 // ============================================================================
-// DB.JS — Operações no Firestore
+// DB.JS — Operações no Firestore (com lista_em_criacao + média histórica)
 // ============================================================================
 
 import {
@@ -13,6 +13,7 @@ import {
   collection,
   query,
   orderBy,
+  limit,
   onSnapshot,
   serverTimestamp,
   writeBatch
@@ -29,10 +30,11 @@ const wsPath = () => ['workspaces', WORKSPACE_ID];
 const categoriasCol = () => collection(db, ...wsPath(), 'categorias');
 const itensCol = () => collection(db, ...wsPath(), 'itens');
 const listaAtualCol = () => collection(db, ...wsPath(), 'lista_atual');
+const listaEmCriacaoCol = () => collection(db, ...wsPath(), 'lista_em_criacao');
 const historicoCol = () => collection(db, ...wsPath(), 'historico');
 
 // ============================================================================
-// CONTEXTO DO USUÁRIO ATUAL
+// CONTEXTO DO USUÁRIO
 // ============================================================================
 
 let _userCtx = null;
@@ -45,6 +47,27 @@ function carimboAuditoria() {
     atualizadoPor: _userCtx?.uid || null,
     atualizadoPorNome: _userCtx?.nome || 'desconhecido'
   };
+}
+
+// ============================================================================
+// CONFIGURAÇÕES DO WORKSPACE
+// ============================================================================
+
+export async function getConfigMediaN() {
+  try {
+    const wsRef = doc(db, ...wsPath());
+    const snap = await getDoc(wsRef);
+    if (!snap.exists()) return 5;
+    const config = snap.data().config || {};
+    return config.mediaN || 5;
+  } catch {
+    return 5;
+  }
+}
+
+export async function setConfigMediaN(n) {
+  const wsRef = doc(db, ...wsPath());
+  await updateDoc(wsRef, { 'config.mediaN': n });
 }
 
 // ============================================================================
@@ -116,6 +139,7 @@ export async function criarItem({ nome, tipo, categoriaId, fornecedorPreferido, 
     ultimoPreco: null,
     ultimoPrecoData: null,
     precoAnterior: null,
+    historicoPrecos: [],
     criadoEm: serverTimestamp(),
     criadoPor: _userCtx?.uid || null,
     ...carimboAuditoria()
@@ -131,12 +155,84 @@ export async function atualizarItem(id, dados) {
 export async function deletarItem(id) {
   const ref = doc(db, ...wsPath(), 'itens', id);
   await deleteDoc(ref);
-  const listaRef = doc(db, ...wsPath(), 'lista_atual', id);
-  try { await deleteDoc(listaRef); } catch (e) { /* não estava na lista */ }
+  // Limpa também das listas
+  try { await deleteDoc(doc(db, ...wsPath(), 'lista_atual', id)); } catch {}
+  try { await deleteDoc(doc(db, ...wsPath(), 'lista_em_criacao', id)); } catch {}
 }
 
 // ============================================================================
-// LISTA ATUAL
+// LISTA EM CRIAÇÃO (rascunho — só quantidades)
+// ============================================================================
+
+export function observarListaEmCriacao(callback) {
+  return onSnapshot(listaEmCriacaoCol(), (snap) => {
+    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(lista);
+  });
+}
+
+export async function setItemListaEmCriacao(itemId, qtd) {
+  const ref = doc(db, ...wsPath(), 'lista_em_criacao', itemId);
+  const qtdNum = parseFloat(qtd) || 0;
+
+  if (qtdNum === 0) {
+    try { await deleteDoc(ref); } catch {}
+    return;
+  }
+
+  await setDoc(ref, {
+    itemId,
+    qtd: qtdNum,
+    ...carimboAuditoria()
+  }, { merge: true });
+}
+
+export async function limparListaEmCriacao() {
+  const snap = await getDocs(listaEmCriacaoCol());
+  const batch = writeBatch(db);
+  snap.docs.forEach(d => batch.delete(d.ref));
+  await batch.commit();
+}
+
+/**
+ * Move tudo da lista_em_criacao para lista_atual.
+ * Falha se já tiver lista_atual ativa.
+ */
+export async function salvarListaParaAtual() {
+  // Verifica se já tem lista_atual ativa
+  const atualSnap = await getDocs(listaAtualCol());
+  if (!atualSnap.empty) {
+    throw new Error('Já existe uma Lista Atual em andamento. Finalize-a primeiro.');
+  }
+
+  // Pega tudo da lista_em_criacao
+  const criacaoSnap = await getDocs(listaEmCriacaoCol());
+  if (criacaoSnap.empty) {
+    throw new Error('Lista vazia. Adicione quantidades antes de salvar.');
+  }
+
+  // Move em batch: deleta de criacao e insere em atual
+  const batch = writeBatch(db);
+  criacaoSnap.docs.forEach(d => {
+    const dados = d.data();
+    const novoRef = doc(db, ...wsPath(), 'lista_atual', d.id);
+    batch.set(novoRef, {
+      itemId: d.id,
+      qtd: dados.qtd || 0,
+      preco: 0,
+      comprado: false,
+      observacao: '',
+      ...carimboAuditoria()
+    });
+    batch.delete(d.ref);
+  });
+  await batch.commit();
+
+  return criacaoSnap.size;
+}
+
+// ============================================================================
+// LISTA ATUAL (compra em curso — preço pago + comprado)
 // ============================================================================
 
 export function observarListaAtual(callback) {
@@ -146,31 +242,33 @@ export function observarListaAtual(callback) {
   });
 }
 
-export async function setItemListaAtual(itemId, { qtd, preco, comprado, observacao }) {
+export async function atualizarPrecoListaAtual(itemId, preco) {
   const ref = doc(db, ...wsPath(), 'lista_atual', itemId);
-  const qtdNum = parseFloat(qtd) || 0;
-  const precoNum = parseFloat(preco) || 0;
-  const obs = observacao || '';
-
-  if (qtdNum === 0 && precoNum === 0 && !comprado && !obs) {
-    try { await deleteDoc(ref); } catch (e) { /* já não estava */ }
-    return;
-  }
-
   await setDoc(ref, {
-    itemId,
-    qtd: qtdNum,
-    preco: precoNum,
-    comprado: !!comprado,
-    observacao: obs,
+    preco: parseFloat(preco) || 0,
     ...carimboAuditoria()
   }, { merge: true });
 }
 
-export async function atualizarCampoListaAtual(itemId, campo, valor) {
+export async function atualizarCompradoListaAtual(itemId, comprado) {
   const ref = doc(db, ...wsPath(), 'lista_atual', itemId);
-  const update = { [campo]: valor, ...carimboAuditoria() };
-  await setDoc(ref, { itemId, ...update }, { merge: true });
+  await setDoc(ref, {
+    comprado: !!comprado,
+    ...carimboAuditoria()
+  }, { merge: true });
+}
+
+export async function atualizarQtdListaAtual(itemId, qtd) {
+  const ref = doc(db, ...wsPath(), 'lista_atual', itemId);
+  const qtdNum = parseFloat(qtd) || 0;
+  if (qtdNum === 0) {
+    try { await deleteDoc(ref); } catch {}
+    return;
+  }
+  await setDoc(ref, {
+    qtd: qtdNum,
+    ...carimboAuditoria()
+  }, { merge: true });
 }
 
 export async function limparListaAtual() {
@@ -192,6 +290,9 @@ export function observarHistorico(callback, limite = 50) {
   });
 }
 
+/**
+ * Finaliza compra: cria histórico, atualiza histórico de preços nos itens, limpa lista_atual.
+ */
 export async function finalizarCompra(itensEnriquecidos, total) {
   if (!itensEnriquecidos.length) {
     throw new Error('Lista vazia');
@@ -206,6 +307,7 @@ export async function finalizarCompra(itensEnriquecidos, total) {
     itens: itensEnriquecidos
   });
 
+  // Atualiza histórico de preços em cada item do catálogo
   const batch = writeBatch(db);
   for (const it of itensEnriquecidos) {
     if (!it.itemId || !it.preco) continue;
@@ -213,10 +315,20 @@ export async function finalizarCompra(itensEnriquecidos, total) {
     const atualSnap = await getDoc(itemRef);
     if (!atualSnap.exists()) continue;
     const atual = atualSnap.data();
+    const histPrecos = (atual.historicoPrecos || []).slice(); // copia array
+    histPrecos.unshift({
+      preco: it.preco,
+      data: new Date().toISOString(),
+      qtd: it.qtd
+    });
+    // Mantém apenas últimas 20 (suficiente pra qualquer média)
+    while (histPrecos.length > 20) histPrecos.pop();
+
     batch.update(itemRef, {
       precoAnterior: atual.ultimoPreco || null,
       ultimoPreco: it.preco,
       ultimoPrecoData: serverTimestamp(),
+      historicoPrecos: histPrecos,
       ...carimboAuditoria()
     });
   }
@@ -230,6 +342,21 @@ export async function finalizarCompra(itensEnriquecidos, total) {
 export async function deletarHistorico(id) {
   const ref = doc(db, ...wsPath(), 'historico', id);
   await deleteDoc(ref);
+}
+
+// ============================================================================
+// HELPERS DE MÉDIA HISTÓRICA
+// ============================================================================
+
+/**
+ * Calcula média das últimas N compras de um item, baseado em historicoPrecos.
+ */
+export function calcularMediaPrecos(item, n = 5) {
+  const hist = item.historicoPrecos || [];
+  if (!hist.length) return null;
+  const ultimasN = hist.slice(0, n);
+  const soma = ultimasN.reduce((s, h) => s + (parseFloat(h.preco) || 0), 0);
+  return soma / ultimasN.length;
 }
 
 // ============================================================================
@@ -272,6 +399,7 @@ export async function seedCatalogoSeVazio(seedData) {
         ultimoPreco: null,
         ultimoPrecoData: null,
         precoAnterior: null,
+        historicoPrecos: [],
         criadoEm: serverTimestamp(),
         criadoPor: _userCtx?.uid || null,
         atualizadoEm: serverTimestamp(),
