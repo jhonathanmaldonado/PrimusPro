@@ -199,19 +199,16 @@ export async function limparListaEmCriacao() {
  * Falha se já tiver lista_atual ativa.
  */
 export async function salvarListaParaAtual() {
-  // Verifica se já tem lista_atual ativa
   const atualSnap = await getDocs(listaAtualCol());
   if (!atualSnap.empty) {
     throw new Error('Já existe uma Lista Atual em andamento. Finalize-a primeiro.');
   }
 
-  // Pega tudo da lista_em_criacao
   const criacaoSnap = await getDocs(listaEmCriacaoCol());
   if (criacaoSnap.empty) {
     throw new Error('Lista vazia. Adicione quantidades antes de salvar.');
   }
 
-  // Move em batch: deleta de criacao e insere em atual
   const batch = writeBatch(db);
   criacaoSnap.docs.forEach(d => {
     const dados = d.data();
@@ -254,6 +251,19 @@ export async function atualizarCompradoListaAtual(itemId, comprado) {
   const ref = doc(db, ...wsPath(), 'lista_atual', itemId);
   await setDoc(ref, {
     comprado: !!comprado,
+    ...carimboAuditoria()
+  }, { merge: true });
+}
+
+export async function atualizarQtdListaAtual(itemId, qtd) {
+  const ref = doc(db, ...wsPath(), 'lista_atual', itemId);
+  const qtdNum = parseFloat(qtd) || 0;
+  if (qtdNum === 0) {
+    try { await deleteDoc(ref); } catch {}
+    return;
+  }
+  await setDoc(ref, {
+    qtd: qtdNum,
     ...carimboAuditoria()
   }, { merge: true });
 }
@@ -312,13 +322,12 @@ export async function finalizarCompra(itensEnriquecidos, total) {
     const atualSnap = await getDoc(itemRef);
     if (!atualSnap.exists()) continue;
     const atual = atualSnap.data();
-    const histPrecos = (atual.historicoPrecos || []).slice(); // copia array
+    const histPrecos = (atual.historicoPrecos || []).slice();
     histPrecos.unshift({
       preco: it.preco,
       data: new Date().toISOString(),
       qtd: it.qtd
     });
-    // Mantém apenas últimas 20 (suficiente pra qualquer média)
     while (histPrecos.length > 20) histPrecos.pop();
 
     batch.update(itemRef, {
