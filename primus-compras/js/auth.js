@@ -1,5 +1,5 @@
 // ============================================================================
-// AUTH.JS — Login, cadastro e proteção anti-brute-force
+// AUTH.JS — Login, cadastro e proteção anti-brute-force (com logs detalhados)
 // ============================================================================
 
 import {
@@ -76,11 +76,13 @@ export function validarUsername(u) {
 
 export async function buscarAuthLookup(username) {
   const usernameNorm = normalizarUsername(username);
+  console.log('[buscarAuthLookup] procurando username normalizado:', usernameNorm);
   if (!usernameNorm) return null;
 
   const lookupRef = collection(db, 'workspaces', WORKSPACE_ID, 'auth_lookup');
   const q = query(lookupRef, where('username', '==', usernameNorm));
   const snap = await getDocs(q);
+  console.log('[buscarAuthLookup] documentos encontrados:', snap.size);
   if (snap.empty) return null;
 
   const docSnap = snap.docs[0];
@@ -128,6 +130,7 @@ async function zerarTentativas(lookupId) {
 // ============================================================================
 
 export async function login(username, pin) {
+  console.log('[login] iniciando, username:', username);
   if (!validarUsername(normalizarUsername(username))) {
     const e = new Error('Nome de usuário inválido');
     e.codigo = 'username_invalido';
@@ -141,6 +144,7 @@ export async function login(username, pin) {
 
   const lookup = await buscarAuthLookup(username);
   if (!lookup) {
+    console.log('[login] lookup não encontrado');
     const e = new Error('Usuário não encontrado');
     e.codigo = 'nao_encontrado';
     throw e;
@@ -165,6 +169,7 @@ export async function login(username, pin) {
 
     return userCred.user;
   } catch (err) {
+    console.error('[login] erro no signIn:', err);
     await registrarTentativaFalha(lookup.id);
     const e = new Error('PIN incorreto');
     e.codigo = 'pin_incorreto';
@@ -173,23 +178,38 @@ export async function login(username, pin) {
 }
 
 // ============================================================================
-// CADASTRO DO DONO
+// CADASTRO DO DONO (com logs detalhados em CADA ETAPA)
 // ============================================================================
 
 export async function workspaceTemDono() {
-  const wsRef = doc(db, 'workspaces', WORKSPACE_ID);
-  const snap = await getDoc(wsRef);
-  return snap.exists() && snap.data().criadoPor;
+  console.log('[workspaceTemDono] verificando...');
+  try {
+    const wsRef = doc(db, 'workspaces', WORKSPACE_ID);
+    const snap = await getDoc(wsRef);
+    const tem = snap.exists() && snap.data().criadoPor;
+    console.log('[workspaceTemDono] resultado:', tem);
+    return tem;
+  } catch (err) {
+    console.error('[workspaceTemDono] ERRO:', err);
+    throw err;
+  }
 }
 
 export async function criarWorkspaceEDono({ adminCode, nomeWorkspace, nome, username, pin }) {
+  console.log('[criarWorkspaceEDono] INICIANDO');
+  console.log('  - nome:', nome);
+  console.log('  - username:', username);
+
   if (adminCode !== ADMIN_CODE) {
+    console.log('[criarWorkspaceEDono] codigo admin invalido');
     const e = new Error('Código de administrador inválido');
     e.codigo = 'admin_invalido';
     throw e;
   }
 
   const usernameNorm = normalizarUsername(username);
+  console.log('  - username normalizado:', usernameNorm);
+
   if (!validarUsername(usernameNorm)) {
     const e = new Error('Nome de usuário inválido (use 3-20 letras/números/underscore)');
     e.codigo = 'username_invalido';
@@ -201,12 +221,14 @@ export async function criarWorkspaceEDono({ adminCode, nomeWorkspace, nome, user
     throw e;
   }
 
+  console.log('[criarWorkspaceEDono] verificando se ja tem dono...');
   if (await workspaceTemDono()) {
     const e = new Error('Workspace já está configurado. Faça login normalmente.');
     e.codigo = 'ja_existe';
     throw e;
   }
 
+  console.log('[criarWorkspaceEDono] verificando se username existe...');
   const lookupExistente = await buscarAuthLookup(usernameNorm);
   if (lookupExistente) {
     const e = new Error('Este nome de usuário já está em uso');
@@ -214,46 +236,79 @@ export async function criarWorkspaceEDono({ adminCode, nomeWorkspace, nome, user
     throw e;
   }
 
+  console.log('[criarWorkspaceEDono] gerando segredo e criando usuario no Firebase Auth...');
   const segredo = gerarSegredo();
   const emailTecnico = `${usernameNorm}@${EMAIL_DOMAIN}`;
   const senha = await derivarSenha(pin, segredo);
 
-  const userCred = await createUserWithEmailAndPassword(auth, emailTecnico, senha);
-  const uid = userCred.user.uid;
+  let uid;
+  try {
+    const userCred = await createUserWithEmailAndPassword(auth, emailTecnico, senha);
+    uid = userCred.user.uid;
+    console.log('[criarWorkspaceEDono] usuario Firebase Auth criado, uid:', uid);
+  } catch (err) {
+    console.error('[criarWorkspaceEDono] FALHA AO CRIAR NO FIREBASE AUTH:', err);
+    throw err;
+  }
 
-  const wsRef = doc(db, 'workspaces', WORKSPACE_ID);
-  await setDoc(wsRef, {
-    nome: nomeWorkspace || 'Peixaria Primus',
-    criadoEm: serverTimestamp(),
-    criadoPor: uid,
-    config: {
-      moeda: 'BRL',
-      locale: 'pt-BR'
-    }
-  });
+  // PASSO 1: Criar workspace
+  try {
+    console.log('[criarWorkspaceEDono] criando workspace doc...');
+    const wsRef = doc(db, 'workspaces', WORKSPACE_ID);
+    await setDoc(wsRef, {
+      nome: nomeWorkspace || 'Peixaria Primus',
+      criadoEm: serverTimestamp(),
+      criadoPor: uid,
+      config: {
+        moeda: 'BRL',
+        locale: 'pt-BR'
+      }
+    });
+    console.log('[criarWorkspaceEDono] ✓ workspace criado');
+  } catch (err) {
+    console.error('[criarWorkspaceEDono] FALHA AO CRIAR WORKSPACE:', err);
+    throw new Error('Falha ao criar workspace: ' + err.message);
+  }
 
-  const userRef = doc(db, 'workspaces', WORKSPACE_ID, 'usuarios', uid);
-  await setDoc(userRef, {
-    nome: nome,
-    username: usernameNorm,
-    role: 'dono',
-    ativo: true,
-    emailTecnico: emailTecnico,
-    criadoEm: serverTimestamp(),
-    ultimoLogin: serverTimestamp()
-  });
+  // PASSO 2: Criar usuário
+  try {
+    console.log('[criarWorkspaceEDono] criando usuario doc...');
+    const userRef = doc(db, 'workspaces', WORKSPACE_ID, 'usuarios', uid);
+    await setDoc(userRef, {
+      nome: nome,
+      username: usernameNorm,
+      role: 'dono',
+      ativo: true,
+      emailTecnico: emailTecnico,
+      criadoEm: serverTimestamp(),
+      ultimoLogin: serverTimestamp()
+    });
+    console.log('[criarWorkspaceEDono] ✓ usuario criado');
+  } catch (err) {
+    console.error('[criarWorkspaceEDono] FALHA AO CRIAR USUARIO:', err);
+    throw new Error('Falha ao criar usuario: ' + err.message);
+  }
 
-  const lookupRef = doc(db, 'workspaces', WORKSPACE_ID, 'auth_lookup', uid);
-  await setDoc(lookupRef, {
-    username: usernameNorm,
-    emailTecnico: emailTecnico,
-    segredo: segredo,
-    tentativasFalhas: 0,
-    bloqueadoAte: null,
-    ultimaTentativa: null
-  });
+  // PASSO 3: Criar auth_lookup
+  try {
+    console.log('[criarWorkspaceEDono] criando auth_lookup doc...');
+    const lookupRef = doc(db, 'workspaces', WORKSPACE_ID, 'auth_lookup', uid);
+    await setDoc(lookupRef, {
+      username: usernameNorm,
+      emailTecnico: emailTecnico,
+      segredo: segredo,
+      tentativasFalhas: 0,
+      bloqueadoAte: null,
+      ultimaTentativa: null
+    });
+    console.log('[criarWorkspaceEDono] ✓ auth_lookup criado');
+  } catch (err) {
+    console.error('[criarWorkspaceEDono] FALHA AO CRIAR AUTH_LOOKUP:', err);
+    throw new Error('Falha ao criar auth_lookup: ' + err.message);
+  }
 
-  return userCred.user;
+  console.log('[criarWorkspaceEDono] ✅ TUDO CRIADO COM SUCESSO');
+  return { uid };
 }
 
 // ============================================================================
@@ -324,10 +379,20 @@ export async function logout() {
 // ============================================================================
 
 export async function carregarPerfil(uid) {
-  const userRef = doc(db, 'workspaces', WORKSPACE_ID, 'usuarios', uid);
-  const snap = await getDoc(userRef);
-  if (!snap.exists()) return null;
-  return { id: uid, ...snap.data() };
+  console.log('[carregarPerfil] uid:', uid);
+  try {
+    const userRef = doc(db, 'workspaces', WORKSPACE_ID, 'usuarios', uid);
+    const snap = await getDoc(userRef);
+    if (!snap.exists()) {
+      console.log('[carregarPerfil] usuario NAO existe no Firestore');
+      return null;
+    }
+    console.log('[carregarPerfil] usuario encontrado:', snap.data());
+    return { id: uid, ...snap.data() };
+  } catch (err) {
+    console.error('[carregarPerfil] ERRO:', err);
+    throw err;
+  }
 }
 
 export function observarAuth(callback) {
@@ -341,7 +406,7 @@ export function observarAuth(callback) {
       callback({ user, perfil });
     } catch (err) {
       console.error('Erro ao carregar perfil:', err);
-      callback({ user, perfil });
+      callback({ user, perfil: null });
     }
   });
 }
