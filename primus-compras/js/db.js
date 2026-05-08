@@ -1,5 +1,5 @@
 // ============================================================================
-// DB.JS — Operações no Firestore (com fornecedores)
+// DB.JS — Operações no Firestore (com membros)
 // ============================================================================
 
 import {
@@ -33,6 +33,8 @@ const listaAtualCol = () => collection(db, ...wsPath(), 'lista_atual');
 const listaEmCriacaoCol = () => collection(db, ...wsPath(), 'lista_em_criacao');
 const historicoCol = () => collection(db, ...wsPath(), 'historico');
 const fornecedoresCol = () => collection(db, ...wsPath(), 'fornecedores');
+const usuariosCol = () => collection(db, ...wsPath(), 'usuarios');
+const authLookupCol = () => collection(db, ...wsPath(), 'auth_lookup');
 
 // ============================================================================
 // CONTEXTO DO USUÁRIO
@@ -201,6 +203,38 @@ export async function atualizarFornecedor(id, dados) {
 export async function deletarFornecedor(id) {
   const ref = doc(db, ...wsPath(), 'fornecedores', id);
   await deleteDoc(ref);
+}
+
+// ============================================================================
+// USUÁRIOS / MEMBROS
+// ============================================================================
+
+export async function listarUsuarios() {
+  const q = query(usuariosCol(), orderBy('nome', 'asc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export function observarUsuarios(callback) {
+  const q = query(usuariosCol(), orderBy('nome', 'asc'));
+  return onSnapshot(q, (snap) => {
+    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(lista);
+  });
+}
+
+/**
+ * Remove um membro: deleta os 2 docs (usuario + auth_lookup).
+ * NOTA: o doc no Firebase Auth fica órfão (não dá pra remover via SDK cliente).
+ * Mas como a senha real depende do segredo no auth_lookup, a conta fica inutilizável.
+ */
+export async function deletarUsuario(uid) {
+  const userRef = doc(db, ...wsPath(), 'usuarios', uid);
+  const lookupRef = doc(db, ...wsPath(), 'auth_lookup', uid);
+  const batch = writeBatch(db);
+  batch.delete(userRef);
+  batch.delete(lookupRef);
+  await batch.commit();
 }
 
 // ============================================================================
