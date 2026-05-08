@@ -1,5 +1,5 @@
 // ============================================================================
-// APP.JS — Orquestrador principal (3 abas: Criar / Atual / Histórico)
+// APP.JS — Orquestrador principal (com edição de itens)
 // ============================================================================
 
 import './firebase-init.js';
@@ -20,6 +20,7 @@ import {
   observarListaAtual,
   observarHistorico,
   criarItem,
+  atualizarItem,
   deletarItem,
   setItemListaEmCriacao,
   limparListaEmCriacao,
@@ -87,7 +88,8 @@ function matchesSearch(item, term) {
   if (!term) return true;
   const t = term.toLowerCase();
   return (item.nome || '').toLowerCase().includes(t)
-      || (item.tipo || '').toLowerCase().includes(t);
+      || (item.tipo || '').toLowerCase().includes(t)
+      || (item.fornecedorPreferido || '').toLowerCase().includes(t);
 }
 
 // ============================================================================
@@ -320,7 +322,8 @@ function renderListaCriar() {
   for (const cat of categorias) {
     const itensCat = itens
       .filter(i => i.categoriaId === cat.id)
-      .filter(i => matchesSearch(i, searchCriar));
+      .filter(i => matchesSearch(i, searchCriar))
+      .sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
 
     if (searchCriar && itensCat.length === 0) continue;
 
@@ -347,7 +350,7 @@ function renderListaCriar() {
       <th class="col-media">Méd. ${mediaN}</th>
       <th class="col-ultimo">Última</th>
       <th class="col-qtd">Qtd</th>
-      <th class="col-action"></th>
+      <th class="col-actions"></th>
     </tr></thead><tbody>`;
 
     for (const item of itensCat) {
@@ -361,7 +364,10 @@ function renderListaCriar() {
       html += `<td class="col-media">${media ? `<span class="has-value">${fmtMoeda(media)}</span>` : `<span class="no-value">—</span>`}</td>`;
       html += `<td class="col-ultimo">${ultimo ? `<span class="has-value">${fmtMoeda(ultimo)}</span>` : `<span class="no-value">—</span>`}</td>`;
       html += `<td class="col-qtd"><input type="number" class="qty" min="0" step="0.01" value="${qtd || ''}" placeholder="—" data-action="update-qtd-criar" data-item-id="${item.id}"></td>`;
-      html += `<td class="col-action"><button class="icon-btn danger" data-action="remover-item" data-item-id="${item.id}" title="Remover do catálogo">×</button></td>`;
+      html += `<td class="col-actions"><span class="item-actions">`;
+      html += `<button class="icon-btn edit" data-action="editar-item" data-item-id="${item.id}" title="Editar item">✏️</button>`;
+      html += `<button class="icon-btn danger" data-action="remover-item" data-item-id="${item.id}" title="Remover do catálogo">×</button>`;
+      html += `</span></td>`;
       html += `</tr>`;
     }
     html += `</tbody></table></div></div>`;
@@ -418,7 +424,8 @@ function renderListaAtual() {
     const itensNaListaAtual = itens
       .filter(i => i.categoriaId === cat.id)
       .filter(i => listaAtualMap[i.id])
-      .filter(i => matchesSearch(i, searchAtual));
+      .filter(i => matchesSearch(i, searchAtual))
+      .sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
 
     if (itensNaListaAtual.length === 0) continue;
 
@@ -451,7 +458,7 @@ function renderListaAtual() {
       <th class="col-qtd">Qtd</th>
       <th class="col-pago">Preço pago</th>
       <th class="col-subtotal">Subtotal</th>
-      <th class="col-action"></th>
+      <th class="col-actions"></th>
     </tr></thead><tbody>`;
 
     for (const item of itensNaListaAtual) {
@@ -473,7 +480,10 @@ function renderListaAtual() {
       html += `<td class="col-qtd"><input type="number" class="qty" min="0" step="0.01" value="${qtd || ''}" data-action="update-qtd-atual" data-item-id="${item.id}"></td>`;
       html += `<td class="col-pago"><div class="price-wrap"><input type="number" class="price" min="0" step="0.01" value="${preco || ''}" placeholder="0,00" data-action="update-preco-atual" data-item-id="${item.id}"></div></td>`;
       html += `<td class="col-subtotal">${sub > 0 ? fmtMoeda(sub) : '—'}</td>`;
-      html += `<td class="col-action"><button class="icon-btn danger" data-action="remover-da-atual" data-item-id="${item.id}" title="Remover desta compra">×</button></td>`;
+      html += `<td class="col-actions"><span class="item-actions">`;
+      html += `<button class="icon-btn edit" data-action="editar-item" data-item-id="${item.id}" title="Editar item">✏️</button>`;
+      html += `<button class="icon-btn danger" data-action="remover-da-atual" data-item-id="${item.id}" title="Remover desta compra">×</button>`;
+      html += `</span></td>`;
       html += `</tr>`;
     }
     html += `</tbody></table></div></div>`;
@@ -512,6 +522,16 @@ function popularSelectCategoria() {
     sel.appendChild(opt);
   }
   if (valorAtual) sel.value = valorAtual;
+
+  // Popula também o select do modal de edição
+  const selEdit = $('edit-categoria');
+  selEdit.innerHTML = '';
+  for (const cat of categorias) {
+    const opt = document.createElement('option');
+    opt.value = cat.id;
+    opt.textContent = cat.nome;
+    selEdit.appendChild(opt);
+  }
 }
 
 // ============================================================================
@@ -574,6 +594,91 @@ async function excluirCompraConfirm(id) {
     showToast('✓ Compra excluída', 'success');
   } catch (e) {
     showToast('⚠ Erro: ' + e.message, 'error');
+  }
+}
+
+// ============================================================================
+// EDIÇÃO DE ITEM (modal)
+// ============================================================================
+
+let itemEditandoId = null;
+
+function abrirModalEditar(itemId) {
+  const item = itens.find(i => i.id === itemId);
+  if (!item) {
+    showToast('⚠ Item não encontrado', 'error');
+    return;
+  }
+
+  itemEditandoId = itemId;
+  $('edit-id').value = itemId;
+  $('edit-nome').value = item.nome || '';
+  $('edit-tipo').value = item.tipo || '';
+  $('edit-categoria').value = item.categoriaId || '';
+  $('edit-fornecedor').value = item.fornecedorPreferido || '';
+  $('edit-ordem').value = item.ordem ?? 0;
+
+  $('edit-error').classList.remove('show');
+  $('edit-error').textContent = '';
+
+  $('modal-editar').classList.add('show');
+  setTimeout(() => $('edit-nome').focus(), 100);
+}
+
+function fecharModalEditar() {
+  $('modal-editar').classList.remove('show');
+  itemEditandoId = null;
+}
+
+async function salvarEdicaoItem() {
+  if (!itemEditandoId) return;
+
+  const nome = $('edit-nome').value.trim();
+  const tipo = $('edit-tipo').value.trim();
+  const categoriaId = $('edit-categoria').value;
+  const fornecedor = $('edit-fornecedor').value.trim();
+  const ordemStr = $('edit-ordem').value;
+  const ordem = ordemStr === '' ? 0 : parseInt(ordemStr, 10);
+
+  const err = $('edit-error');
+
+  if (!nome) {
+    err.textContent = 'Nome do produto é obrigatório';
+    err.classList.add('show');
+    return;
+  }
+  if (!categoriaId) {
+    err.textContent = 'Selecione uma categoria';
+    err.classList.add('show');
+    return;
+  }
+  if (isNaN(ordem) || ordem < 0) {
+    err.textContent = 'Posição deve ser um número (0 ou maior)';
+    err.classList.add('show');
+    return;
+  }
+
+  err.classList.remove('show');
+  const btn = $('btn-edit-salvar');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+
+  try {
+    await atualizarItem(itemEditandoId, {
+      nome,
+      tipo,
+      categoriaId,
+      fornecedorPreferido: fornecedor,
+      ordem
+    });
+    showToast(`✓ "${nome}" atualizado`, 'success');
+    fecharModalEditar();
+  } catch (e) {
+    err.textContent = 'Erro ao salvar: ' + e.message;
+    err.classList.add('show');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💾 Salvar alterações';
   }
 }
 
@@ -774,7 +879,9 @@ function gerarPdfLista() {
   let totalItens = 0;
 
   for (const cat of categorias) {
-    const itensCat = itens.filter(i => i.categoriaId === cat.id && getQtdEmCriacao(i.id) > 0);
+    const itensCat = itens
+      .filter(i => i.categoriaId === cat.id && getQtdEmCriacao(i.id) > 0)
+      .sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
     if (itensCat.length === 0) continue;
 
     html += `<h2 style="background:${cat.cor}">${escHtml(cat.nome)}</h2>`;
@@ -963,6 +1070,12 @@ function setupEventos() {
   // Modal salvar
   $('btn-salvar-com-pdf').addEventListener('click', () => tratarSalvar(true));
   $('btn-salvar-sem-pdf').addEventListener('click', () => tratarSalvar(false));
+
+  // Modal editar
+  $('btn-edit-salvar').addEventListener('click', salvarEdicaoItem);
+  $('btn-edit-cancelar').addEventListener('click', fecharModalEditar);
+
+  // Fechar modais (X e clique fora)
   document.querySelectorAll('[data-close-modal]').forEach(b => {
     b.addEventListener('click', () => {
       $(b.dataset.closeModal).classList.remove('show');
@@ -970,6 +1083,9 @@ function setupEventos() {
   });
   $('modal-salvar').addEventListener('click', e => {
     if (e.target.id === 'modal-salvar') fecharModalSalvar();
+  });
+  $('modal-editar').addEventListener('click', e => {
+    if (e.target.id === 'modal-editar') fecharModalEditar();
   });
 
   // Delegação - aba Criar
@@ -983,8 +1099,10 @@ function setupEventos() {
     const target = e.target.closest('[data-action]');
     if (!target) return;
     const action = target.dataset.action;
+    const itemId = target.dataset.itemId;
     if (action === 'toggle-cat-criar') toggleCatCriar(target.dataset.catId);
-    else if (action === 'remover-item') removerItem(target.dataset.itemId);
+    else if (action === 'remover-item') removerItem(itemId);
+    else if (action === 'editar-item') abrirModalEditar(itemId);
   });
 
   // Delegação - aba Atual
@@ -999,8 +1117,11 @@ function setupEventos() {
   $('list-atual').addEventListener('click', e => {
     const target = e.target.closest('[data-action]');
     if (!target) return;
-    if (target.dataset.action === 'toggle-cat-atual') toggleCatAtual(target.dataset.catId);
-    else if (target.dataset.action === 'remover-da-atual') removerDaListaAtual(target.dataset.itemId);
+    const action = target.dataset.action;
+    const itemId = target.dataset.itemId;
+    if (action === 'toggle-cat-atual') toggleCatAtual(target.dataset.catId);
+    else if (action === 'remover-da-atual') removerDaListaAtual(itemId);
+    else if (action === 'editar-item') abrirModalEditar(itemId);
   });
 
   // Delegação - histórico
@@ -1011,11 +1132,22 @@ function setupEventos() {
     else if (target.dataset.action === 'excluir-compra') excluirCompraConfirm(target.dataset.histId);
   });
 
-  // Atalhos
+  // Modal editar - Enter no último campo salva, Esc fecha
+  ['edit-nome', 'edit-tipo', 'edit-fornecedor', 'edit-ordem'].forEach(id => {
+    $(id).addEventListener('keydown', e => {
+      if (e.key === 'Enter') salvarEdicaoItem();
+    });
+  });
+
+  // Atalhos globais
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       if ($('modal-salvar').classList.contains('show')) {
         fecharModalSalvar();
+        return;
+      }
+      if ($('modal-editar').classList.contains('show')) {
+        fecharModalEditar();
         return;
       }
       if (currentTab === 'criar' && $('search-criar').value) {
