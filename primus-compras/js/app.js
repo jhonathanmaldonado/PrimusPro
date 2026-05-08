@@ -1,5 +1,5 @@
 // ============================================================================
-// APP.JS — Orquestrador principal (com fornecedores)
+// APP.JS — Orquestrador principal (com membros)
 // ============================================================================
 
 import './firebase-init.js';
@@ -9,7 +9,8 @@ import {
   logout,
   observarAuth,
   workspaceTemDono,
-  criarWorkspaceEDono
+  criarWorkspaceEDono,
+  criarMembro
 } from './auth.js';
 
 import {
@@ -20,12 +21,14 @@ import {
   observarListaAtual,
   observarHistorico,
   observarFornecedores,
+  observarUsuarios,
   criarItem,
   atualizarItem,
   deletarItem,
   criarFornecedor,
   atualizarFornecedor,
   deletarFornecedor,
+  deletarUsuario,
   setItemListaEmCriacao,
   limparListaEmCriacao,
   salvarListaParaAtual,
@@ -48,6 +51,7 @@ import {
 let categorias = [];
 let itens = [];
 let fornecedores = [];
+let usuarios = [];
 let listaEmCriacaoMap = {};
 let listaAtualMap = {};
 let historico = [];
@@ -218,6 +222,9 @@ async function onLogado({ user, perfil }) {
   $('user-role').textContent = perfil.role === 'dono' ? 'Dono' : 'Membro';
   $('user-avatar').textContent = (perfil.nome || '?').charAt(0).toUpperCase();
 
+  // Mostra aba "Equipe" só para o dono
+  $('tab-btn-equipe').style.display = perfil.role === 'dono' ? 'inline-block' : 'none';
+
   mostrarApp();
 
   try {
@@ -293,6 +300,11 @@ function iniciarListeners() {
     fornecedores = forn;
     popularSelectFornecedor();
     if (currentTab === 'fornecedores') renderFornecedores();
+  }));
+
+  unsubsRefs.push(observarUsuarios((users) => {
+    usuarios = users;
+    if (currentTab === 'equipe') renderEquipe();
   }));
 }
 
@@ -548,16 +560,13 @@ function popularSelectCategoria() {
 function popularSelectFornecedor() {
   const sel = $('edit-fornecedor-select');
   const valorAtual = sel.value;
-  sel.innerHTML = `
-    <option value="">— Nenhum —</option>
-  `;
+  sel.innerHTML = `<option value="">— Nenhum —</option>`;
   for (const f of fornecedores) {
     const opt = document.createElement('option');
     opt.value = f.nome;
     opt.textContent = f.nome;
     sel.appendChild(opt);
   }
-  // Adiciona "novo fornecedor" no fim
   const optNovo = document.createElement('option');
   optNovo.value = '__novo__';
   optNovo.textContent = '+ Novo fornecedor...';
@@ -619,6 +628,57 @@ function renderFornecedores() {
 
   el.innerHTML = html;
   $('search-forn-clear').style.display = searchFornecedores ? 'block' : 'none';
+}
+
+// ============================================================================
+// RENDER: ABA EQUIPE
+// ============================================================================
+
+function renderEquipe() {
+  const el = $('list-equipe');
+  $('stat-equipe-total').textContent = usuarios.length;
+
+  if (!usuarios.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">👥</div>
+      <div class="empty-state-text">Carregando equipe...</div>
+    </div>`;
+    return;
+  }
+
+  let html = '<div class="section" style="border-color:var(--wine-soft)">';
+  html += `<table>`;
+  html += `<thead><tr>
+    <th>Nome</th>
+    <th>Usuário</th>
+    <th>Cargo</th>
+    <th>Último login</th>
+    <th class="col-actions"></th>
+  </tr></thead><tbody>`;
+
+  for (const u of usuarios) {
+    const isDono = u.role === 'dono';
+    const isEu = u.id === userCtx?.uid;
+    let ultimoLogin = '—';
+    if (u.ultimoLogin) {
+      const d = u.ultimoLogin.toDate ? u.ultimoLogin.toDate() : new Date(u.ultimoLogin);
+      ultimoLogin = d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    }
+    html += `<tr>`;
+    html += `<td><strong>${escHtml(u.nome)}</strong>${isEu ? ' <span style="color:var(--gold-dark);font-size:11px">(você)</span>' : ''}</td>`;
+    html += `<td style="color:var(--muted);font-size:12px">@${escHtml(u.username)}</td>`;
+    html += `<td>${isDono ? '<span style="background:var(--gold);color:var(--wine);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700">DONO</span>' : '<span style="background:var(--wine-soft);color:var(--wine);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">MEMBRO</span>'}</td>`;
+    html += `<td style="color:var(--muted);font-size:12px">${ultimoLogin}</td>`;
+    html += `<td class="col-actions"><span class="item-actions">`;
+    if (!isDono && !isEu) {
+      html += `<button class="icon-btn danger" data-action="remover-membro" data-uid="${u.id}" title="Remover membro">×</button>`;
+    }
+    html += `</span></td>`;
+    html += `</tr>`;
+  }
+  html += `</tbody></table></div>`;
+
+  el.innerHTML = html;
 }
 
 // ============================================================================
@@ -704,7 +764,6 @@ function abrirModalEditar(itemId) {
   $('edit-categoria').value = item.categoriaId || '';
   $('edit-ordem').value = item.ordem ?? 0;
 
-  // Configura o select de fornecedor
   popularSelectFornecedor();
   const fornAtual = item.fornecedorPreferido || '';
   const sel = $('edit-fornecedor-select');
@@ -712,10 +771,8 @@ function abrirModalEditar(itemId) {
   inputLivre.style.display = 'none';
   inputLivre.value = '';
 
-  // Verifica se o fornecedor atual está cadastrado
   const fornCadastrado = fornecedores.find(f => f.nome === fornAtual);
   if (fornAtual && !fornCadastrado) {
-    // Fornecedor com texto livre antigo (não cadastrado) → mostra como livre
     sel.value = '__novo__';
     inputLivre.style.display = 'block';
     inputLivre.value = fornAtual;
@@ -744,7 +801,6 @@ async function salvarEdicaoItem() {
   const ordemStr = $('edit-ordem').value;
   const ordem = ordemStr === '' ? 0 : parseInt(ordemStr, 10);
 
-  // Resolve fornecedor
   const sel = $('edit-fornecedor-select');
   const inputLivre = $('edit-fornecedor-livre');
   let fornecedor = '';
@@ -778,7 +834,6 @@ async function salvarEdicaoItem() {
   btn.textContent = 'Salvando...';
 
   try {
-    // Se digitou fornecedor novo, cadastra antes
     if (sel.value === '__novo__' && fornecedor) {
       const jaExiste = fornecedores.find(f => f.nome.toLowerCase() === fornecedor.toLowerCase());
       if (!jaExiste) {
@@ -868,7 +923,6 @@ async function salvarFornecedor() {
       await atualizarFornecedor(fornEditandoId, { nome, telefone, observacao });
       showToast(`✓ "${nome}" atualizado`, 'success');
     } else {
-      // Verifica duplicata
       const jaExiste = fornecedores.find(f => f.nome.toLowerCase() === nome.toLowerCase());
       if (jaExiste) {
         err.textContent = 'Já existe um fornecedor com esse nome';
@@ -894,7 +948,6 @@ async function removerFornecedor(fornId) {
   const f = fornecedores.find(x => x.id === fornId);
   if (!f) return;
 
-  // Verifica quantos itens usam esse fornecedor
   const itensComFornecedor = itens.filter(i => i.fornecedorPreferido === f.nome);
   let msg = `Remover "${f.nome}"?`;
   if (itensComFornecedor.length > 0) {
@@ -906,6 +959,94 @@ async function removerFornecedor(fornId) {
   try {
     await deletarFornecedor(fornId);
     showToast(`✓ "${f.nome}" removido`, 'success');
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
+  }
+}
+
+// ============================================================================
+// MEMBROS (modal)
+// ============================================================================
+
+function abrirModalMembro() {
+  if (userCtx?.role !== 'dono') {
+    showToast('⚠ Apenas o dono pode criar novos membros', 'error');
+    return;
+  }
+  $('membro-nome').value = '';
+  $('membro-username').value = '';
+  $('membro-pin').value = '';
+  $('membro-error').classList.remove('show');
+  $('membro-error').textContent = '';
+  $('modal-membro').classList.add('show');
+  setTimeout(() => $('membro-nome').focus(), 100);
+}
+
+function fecharModalMembro() {
+  $('modal-membro').classList.remove('show');
+}
+
+async function salvarNovoMembro() {
+  const nome = $('membro-nome').value.trim();
+  const username = $('membro-username').value.trim();
+  const pin = $('membro-pin').value.trim();
+  const err = $('membro-error');
+
+  if (!nome) {
+    err.textContent = 'Nome é obrigatório';
+    err.classList.add('show');
+    return;
+  }
+  if (!username) {
+    err.textContent = 'Usuário é obrigatório';
+    err.classList.add('show');
+    return;
+  }
+  if (!/^\d{4}$/.test(pin)) {
+    err.textContent = 'PIN deve ter exatamente 4 dígitos numéricos';
+    err.classList.add('show');
+    return;
+  }
+
+  err.classList.remove('show');
+  const btn = $('btn-membro-salvar');
+  btn.disabled = true;
+  btn.textContent = 'Criando...';
+
+  try {
+    const resultado = await criarMembro({ nome, username, pin, role: 'membro' });
+    fecharModalMembro();
+
+    showToast(`✓ Membro "${nome}" criado! Refazendo login...`, 'success');
+
+    // Aguarda 2 segundos e recarrega para limpar tudo
+    setTimeout(() => {
+      location.reload();
+    }, 2000);
+  } catch (e) {
+    err.textContent = 'Erro: ' + e.message;
+    err.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = '+ Criar Membro';
+  }
+}
+
+async function removerMembro(uid) {
+  if (userCtx?.role !== 'dono') {
+    showToast('⚠ Apenas o dono pode remover membros', 'error');
+    return;
+  }
+  const u = usuarios.find(x => x.id === uid);
+  if (!u) return;
+  if (u.role === 'dono') {
+    showToast('⚠ Não é possível remover o dono', 'error');
+    return;
+  }
+  if (!confirm(`Remover o membro "${u.nome}"?\n\nA conta dele(a) será desativada e ele(a) não conseguirá mais fazer login.`)) return;
+
+  try {
+    await deletarUsuario(uid);
+    showToast(`✓ "${u.nome}" removido`, 'success');
   } catch (e) {
     showToast('⚠ Erro: ' + e.message, 'error');
   }
@@ -1219,8 +1360,10 @@ function switchTab(tab) {
   $('tab-atual').style.display = tab === 'atual' ? 'block' : 'none';
   $('tab-historico').style.display = tab === 'historico' ? 'block' : 'none';
   $('tab-fornecedores').style.display = tab === 'fornecedores' ? 'block' : 'none';
+  $('tab-equipe').style.display = tab === 'equipe' ? 'block' : 'none';
   if (tab === 'historico') renderHistorico();
   if (tab === 'fornecedores') renderFornecedores();
+  if (tab === 'equipe') renderEquipe();
 }
 
 // ============================================================================
@@ -1307,6 +1450,9 @@ function setupEventos() {
     renderFornecedores();
   });
 
+  // Aba Equipe
+  $('btn-novo-membro').addEventListener('click', abrirModalMembro);
+
   // Modal salvar
   $('btn-salvar-com-pdf').addEventListener('click', () => tratarSalvar(true));
   $('btn-salvar-sem-pdf').addEventListener('click', () => tratarSalvar(false));
@@ -1319,7 +1465,11 @@ function setupEventos() {
   $('btn-forn-salvar').addEventListener('click', salvarFornecedor);
   $('btn-forn-cancelar').addEventListener('click', fecharModalFornecedor);
 
-  // Select de fornecedor no modal de edição
+  // Modal membro
+  $('btn-membro-salvar').addEventListener('click', salvarNovoMembro);
+  $('btn-membro-cancelar').addEventListener('click', fecharModalMembro);
+
+  // Select de fornecedor
   $('edit-fornecedor-select').addEventListener('change', e => {
     const inputLivre = $('edit-fornecedor-livre');
     if (e.target.value === '__novo__') {
@@ -1331,7 +1481,7 @@ function setupEventos() {
     }
   });
 
-  // Fechar modais (X e clique fora)
+  // Fechar modais
   document.querySelectorAll('[data-close-modal]').forEach(b => {
     b.addEventListener('click', () => {
       $(b.dataset.closeModal).classList.remove('show');
@@ -1345,6 +1495,9 @@ function setupEventos() {
   });
   $('modal-fornecedor').addEventListener('click', e => {
     if (e.target.id === 'modal-fornecedor') fecharModalFornecedor();
+  });
+  $('modal-membro').addEventListener('click', e => {
+    if (e.target.id === 'modal-membro') fecharModalMembro();
   });
 
   // Delegação - aba Criar
@@ -1399,7 +1552,14 @@ function setupEventos() {
     else if (target.dataset.action === 'remover-forn') removerFornecedor(target.dataset.fornId);
   });
 
-  // Modal editar - Enter salva, Esc fecha
+  // Delegação - equipe
+  $('list-equipe').addEventListener('click', e => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+    if (target.dataset.action === 'remover-membro') removerMembro(target.dataset.uid);
+  });
+
+  // Modais - Enter salva
   ['edit-nome', 'edit-tipo', 'edit-fornecedor-livre', 'edit-ordem'].forEach(id => {
     $(id).addEventListener('keydown', e => {
       if (e.key === 'Enter') salvarEdicaoItem();
@@ -1412,29 +1572,32 @@ function setupEventos() {
     });
   });
 
+  ['membro-nome', 'membro-username', 'membro-pin'].forEach(id => {
+    $(id).addEventListener('keydown', e => {
+      if (e.key === 'Enter') salvarNovoMembro();
+    });
+  });
+
   // Atalhos globais
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
-      if ($('modal-salvar').classList.contains('show')) {
-        fecharModalSalvar();
-        return;
-      }
-      if ($('modal-editar').classList.contains('show')) {
-        fecharModalEditar();
-        return;
-      }
-      if ($('modal-fornecedor').classList.contains('show')) {
-        fecharModalFornecedor();
-        return;
-      }
+      if ($('modal-salvar').classList.contains('show')) { fecharModalSalvar(); return; }
+      if ($('modal-editar').classList.contains('show')) { fecharModalEditar(); return; }
+      if ($('modal-fornecedor').classList.contains('show')) { fecharModalFornecedor(); return; }
+      if ($('modal-membro').classList.contains('show')) { fecharModalMembro(); return; }
     }
   });
 
-  // PIN: só números
-  ['login-pin', 'criar-pin'].forEach(id => {
+  // PIN: só números (login, criar, membro)
+  ['login-pin', 'criar-pin', 'membro-pin'].forEach(id => {
     $(id).addEventListener('input', e => {
       e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
     });
+  });
+
+  // Username do membro: só letras minúsculas e números
+  $('membro-username').addEventListener('input', e => {
+    e.target.value = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '');
   });
 }
 
