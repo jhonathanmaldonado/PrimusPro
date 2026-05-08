@@ -94,6 +94,7 @@
       <button class="tab active" data-tab="criar">📝 Criar Lista</button>
       <button class="tab" data-tab="atual">🛒 Lista Atual</button>
       <button class="tab" data-tab="historico">📚 Histórico</button>
+      <button class="tab" data-tab="fornecedores">🚚 Fornecedores</button>
     </div>
 
     <!-- ========== ABA: CRIAR LISTA ========== -->
@@ -193,6 +194,29 @@
       </div>
       <div id="history-list"></div>
     </div>
+
+    <!-- ========== ABA: FORNECEDORES ========== -->
+    <div id="tab-fornecedores" style="display:none">
+      <div class="toolbar">
+        <span class="toolbar-title">Fornecedores cadastrados</span>
+        <button class="btn btn-primary" id="btn-novo-fornecedor">+ Novo Fornecedor</button>
+      </div>
+
+      <div class="summary">
+        <div class="stat">
+          <div class="stat-label">Total cadastrados</div>
+          <div class="stat-value" id="stat-forn-total">0</div>
+        </div>
+      </div>
+
+      <div class="search-wrap">
+        <span class="search-icon">🔍</span>
+        <input type="text" class="search-input" id="search-fornecedores" placeholder="Buscar fornecedor...">
+        <button class="search-clear" id="search-forn-clear">×</button>
+      </div>
+
+      <div id="list-fornecedores"></div>
+    </div>
   </div>
 </div>
 
@@ -242,7 +266,13 @@
 
       <div class="form-field">
         <label>Fornecedor preferido <span class="optional">(opcional)</span></label>
-        <input type="text" id="edit-fornecedor" placeholder="Ex: CEASA, Atacadão">
+        <select id="edit-fornecedor-select">
+          <option value="">— Nenhum —</option>
+        </select>
+        <input type="text" id="edit-fornecedor-livre" placeholder="Digite o nome do novo fornecedor" style="margin-top:8px;display:none">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">
+          Selecione um fornecedor cadastrado ou escolha "+ Novo fornecedor..." para digitar.
+        </div>
       </div>
 
       <div class="form-field">
@@ -255,6 +285,40 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" id="btn-edit-cancelar">Cancelar</button>
       <button class="btn btn-primary" id="btn-edit-salvar">💾 Salvar alterações</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: FORNECEDOR (criar/editar) -->
+<div class="modal-bg" id="modal-fornecedor">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-forn-title">🚚 Novo Fornecedor</span>
+      <button class="modal-close" data-close-modal="modal-fornecedor">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="forn-id">
+
+      <div class="form-field">
+        <label>Nome do fornecedor</label>
+        <input type="text" id="forn-nome" placeholder="Ex: CEASA Cuiabá">
+      </div>
+
+      <div class="form-field">
+        <label>Telefone <span class="optional">(opcional)</span></label>
+        <input type="text" id="forn-telefone" placeholder="Ex: (65) 99999-9999">
+      </div>
+
+      <div class="form-field">
+        <label>Observação <span class="optional">(opcional)</span></label>
+        <input type="text" id="forn-obs" placeholder="Ex: Pedido até quinta às 16h">
+      </div>
+
+      <div id="forn-error" class="form-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btn-forn-cancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btn-forn-salvar">💾 Salvar</button>
     </div>
   </div>
 </div>
