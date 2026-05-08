@@ -1,5 +1,5 @@
 // ============================================================================
-// APP.JS — Orquestrador principal
+// APP.JS — Orquestrador principal (com inputmode para mobile)
 // ============================================================================
 
 import './firebase-init.js';
@@ -386,7 +386,7 @@ function renderListaCriar() {
       html += `<td class="col-tipo">${escHtml(item.tipo || '')}</td>`;
       html += `<td class="col-media">${media ? `<span class="has-value">${fmtMoeda(media)}</span>` : `<span class="no-value">—</span>`}</td>`;
       html += `<td class="col-ultimo">${ultimo ? `<span class="has-value">${fmtMoeda(ultimo)}</span>` : `<span class="no-value">—</span>`}</td>`;
-      html += `<td class="col-qtd"><input type="number" class="qty" min="0" step="0.01" value="${qtd || ''}" placeholder="—" data-action="update-qtd-criar" data-item-id="${item.id}"></td>`;
+      html += `<td class="col-qtd"><input type="number" inputmode="decimal" class="qty" min="0" step="0.01" value="${qtd || ''}" placeholder="—" data-action="update-qtd-criar" data-item-id="${item.id}"></td>`;
       html += `<td class="col-actions"><span class="item-actions">`;
       html += `<button class="icon-btn edit" data-action="editar-item" data-item-id="${item.id}" title="Editar item">✏️</button>`;
       html += `<button class="icon-btn danger" data-action="remover-item" data-item-id="${item.id}" title="Remover do catálogo">×</button>`;
@@ -500,8 +500,8 @@ function renderListaAtual() {
       html += `<td class="col-tipo">${escHtml(item.tipo || '')}</td>`;
       html += `<td class="col-media">${media ? `<span class="has-value">${fmtMoeda(media)}</span>` : `<span class="no-value">—</span>`}</td>`;
       html += `<td class="col-ultimo">${ultimo ? `<span class="has-value">${fmtMoeda(ultimo)}</span>` : `<span class="no-value">—</span>`}</td>`;
-      html += `<td class="col-qtd"><input type="number" class="qty" min="0" step="0.01" value="${qtd || ''}" data-action="update-qtd-atual" data-item-id="${item.id}"></td>`;
-      html += `<td class="col-pago"><div class="price-wrap"><input type="number" class="price" min="0" step="0.01" value="${preco || ''}" placeholder="0,00" data-action="update-preco-atual" data-item-id="${item.id}"></div></td>`;
+      html += `<td class="col-qtd"><input type="number" inputmode="decimal" class="qty" min="0" step="0.01" value="${qtd || ''}" data-action="update-qtd-atual" data-item-id="${item.id}"></td>`;
+      html += `<td class="col-pago"><div class="price-wrap"><input type="number" inputmode="decimal" class="price" min="0" step="0.01" value="${preco || ''}" placeholder="0,00" data-action="update-preco-atual" data-item-id="${item.id}"></div></td>`;
       html += `<td class="col-subtotal">${sub > 0 ? fmtMoeda(sub) : '—'}</td>`;
       html += `<td class="col-actions"><span class="item-actions">`;
       html += `<button class="icon-btn edit" data-action="editar-item" data-item-id="${item.id}" title="Editar item">✏️</button>`;
@@ -1196,11 +1196,10 @@ async function tratarSalvar(comPdf) {
 }
 
 // ============================================================================
-// PDF (com nome de arquivo + colunas alinhadas + fonte compacta)
+// PDF
 // ============================================================================
 
 function gerarPdfLista() {
-  // Nome do arquivo: Lista_Compras_dd-mm-aaaa
   const hoje = new Date();
   const dd = String(hoje.getDate()).padStart(2, '0');
   const mm = String(hoje.getMonth() + 1).padStart(2, '0');
@@ -1243,15 +1242,12 @@ function gerarPdfLista() {
           border-bottom: 1px solid #eee;
           font-size: 10px;
         }
-
-        /* Alinhamento das colunas */
         .col-item { text-align: left; width: 38%; }
         .col-tipo { text-align: right; width: 10%; }
         .col-media { text-align: right; width: 12%; color: #888; font-size: 9px; }
         .col-ultimo { text-align: right; width: 12%; color: #888; font-size: 9px; }
         .col-qtd { text-align: right; width: 10%; font-weight: 700; color: #7A1F38; }
         .col-pago { text-align: right; width: 18%; }
-
         .preco-blank {
           border-bottom: 1px solid #999;
           display: inline-block;
@@ -1327,7 +1323,6 @@ function gerarPdfLista() {
     </div>
     <div class="footer">Peixaria Primus · Cuiabá/MT</div>
     <script>
-      // Define o nome do arquivo automaticamente ao salvar PDF
       document.title = '${nomeArquivo}';
     </script>
     </body></html>
