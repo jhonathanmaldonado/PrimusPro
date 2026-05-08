@@ -49,19 +49,19 @@ body {
 }
 #splash.hidden { opacity: 0; pointer-events: none; }
 .splash-logo {
-  width: 70px;
-  height: 70px;
-  border-radius: 50%;
-  background: var(--gold);
-  color: var(--wine);
+  width: 110px;
+  height: 110px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: Georgia, serif;
-  font-size: 36px;
-  font-weight: 900;
   margin-bottom: 18px;
   animation: pulse 1.6s ease-in-out infinite;
+}
+.splash-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 16px;
 }
 @keyframes pulse {
   0%, 100% { transform: scale(1); }
@@ -95,18 +95,18 @@ body {
   border-top: 4px solid var(--gold);
 }
 .auth-logo {
-  width: 64px;
-  height: 64px;
+  width: 96px;
+  height: 96px;
   margin: 0 auto 16px;
-  border-radius: 50%;
-  background: var(--gold);
-  color: var(--wine);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: Georgia, serif;
-  font-size: 32px;
-  font-weight: 900;
+}
+.auth-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 14px;
 }
 .auth-title {
   font-size: 20px;
@@ -230,18 +230,18 @@ body {
   box-shadow: 0 2px 8px #0002;
 }
 .brand-logo {
-  width: 46px;
-  height: 46px;
-  border-radius: 50%;
-  background: var(--gold);
+  width: 52px;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-weight: 900;
-  font-size: 20px;
-  color: var(--wine);
-  font-family: Georgia, serif;
   flex-shrink: 0;
+}
+.brand-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 8px;
 }
 .brand-text { flex: 1; min-width: 0; }
 .brand-title { font-size: 17px; font-weight: 700; letter-spacing: 0.3px; line-height: 1.2; }
@@ -293,6 +293,7 @@ body {
   gap: 0;
   margin-bottom: 16px;
   border-bottom: 2px solid var(--line);
+  flex-wrap: wrap;
 }
 .tab {
   padding: 10px 18px;
@@ -527,7 +528,6 @@ th.col-subtotal, td.col-subtotal { width: 100px; text-align: right; font-weight:
 th.col-action, td.col-action { width: 50px; text-align: center; padding: 0; }
 th.col-actions, td.col-actions { width: 80px; text-align: center; padding: 0 4px; white-space: nowrap; }
 
-/* Colunas média/último */
 th.col-media, td.col-media,
 th.col-ultimo, td.col-ultimo {
   width: 80px;
@@ -585,7 +585,6 @@ input.price { width: 100px; }
 }
 .price-wrap input { padding-left: 26px; }
 
-/* Preço pago em destaque (lista atual) */
 td.col-pago .price-wrap input {
   border-color: var(--gold);
   background: var(--gold-soft);
@@ -624,7 +623,6 @@ select {
 .icon-btn.danger:hover { background: #fdecea; color: var(--red); }
 .icon-btn.edit:hover { background: var(--gold-soft); color: var(--gold-dark); }
 
-/* Linha de ações no item */
 .item-actions {
   display: inline-flex;
   gap: 2px;
@@ -781,7 +779,6 @@ select {
   flex-wrap: wrap;
 }
 
-/* Form fields no modal */
 .form-field { margin-bottom: 14px; }
 .form-field label {
   display: block;
@@ -884,6 +881,9 @@ select {
   .config-media { display: none; }
   .tab { padding: 8px 12px; font-size: 12px; }
   .icon-btn { padding: 3px 5px; font-size: 14px; }
+  .splash-logo { width: 90px; height: 90px; }
+  .auth-logo { width: 80px; height: 80px; }
+  .brand-logo { width: 44px; height: 44px; }
 }
 
 @media print {
