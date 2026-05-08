@@ -95,6 +95,7 @@
       <button class="tab" data-tab="atual">🛒 Lista Atual</button>
       <button class="tab" data-tab="historico">📚 Histórico</button>
       <button class="tab" data-tab="fornecedores">🚚 Fornecedores</button>
+      <button class="tab" data-tab="equipe" id="tab-btn-equipe" style="display:none">👥 Equipe</button>
     </div>
 
     <!-- ========== ABA: CRIAR LISTA ========== -->
@@ -217,6 +218,27 @@
 
       <div id="list-fornecedores"></div>
     </div>
+
+    <!-- ========== ABA: EQUIPE ========== -->
+    <div id="tab-equipe" style="display:none">
+      <div class="toolbar">
+        <span class="toolbar-title">Equipe / Membros</span>
+        <button class="btn btn-primary" id="btn-novo-membro">+ Novo Membro</button>
+      </div>
+
+      <div class="summary">
+        <div class="stat">
+          <div class="stat-label">Total de membros</div>
+          <div class="stat-value" id="stat-equipe-total">0</div>
+        </div>
+      </div>
+
+      <div style="background:var(--gold-soft);border:1px solid #f0d590;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--wine-dark)">
+        ℹ️ <strong>Como funciona:</strong> ao criar um novo membro, o sistema vai te deslogar automaticamente (limitação técnica). Faça login novamente com seu usuário e PIN. O novo membro também poderá fazer login com o usuário/PIN que você definiu.
+      </div>
+
+      <div id="list-equipe"></div>
+    </div>
   </div>
 </div>
 
@@ -289,7 +311,7 @@
   </div>
 </div>
 
-<!-- MODAL: FORNECEDOR (criar/editar) -->
+<!-- MODAL: FORNECEDOR -->
 <div class="modal-bg" id="modal-fornecedor">
   <div class="modal">
     <div class="modal-header">
@@ -319,6 +341,42 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" id="btn-forn-cancelar">Cancelar</button>
       <button class="btn btn-primary" id="btn-forn-salvar">💾 Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: NOVO MEMBRO -->
+<div class="modal-bg" id="modal-membro">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">👥 Novo Membro</span>
+      <button class="modal-close" data-close-modal="modal-membro">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="background:#fff8e1;border:1px solid var(--gold);color:var(--wine-dark);padding:10px 12px;border-radius:6px;font-size:12px;margin-bottom:14px">
+        ⚠️ <strong>Atenção:</strong> Após criar o membro, você será deslogado automaticamente. Faça login novamente com seu usuário e PIN.
+      </div>
+
+      <div class="form-field">
+        <label>Nome completo</label>
+        <input type="text" id="membro-nome" placeholder="Ex: Maria da Silva">
+      </div>
+
+      <div class="form-field">
+        <label>Usuário (login) <span class="optional">letras minúsculas, sem espaços</span></label>
+        <input type="text" id="membro-username" placeholder="Ex: maria" autocapitalize="none">
+      </div>
+
+      <div class="form-field">
+        <label>PIN inicial <span class="optional">(4 dígitos numéricos)</span></label>
+        <input type="password" id="membro-pin" class="pin" inputmode="numeric" maxlength="4" pattern="[0-9]{4}" placeholder="••••">
+      </div>
+
+      <div id="membro-error" class="form-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btn-membro-cancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btn-membro-salvar">+ Criar Membro</button>
     </div>
   </div>
 </div>
