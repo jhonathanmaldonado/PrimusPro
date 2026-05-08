@@ -1,5 +1,5 @@
 // ============================================================================
-// DB.JS — Operações no Firestore (com lista_em_criacao + média histórica)
+// DB.JS — Operações no Firestore (com fornecedores)
 // ============================================================================
 
 import {
@@ -32,6 +32,7 @@ const itensCol = () => collection(db, ...wsPath(), 'itens');
 const listaAtualCol = () => collection(db, ...wsPath(), 'lista_atual');
 const listaEmCriacaoCol = () => collection(db, ...wsPath(), 'lista_em_criacao');
 const historicoCol = () => collection(db, ...wsPath(), 'historico');
+const fornecedoresCol = () => collection(db, ...wsPath(), 'fornecedores');
 
 // ============================================================================
 // CONTEXTO DO USUÁRIO
@@ -155,13 +156,55 @@ export async function atualizarItem(id, dados) {
 export async function deletarItem(id) {
   const ref = doc(db, ...wsPath(), 'itens', id);
   await deleteDoc(ref);
-  // Limpa também das listas
   try { await deleteDoc(doc(db, ...wsPath(), 'lista_atual', id)); } catch {}
   try { await deleteDoc(doc(db, ...wsPath(), 'lista_em_criacao', id)); } catch {}
 }
 
 // ============================================================================
-// LISTA EM CRIAÇÃO (rascunho — só quantidades)
+// FORNECEDORES
+// ============================================================================
+
+export async function listarFornecedores() {
+  const q = query(fornecedoresCol(), orderBy('nome', 'asc'));
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+export function observarFornecedores(callback) {
+  const q = query(fornecedoresCol(), orderBy('nome', 'asc'));
+  return onSnapshot(q, (snap) => {
+    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(lista);
+  });
+}
+
+export async function criarFornecedor({ nome, telefone, observacao }) {
+  if (!nome || !nome.trim()) {
+    throw new Error('Nome do fornecedor é obrigatório');
+  }
+  const ref = await addDoc(fornecedoresCol(), {
+    nome: nome.trim(),
+    telefone: (telefone || '').trim(),
+    observacao: (observacao || '').trim(),
+    criadoEm: serverTimestamp(),
+    criadoPor: _userCtx?.uid || null,
+    ...carimboAuditoria()
+  });
+  return ref.id;
+}
+
+export async function atualizarFornecedor(id, dados) {
+  const ref = doc(db, ...wsPath(), 'fornecedores', id);
+  await updateDoc(ref, { ...dados, ...carimboAuditoria() });
+}
+
+export async function deletarFornecedor(id) {
+  const ref = doc(db, ...wsPath(), 'fornecedores', id);
+  await deleteDoc(ref);
+}
+
+// ============================================================================
+// LISTA EM CRIAÇÃO
 // ============================================================================
 
 export function observarListaEmCriacao(callback) {
@@ -194,10 +237,6 @@ export async function limparListaEmCriacao() {
   await batch.commit();
 }
 
-/**
- * Move tudo da lista_em_criacao para lista_atual.
- * Falha se já tiver lista_atual ativa.
- */
 export async function salvarListaParaAtual() {
   const atualSnap = await getDocs(listaAtualCol());
   if (!atualSnap.empty) {
@@ -229,7 +268,7 @@ export async function salvarListaParaAtual() {
 }
 
 // ============================================================================
-// LISTA ATUAL (compra em curso — preço pago + comprado)
+// LISTA ATUAL
 // ============================================================================
 
 export function observarListaAtual(callback) {
@@ -297,9 +336,6 @@ export function observarHistorico(callback, limite = 50) {
   });
 }
 
-/**
- * Finaliza compra: cria histórico, atualiza histórico de preços nos itens, limpa lista_atual.
- */
 export async function finalizarCompra(itensEnriquecidos, total) {
   if (!itensEnriquecidos.length) {
     throw new Error('Lista vazia');
@@ -314,7 +350,6 @@ export async function finalizarCompra(itensEnriquecidos, total) {
     itens: itensEnriquecidos
   });
 
-  // Atualiza histórico de preços em cada item do catálogo
   const batch = writeBatch(db);
   for (const it of itensEnriquecidos) {
     if (!it.itemId || !it.preco) continue;
@@ -354,9 +389,6 @@ export async function deletarHistorico(id) {
 // HELPERS DE MÉDIA HISTÓRICA
 // ============================================================================
 
-/**
- * Calcula média das últimas N compras de um item, baseado em historicoPrecos.
- */
 export function calcularMediaPrecos(item, n = 5) {
   const hist = item.historicoPrecos || [];
   if (!hist.length) return null;
