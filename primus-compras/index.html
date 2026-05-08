@@ -215,6 +215,50 @@
   </div>
 </div>
 
+<!-- MODAL: EDITAR ITEM -->
+<div class="modal-bg" id="modal-editar">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">✏️ Editar Item</span>
+      <button class="modal-close" data-close-modal="modal-editar">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-id">
+
+      <div class="form-field">
+        <label>Nome do produto</label>
+        <input type="text" id="edit-nome" placeholder="Ex: Arroz">
+      </div>
+
+      <div class="form-field">
+        <label>Tipo / Embalagem</label>
+        <input type="text" id="edit-tipo" placeholder="Ex: kg, fardo, und">
+      </div>
+
+      <div class="form-field">
+        <label>Categoria</label>
+        <select id="edit-categoria"></select>
+      </div>
+
+      <div class="form-field">
+        <label>Fornecedor preferido <span class="optional">(opcional)</span></label>
+        <input type="text" id="edit-fornecedor" placeholder="Ex: CEASA, Atacadão">
+      </div>
+
+      <div class="form-field">
+        <label>Posição na categoria <span class="optional">(menor = primeiro)</span></label>
+        <input type="number" id="edit-ordem" min="0" step="1" placeholder="0">
+      </div>
+
+      <div id="edit-error" class="form-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btn-edit-cancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btn-edit-salvar">💾 Salvar alterações</button>
+    </div>
+  </div>
+</div>
+
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
 
