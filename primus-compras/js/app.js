@@ -1,5 +1,5 @@
 // ============================================================================
-// APP.JS — Orquestrador principal (com membros)
+// APP.JS — Orquestrador principal
 // ============================================================================
 
 import './firebase-init.js';
@@ -222,7 +222,6 @@ async function onLogado({ user, perfil }) {
   $('user-role').textContent = perfil.role === 'dono' ? 'Dono' : 'Membro';
   $('user-avatar').textContent = (perfil.nome || '?').charAt(0).toUpperCase();
 
-  // Mostra aba "Equipe" só para o dono
   $('tab-btn-equipe').style.display = perfil.role === 'dono' ? 'inline-block' : 'none';
 
   mostrarApp();
@@ -745,7 +744,7 @@ async function excluirCompraConfirm(id) {
 }
 
 // ============================================================================
-// EDIÇÃO DE ITEM (modal)
+// EDIÇÃO DE ITEM
 // ============================================================================
 
 let itemEditandoId = null;
@@ -1014,15 +1013,10 @@ async function salvarNovoMembro() {
   btn.textContent = 'Criando...';
 
   try {
-    const resultado = await criarMembro({ nome, username, pin, role: 'membro' });
+    await criarMembro({ nome, username, pin, role: 'membro' });
     fecharModalMembro();
-
     showToast(`✓ Membro "${nome}" criado! Refazendo login...`, 'success');
-
-    // Aguarda 2 segundos e recarrega para limpar tudo
-    setTimeout(() => {
-      location.reload();
-    }, 2000);
+    setTimeout(() => location.reload(), 2000);
   } catch (e) {
     err.textContent = 'Erro: ' + e.message;
     err.classList.add('show');
@@ -1085,35 +1079,23 @@ async function adicionarItem() {
 }
 
 async function atualizarQtdCriar(itemId, valor) {
-  try {
-    await setItemListaEmCriacao(itemId, valor);
-  } catch (e) {
-    showToast('⚠ Erro: ' + e.message, 'error');
-  }
+  try { await setItemListaEmCriacao(itemId, valor); }
+  catch (e) { showToast('⚠ Erro: ' + e.message, 'error'); }
 }
 
 async function atualizarPrecoAtual(itemId, valor) {
-  try {
-    await atualizarPrecoListaAtual(itemId, valor);
-  } catch (e) {
-    showToast('⚠ Erro: ' + e.message, 'error');
-  }
+  try { await atualizarPrecoListaAtual(itemId, valor); }
+  catch (e) { showToast('⚠ Erro: ' + e.message, 'error'); }
 }
 
 async function atualizarQtdAtual(itemId, valor) {
-  try {
-    await atualizarQtdListaAtual(itemId, valor);
-  } catch (e) {
-    showToast('⚠ Erro: ' + e.message, 'error');
-  }
+  try { await atualizarQtdListaAtual(itemId, valor); }
+  catch (e) { showToast('⚠ Erro: ' + e.message, 'error'); }
 }
 
 async function toggleComprado(itemId, comprado) {
-  try {
-    await atualizarCompradoListaAtual(itemId, comprado);
-  } catch (e) {
-    showToast('⚠ Erro: ' + e.message, 'error');
-  }
+  try { await atualizarCompradoListaAtual(itemId, comprado); }
+  catch (e) { showToast('⚠ Erro: ' + e.message, 'error'); }
 }
 
 async function removerDaListaAtual(itemId) {
@@ -1178,7 +1160,7 @@ async function tratarLimparCriar() {
 }
 
 // ============================================================================
-// SALVAR LISTA (modal)
+// SALVAR LISTA
 // ============================================================================
 
 function abrirModalSalvar() {
@@ -1214,35 +1196,88 @@ async function tratarSalvar(comPdf) {
 }
 
 // ============================================================================
-// PDF
+// PDF (com nome de arquivo + colunas alinhadas + fonte compacta)
 // ============================================================================
 
 function gerarPdfLista() {
+  // Nome do arquivo: Lista_Compras_dd-mm-aaaa
+  const hoje = new Date();
+  const dd = String(hoje.getDate()).padStart(2, '0');
+  const mm = String(hoje.getMonth() + 1).padStart(2, '0');
+  const aaaa = hoje.getFullYear();
+  const nomeArquivo = `Lista_Compras_${dd}-${mm}-${aaaa}`;
+
   const w = window.open('', '_blank');
   let html = `
     <html>
     <head>
-      <title>Lista de Compras - Peixaria Primus</title>
+      <title>${nomeArquivo}</title>
       <style>
-        @page { margin: 1.5cm; }
-        body { font-family: Arial, sans-serif; font-size: 12px; color: #222; }
-        h1 { color: #7A1F38; font-size: 22px; margin-bottom: 4px; border-bottom: 2px solid #E9A93A; padding-bottom: 6px; }
-        .subtitle { font-size: 11px; color: #888; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 18px; }
-        h2 { color: #fff; background: #7A1F38; padding: 6px 10px; font-size: 13px; margin-top: 14px; margin-bottom: 0; }
-        table { width: 100%; border-collapse: collapse; }
-        th { background: #faf6f3; font-size: 10px; text-transform: uppercase; padding: 5px 8px; text-align: left; border-bottom: 1px solid #ddd; color: #888; }
-        td { padding: 5px 8px; border-bottom: 1px solid #eee; }
-        .qtd { font-weight: 700; color: #7A1F38; text-align: right; }
-        .preco-ref { font-size: 10px; color: #888; text-align: right; }
-        .preco-blank { border-bottom: 1px solid #999; display: inline-block; width: 60px; }
-        .total { margin-top: 20px; padding: 12px; background: #fdf4e0; border-left: 4px solid #E9A93A; font-size: 14px; }
+        @page { margin: 1cm; size: A4; }
+        body { font-family: Arial, sans-serif; font-size: 10px; color: #222; }
+        h1 { color: #7A1F38; font-size: 16px; margin-bottom: 2px; border-bottom: 2px solid #E9A93A; padding-bottom: 4px; }
+        .subtitle { font-size: 9px; color: #888; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
+        h2 {
+          color: #fff;
+          background: #7A1F38;
+          padding: 4px 8px;
+          font-size: 11px;
+          margin-top: 8px;
+          margin-bottom: 0;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        th {
+          background: #faf6f3;
+          font-size: 9px;
+          text-transform: uppercase;
+          padding: 3px 6px;
+          border-bottom: 1px solid #ddd;
+          color: #888;
+          font-weight: 700;
+        }
+        td {
+          padding: 3px 6px;
+          border-bottom: 1px solid #eee;
+          font-size: 10px;
+        }
+
+        /* Alinhamento das colunas */
+        .col-item { text-align: left; width: 38%; }
+        .col-tipo { text-align: right; width: 10%; }
+        .col-media { text-align: right; width: 12%; color: #888; font-size: 9px; }
+        .col-ultimo { text-align: right; width: 12%; color: #888; font-size: 9px; }
+        .col-qtd { text-align: right; width: 10%; font-weight: 700; color: #7A1F38; }
+        .col-pago { text-align: right; width: 18%; }
+
+        .preco-blank {
+          border-bottom: 1px solid #999;
+          display: inline-block;
+          width: 70px;
+        }
+        .total {
+          margin-top: 12px;
+          padding: 8px 12px;
+          background: #fdf4e0;
+          border-left: 3px solid #E9A93A;
+          font-size: 11px;
+        }
         .total strong { color: #c98e1f; }
-        .footer { margin-top: 30px; font-size: 10px; color: #888; text-align: center; border-top: 1px solid #ddd; padding-top: 10px; }
+        .footer {
+          margin-top: 14px;
+          font-size: 8px;
+          color: #888;
+          text-align: center;
+          border-top: 1px solid #ddd;
+          padding-top: 6px;
+        }
       </style>
     </head>
     <body>
       <h1>Peixaria Primus — Lista de Compras</h1>
-      <div class="subtitle">${new Date().toLocaleDateString('pt-BR')} · ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</div>
+      <div class="subtitle">${hoje.toLocaleDateString('pt-BR')} · ${hoje.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</div>
   `;
 
   let totalEstimado = 0;
@@ -1255,8 +1290,14 @@ function gerarPdfLista() {
     if (itensCat.length === 0) continue;
 
     html += `<h2 style="background:${cat.cor}">${escHtml(cat.nome)}</h2>`;
-    html += `<table><thead><tr>
-      <th>Item</th><th>Tipo</th><th style="text-align:right">Méd. ${mediaN}</th><th style="text-align:right">Última</th><th style="text-align:right">Qtd</th><th style="text-align:right">Preço pago</th>
+    html += `<table>`;
+    html += `<thead><tr>
+      <th class="col-item">Item</th>
+      <th class="col-tipo">Tipo</th>
+      <th class="col-media">Méd. ${mediaN}</th>
+      <th class="col-ultimo">Última</th>
+      <th class="col-qtd">Qtd</th>
+      <th class="col-pago">Preço pago</th>
     </tr></thead><tbody>`;
 
     for (const item of itensCat) {
@@ -1268,12 +1309,12 @@ function gerarPdfLista() {
       totalItens++;
 
       html += `<tr>
-        <td>${escHtml(item.nome)}</td>
-        <td>${escHtml(item.tipo || '')}</td>
-        <td class="preco-ref">${media ? fmtMoeda(media) : '—'}</td>
-        <td class="preco-ref">${ultimo ? fmtMoeda(ultimo) : '—'}</td>
-        <td class="qtd">${qtd}</td>
-        <td><span class="preco-blank"></span></td>
+        <td class="col-item">${escHtml(item.nome)}</td>
+        <td class="col-tipo">${escHtml(item.tipo || '—')}</td>
+        <td class="col-media">${media ? fmtMoeda(media) : '—'}</td>
+        <td class="col-ultimo">${ultimo ? fmtMoeda(ultimo) : '—'}</td>
+        <td class="col-qtd">${qtd}</td>
+        <td class="col-pago"><span class="preco-blank"></span></td>
       </tr>`;
     }
 
@@ -1285,6 +1326,10 @@ function gerarPdfLista() {
       <strong>${totalItens} itens</strong> · Estimativa baseada em médias: <strong>${fmtMoeda(totalEstimado)}</strong>
     </div>
     <div class="footer">Peixaria Primus · Cuiabá/MT</div>
+    <script>
+      // Define o nome do arquivo automaticamente ao salvar PDF
+      document.title = '${nomeArquivo}';
+    </script>
     </body></html>
   `;
 
@@ -1371,12 +1416,9 @@ function switchTab(tab) {
 // ============================================================================
 
 function setupEventos() {
-  // Login
   $('btn-login').addEventListener('click', tratarLogin);
   $('login-pin').addEventListener('keydown', e => { if (e.key === 'Enter') tratarLogin(); });
-  $('login-username').addEventListener('keydown', e => {
-    if (e.key === 'Enter') $('login-pin').focus();
-  });
+  $('login-username').addEventListener('keydown', e => { if (e.key === 'Enter') $('login-pin').focus(); });
   $('goto-criar').addEventListener('click', () => {
     $('form-login').style.display = 'none';
     $('form-criar').style.display = 'block';
@@ -1394,7 +1436,6 @@ function setupEventos() {
     t.addEventListener('click', () => switchTab(t.dataset.tab));
   });
 
-  // Aba Criar
   $('btn-criar-recolher').addEventListener('click', () => expandirOuRecolherCriar(false));
   $('btn-criar-expandir').addEventListener('click', () => expandirOuRecolherCriar(true));
   $('btn-criar-limpar').addEventListener('click', tratarLimparCriar);
@@ -1424,7 +1465,6 @@ function setupEventos() {
     }
   });
 
-  // Aba Atual
   $('btn-atual-recolher').addEventListener('click', () => expandirOuRecolherAtual(false));
   $('btn-atual-expandir').addEventListener('click', () => expandirOuRecolherAtual(true));
   $('btn-finalizar').addEventListener('click', tratarFinalizarCompra);
@@ -1438,7 +1478,6 @@ function setupEventos() {
     renderListaAtual();
   });
 
-  // Aba Fornecedores
   $('btn-novo-fornecedor').addEventListener('click', () => abrirModalFornecedor());
   $('search-fornecedores').addEventListener('input', e => {
     searchFornecedores = e.target.value.trim();
@@ -1450,26 +1489,20 @@ function setupEventos() {
     renderFornecedores();
   });
 
-  // Aba Equipe
   $('btn-novo-membro').addEventListener('click', abrirModalMembro);
 
-  // Modal salvar
   $('btn-salvar-com-pdf').addEventListener('click', () => tratarSalvar(true));
   $('btn-salvar-sem-pdf').addEventListener('click', () => tratarSalvar(false));
 
-  // Modal editar item
   $('btn-edit-salvar').addEventListener('click', salvarEdicaoItem);
   $('btn-edit-cancelar').addEventListener('click', fecharModalEditar);
 
-  // Modal fornecedor
   $('btn-forn-salvar').addEventListener('click', salvarFornecedor);
   $('btn-forn-cancelar').addEventListener('click', fecharModalFornecedor);
 
-  // Modal membro
   $('btn-membro-salvar').addEventListener('click', salvarNovoMembro);
   $('btn-membro-cancelar').addEventListener('click', fecharModalMembro);
 
-  // Select de fornecedor
   $('edit-fornecedor-select').addEventListener('change', e => {
     const inputLivre = $('edit-fornecedor-livre');
     if (e.target.value === '__novo__') {
@@ -1481,7 +1514,6 @@ function setupEventos() {
     }
   });
 
-  // Fechar modais
   document.querySelectorAll('[data-close-modal]').forEach(b => {
     b.addEventListener('click', () => {
       $(b.dataset.closeModal).classList.remove('show');
@@ -1500,7 +1532,6 @@ function setupEventos() {
     if (e.target.id === 'modal-membro') fecharModalMembro();
   });
 
-  // Delegação - aba Criar
   $('list-criar').addEventListener('change', e => {
     const action = e.target.dataset.action;
     const itemId = e.target.dataset.itemId;
@@ -1517,7 +1548,6 @@ function setupEventos() {
     else if (action === 'editar-item') abrirModalEditar(itemId);
   });
 
-  // Delegação - aba Atual
   $('list-atual').addEventListener('change', e => {
     const action = e.target.dataset.action;
     const itemId = e.target.dataset.itemId;
@@ -1536,7 +1566,6 @@ function setupEventos() {
     else if (action === 'editar-item') abrirModalEditar(itemId);
   });
 
-  // Delegação - histórico
   $('history-list').addEventListener('click', e => {
     const target = e.target.closest('[data-action]');
     if (!target) return;
@@ -1544,7 +1573,6 @@ function setupEventos() {
     else if (target.dataset.action === 'excluir-compra') excluirCompraConfirm(target.dataset.histId);
   });
 
-  // Delegação - fornecedores
   $('list-fornecedores').addEventListener('click', e => {
     const target = e.target.closest('[data-action]');
     if (!target) return;
@@ -1552,33 +1580,24 @@ function setupEventos() {
     else if (target.dataset.action === 'remover-forn') removerFornecedor(target.dataset.fornId);
   });
 
-  // Delegação - equipe
   $('list-equipe').addEventListener('click', e => {
     const target = e.target.closest('[data-action]');
     if (!target) return;
     if (target.dataset.action === 'remover-membro') removerMembro(target.dataset.uid);
   });
 
-  // Modais - Enter salva
   ['edit-nome', 'edit-tipo', 'edit-fornecedor-livre', 'edit-ordem'].forEach(id => {
-    $(id).addEventListener('keydown', e => {
-      if (e.key === 'Enter') salvarEdicaoItem();
-    });
+    $(id).addEventListener('keydown', e => { if (e.key === 'Enter') salvarEdicaoItem(); });
   });
 
   ['forn-nome', 'forn-telefone', 'forn-obs'].forEach(id => {
-    $(id).addEventListener('keydown', e => {
-      if (e.key === 'Enter') salvarFornecedor();
-    });
+    $(id).addEventListener('keydown', e => { if (e.key === 'Enter') salvarFornecedor(); });
   });
 
   ['membro-nome', 'membro-username', 'membro-pin'].forEach(id => {
-    $(id).addEventListener('keydown', e => {
-      if (e.key === 'Enter') salvarNovoMembro();
-    });
+    $(id).addEventListener('keydown', e => { if (e.key === 'Enter') salvarNovoMembro(); });
   });
 
-  // Atalhos globais
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
       if ($('modal-salvar').classList.contains('show')) { fecharModalSalvar(); return; }
@@ -1588,14 +1607,12 @@ function setupEventos() {
     }
   });
 
-  // PIN: só números (login, criar, membro)
   ['login-pin', 'criar-pin', 'membro-pin'].forEach(id => {
     $(id).addEventListener('input', e => {
       e.target.value = e.target.value.replace(/\D/g, '').slice(0, 4);
     });
   });
 
-  // Username do membro: só letras minúsculas e números
   $('membro-username').addEventListener('input', e => {
     e.target.value = e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '');
   });
