@@ -330,7 +330,6 @@ body {
   min-width: 200px;
 }
 
-/* Configuração da média */
 .config-media {
   display: flex;
   align-items: center;
@@ -526,8 +525,9 @@ th.col-preco, td.col-preco { width: 130px; }
 th.col-pago, td.col-pago { width: 130px; }
 th.col-subtotal, td.col-subtotal { width: 100px; text-align: right; font-weight: 600; color: var(--wine); }
 th.col-action, td.col-action { width: 50px; text-align: center; padding: 0; }
+th.col-actions, td.col-actions { width: 80px; text-align: center; padding: 0 4px; white-space: nowrap; }
 
-/* Colunas média/último (cinza italico se vazio) */
+/* Colunas média/último */
 th.col-media, td.col-media,
 th.col-ultimo, td.col-ultimo {
   width: 80px;
@@ -613,14 +613,23 @@ select {
   background: none;
   border: none;
   padding: 4px 8px;
-  font-size: 18px;
+  font-size: 16px;
   cursor: pointer;
   color: #c4b5b0;
   border-radius: 4px;
   line-height: 1;
+  transition: all 0.15s;
 }
 .icon-btn:hover { background: var(--wine-soft); color: var(--wine); }
 .icon-btn.danger:hover { background: #fdecea; color: var(--red); }
+.icon-btn.edit:hover { background: var(--gold-soft); color: var(--gold-dark); }
+
+/* Linha de ações no item */
+.item-actions {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}
 
 /* ============================================================================
    ADD PANEL
@@ -772,6 +781,52 @@ select {
   flex-wrap: wrap;
 }
 
+/* Form fields no modal */
+.form-field { margin-bottom: 14px; }
+.form-field label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--wine);
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.form-field label .optional {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 10px;
+  margin-left: 4px;
+}
+.form-field input, .form-field select {
+  width: 100%;
+  padding: 9px 12px;
+  font-size: 14px;
+  border: 1.5px solid var(--line);
+  border-radius: 8px;
+  font-family: inherit;
+  background: #fff;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.form-field input:focus, .form-field select:focus {
+  outline: none;
+  border-color: var(--wine);
+  box-shadow: 0 0 0 3px var(--wine-soft);
+}
+.form-error {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: #fdecea;
+  border: 1px solid #f5c6c6;
+  color: var(--red);
+  border-radius: 6px;
+  font-size: 12px;
+  display: none;
+}
+.form-error.show { display: block; }
+
 /* ============================================================================
    TOAST
    ============================================================================ */
@@ -828,10 +883,11 @@ select {
   .brand-subtitle { display: none; }
   .config-media { display: none; }
   .tab { padding: 8px 12px; font-size: 12px; }
+  .icon-btn { padding: 3px 5px; font-size: 14px; }
 }
 
 @media print {
   body { background: #fff; padding: 0; }
-  .toolbar, .add-section, .search-wrap, .tabs, .col-action, .col-check { display: none !important; }
+  .toolbar, .add-section, .search-wrap, .tabs, .col-action, .col-actions, .col-check { display: none !important; }
   .app { box-shadow: none; margin: 0; max-width: 100%; border-radius: 0; }
 }
