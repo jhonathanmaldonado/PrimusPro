@@ -555,6 +555,22 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
         <div id="gorjetaConfigAlert" class="alert"></div>
         <button class="btn btn-success" onclick="salvarConfigGorjeta()" style="width:100%">💾 Salvar Todas as Configurações</button>
       </div>
+
+      <!-- MENSAGEM PADRÃO DO WHATSAPP -->
+      <div class="card" style="margin-top:16px;border-top:3px solid #25D366">
+        <div class="card-title">📲 Mensagem Padrão do WhatsApp</div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.6">
+          Mensagem enviada ao clicar no botão WPP na escala. Use <strong>{nome}</strong> para o primeiro nome do funcionário e <strong>{dias}</strong> para os dias escalados.
+        </p>
+        <textarea id="wppMensagemEdit" style="min-height:160px;font-size:13px;line-height:1.7" placeholder="Digite a mensagem..."></textarea>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-secondary btn-sm" onclick="wppMensagemPreview()">👁️ Pré-visualizar</button>
+          <button class="btn btn-secondary btn-sm" onclick="wppMensagemReset()">↩️ Restaurar padrão</button>
+          <button class="btn btn-success" style="flex:1" onclick="salvarWppMensagem()">💾 Salvar Mensagem</button>
+        </div>
+        <div id="wppMensagemAlert" class="alert"></div>
+        <div id="wppMensagemPreviewBox" style="display:none;margin-top:12px;background:#ECF8F0;border:1.5px solid #25D366;border-radius:8px;padding:14px;font-size:13px;line-height:1.7;white-space:pre-wrap;color:#1a1916"></div>
+      </div>
     </div>
 
     <!-- ESCALA -->
@@ -866,7 +882,7 @@ function showTab(tab, el) {
   if(tab==='cadastro')  renderCadList();
   if(tab==='pagamentos') renderPagamentos();
   if(tab==='calendario') carregarCalFin();
-  if(tab==='usuarios')   { renderUsuarios(); carregarConfigGorjeta(); }
+  if(tab==='usuarios')   { renderUsuarios(); carregarConfigGorjeta(); carregarWppMensagem(); }
   if(tab==='escala')     escalaCarregar();
 }
 
@@ -3028,7 +3044,12 @@ function wppEscala(funcId) {
   }
 
   // Montar mensagem
-  const msg = `📅 Olá, ${f.nome.split(' ')[0]}! Você está escalado(a) para trabalhar nos seguintes dias:\n\n${diasTexto}\n\nQualquer dúvida, entre em contato. Obrigado! 🙏\n— Peixaria Primus`;
+  // Usar mensagem configurada pelo admin (ou padrão)
+  const templateMsg = (typeof wppMensagemAtual !== 'undefined' && wppMensagemAtual)
+    ? wppMensagemAtual : WPP_MSG_PADRAO;
+  const msg = templateMsg
+    .replace('{nome}', f.nome.split(' ')[0])
+    .replace('{dias}', diasTexto);
 
   // Limpar telefone (só números)
   const tel = f.telefone.replace(/\D/g,'');
@@ -3037,6 +3058,73 @@ function wppEscala(funcId) {
 
   const url = `https://wa.me/${telCompleto}?text=${encodeURIComponent(msg)}`;
   window.open(url, '_blank');
+}
+
+
+/* ════════════════════════════════════════
+   CONFIGURAÇÃO DA MENSAGEM WPP (Admin)
+════════════════════════════════════════ */
+
+const WPP_MSG_PADRAO = `📅 Olá, {nome}! Tudo bem?
+
+Você está escalado(a) para trabalhar nos seguintes dias:
+
+{dias}
+
+*Por favor, confirme o seu comparecimento respondendo essa mensagem com* ✅ *SIM* *ou* ❌ *NÃO.*
+
+Obrigado! 🙏
+— Peixaria Primus`;
+
+let wppMensagemAtual = WPP_MSG_PADRAO;
+
+async function carregarWppMensagem() {
+  try {
+    const snap = await db.collection('configuracoes').doc('wpp').get();
+    if(snap.exists && snap.data().mensagem) {
+      wppMensagemAtual = snap.data().mensagem;
+    } else {
+      wppMensagemAtual = WPP_MSG_PADRAO;
+    }
+  } catch(e) {
+    wppMensagemAtual = WPP_MSG_PADRAO;
+  }
+  const el = $('wppMensagemEdit');
+  if(el) el.value = wppMensagemAtual;
+}
+
+async function salvarWppMensagem() {
+  const msg = $('wppMensagemEdit').value.trim();
+  if(!msg) { showAlert('wppMensagemAlert','Digite a mensagem.','error'); return; }
+  try {
+    await db.collection('configuracoes').doc('wpp').set({
+      mensagem: msg,
+      atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      atualizadoPor: currentUser.uid
+    });
+    wppMensagemAtual = msg;
+    showAlert('wppMensagemAlert','✅ Mensagem salva!','success');
+    await logAuditoria('WPP_MENSAGEM_ATUALIZADA','configuracoes/wpp',{},{});
+  } catch(e) {
+    showAlert('wppMensagemAlert','❌ Erro: '+e.message,'error',0);
+  }
+}
+
+function wppMensagemPreview() {
+  const msg = $('wppMensagemEdit').value.trim();
+  if(!msg) return;
+  const preview = msg
+    .replace('{nome}', 'Jonas')
+    .replace('{dias}', 'Quarta (23/04), Sexta (25/04), Sábado (26/04), Domingo (27/04)');
+  const box = $('wppMensagemPreviewBox');
+  box.textContent = preview;
+  box.style.display = 'block';
+}
+
+function wppMensagemReset() {
+  if(!confirm('Restaurar a mensagem padrão?')) return;
+  $('wppMensagemEdit').value = WPP_MSG_PADRAO;
+  $('wppMensagemPreviewBox').style.display = 'none';
 }
 
 </script>
