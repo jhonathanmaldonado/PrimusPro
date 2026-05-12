@@ -512,6 +512,49 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
       </div>
       <div id="usuariosAlert" class="alert"></div>
       <div id="usuariosList"></div>
+
+      <!-- CONFIGURAÇÃO DE GORJETA E CARGOS -->
+      <div class="card" style="margin-top:24px;border-top:3px solid var(--accent)">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>⚙️ Gorjeta e Cargos</span>
+          <button class="btn btn-secondary btn-sm no-print" onclick="carregarConfigGorjeta()">🔄 Recarregar</button>
+        </div>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6">
+          Defina os percentuais de gorjeta por cargo. Você também pode adicionar novos cargos ou remover os que não usa.
+        </p>
+
+        <!-- LISTA DE CARGOS E PERCENTUAIS -->
+        <div id="gorjetaConfigLista" style="margin-bottom:14px"></div>
+
+        <!-- TOTALIZADOR -->
+        <div style="background:var(--surface2);border-radius:8px;padding:10px 14px;font-size:13px;margin-bottom:14px;display:flex;gap:20px;flex-wrap:wrap">
+          <div><span style="color:var(--muted)">Distribuído: </span><strong id="gorjetaSomaDistrib" style="color:var(--accent)">—</strong></div>
+          <div><span style="color:var(--muted)">Casa retém: </span><strong id="gorjetaSomaCasa" style="color:var(--success)">—</strong></div>
+        </div>
+
+        <!-- ADICIONAR NOVO CARGO -->
+        <div style="background:var(--accent-lt);border-radius:8px;padding:12px 14px;margin-bottom:12px">
+          <div style="font-size:11px;font-weight:700;color:var(--accent-dk);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">➕ Novo Cargo</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+            <div style="flex:1;min-width:140px">
+              <div class="field-label">Nome do Cargo</div>
+              <input type="text" id="novoCargo" class="form-input" placeholder="Ex: Sommelier">
+            </div>
+            <div style="width:100px">
+              <div class="field-label">Gorjeta %</div>
+              <input type="number" id="novoCargoGorjeta" class="form-input" placeholder="0" min="0" max="100" step="1" value="0">
+            </div>
+            <div style="width:100px">
+              <div class="field-label">Diária R$</div>
+              <input type="number" id="novoCargodiaria" class="form-input" placeholder="0" min="0" step="0.01" value="0">
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="adicionarCargo()">+ Adicionar</button>
+          </div>
+        </div>
+
+        <div id="gorjetaConfigAlert" class="alert"></div>
+        <button class="btn btn-success" onclick="salvarConfigGorjeta()" style="width:100%">💾 Salvar Todas as Configurações</button>
+      </div>
     </div>
 
     <!-- ESCALA -->
@@ -823,7 +866,7 @@ function showTab(tab, el) {
   if(tab==='cadastro')  renderCadList();
   if(tab==='pagamentos') renderPagamentos();
   if(tab==='calendario') carregarCalFin();
-  if(tab==='usuarios')   renderUsuarios();
+  if(tab==='usuarios')   { renderUsuarios(); carregarConfigGorjeta(); }
   if(tab==='escala')     escalaCarregar();
 }
 
@@ -1473,6 +1516,8 @@ async function renderPagamentos() {
         ));
         totals[r.funcId] = {
           nome:r.nomeSnapshot, cargo:r.cargoSnapshot, pix,
+          cpf: cad.cpf || r.cpf || '',
+          telefone: cad.telefone || r.telefone || '',
           isRegistrado, tipo: cad.tipo || 'fixo', dias:[], gorjeta:0, diarias:0, consumo:0, total:0
         };
       }
@@ -2739,12 +2784,14 @@ function gerarRecibo(tJson) {
   <div class="ass-bloco">
     <div class="ass-linha">
       <div class="ass-nome">${t.nome}</div>
-      <div class="ass-cargo">${t.cargo}</div>
+      <div class="ass-cargo">${t.cpf ? 'CPF: ' + t.cpf : ''}</div>
+      <div class="ass-cargo">${t.cargo === 'Segurança' ? 'Fiscal de Pátio' : t.cargo}</div>
     </div>
   </div>
   <div class="ass-bloco">
     <div class="ass-linha">
       <div class="ass-nome">Peixaria Primus</div>
+      <div class="ass-cargo">CNPJ: 14.796.317/0001-90</div>
       <div class="ass-cargo">Responsável pelo pagamento</div>
     </div>
   </div>
@@ -2778,6 +2825,171 @@ function mascaraTel(el) {
   else if(v.length > 6) v = v.replace(/(\d{2})(\d{4})(\d{1,4})/,'($1) $2-$3');
   else if(v.length > 2) v = v.replace(/(\d{2})(\d{1,4})/,'($1) $2');
   el.value = v;
+}
+
+
+/* ════════════════════════════════════════
+   CONFIGURAÇÃO DE GORJETA E CARGOS (Admin)
+════════════════════════════════════════ */
+
+// Estado local dos cargos configurados
+let gorjetaConfigCargos = []; // [{cargo, label, percentual, diaria}]
+
+async function carregarConfigGorjeta() {
+  const lista = $('gorjetaConfigLista');
+  lista.innerHTML = '<div class="empty-state"><span class="loading-spinner"></span></div>';
+  try {
+    const snap = await db.collection('configuracoes').doc('gorjeta').get();
+    const regras = snap.exists ? (snap.data().regras || {}) : {};
+
+    // Cargos padrão se não existirem
+    const CARGOS_PADRAO = [
+      {cargo:'Garçom',percentual:0.45,diaria:80},
+      {cargo:'Bar',percentual:0.07,diaria:0},
+      {cargo:'Cozinheiro',percentual:0.10,diaria:0},
+      {cargo:'Cumim',percentual:0.05,diaria:100},
+      {cargo:'Gerente',percentual:0.10,diaria:0},
+      {cargo:'Aux. Bar',percentual:0.03,diaria:80},
+      {cargo:'Caixa',percentual:0.00,diaria:150},
+      {cargo:'Recepcionista',percentual:0.00,diaria:120},
+      {cargo:'Monitora',percentual:0.00,diaria:120},
+      {cargo:'Aux. Cozinha',percentual:0.00,diaria:140},
+      {cargo:'Limpeza',percentual:0.00,diaria:120},
+      {cargo:'Segurança',percentual:0.00,diaria:200},
+    ];
+
+    // Mesclar com o que está no Firebase
+    const cargosNoFirebase = Object.entries(regras).map(([cargo, v]) => ({
+      cargo, percentual: v.percentual ?? 0, diaria: v.diaria ?? 0
+    }));
+
+    if(cargosNoFirebase.length > 0) {
+      gorjetaConfigCargos = cargosNoFirebase;
+      // Garantir que cargos padrão existam se não estiverem
+      CARGOS_PADRAO.forEach(cp => {
+        if(!gorjetaConfigCargos.find(c => c.cargo === cp.cargo))
+          gorjetaConfigCargos.push(cp);
+      });
+    } else {
+      gorjetaConfigCargos = [...CARGOS_PADRAO];
+    }
+
+    renderConfigGorjeta();
+  } catch(e) {
+    lista.innerHTML = `<div class="empty-state"><p>${e.message}</p></div>`;
+  }
+}
+
+function renderConfigGorjeta() {
+  const lista = $('gorjetaConfigLista');
+  lista.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:0;margin-bottom:4px">
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:6px 10px">Cargo</div>
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:6px 10px;min-width:110px;text-align:center">Gorjeta %</div>
+      <div style="font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;padding:6px 10px;min-width:120px;text-align:center">Diária Padrão R$</div>
+      <div style="width:36px"></div>
+    </div>
+    ${gorjetaConfigCargos.map((c,i) => `
+      <div style="display:grid;grid-template-columns:1fr auto auto auto;gap:0;border-top:1.5px solid var(--border);align-items:center">
+        <div style="padding:8px 10px">
+          <input type="text" value="${c.cargo}"
+            onchange="gorjetaConfigCargos[${i}].cargo=this.value;renderConfigGorjeta()"
+            style="width:100%;background:transparent;border:none;font-size:14px;font-weight:600;color:var(--text);font-family:inherit;padding:2px 4px;border-radius:4px"
+            onfocus="this.style.background='var(--surface2)'"
+            onblur="this.style.background='transparent'">
+        </div>
+        <div style="padding:6px 8px;min-width:110px">
+          <div style="display:flex;align-items:center;gap:4px;justify-content:center">
+            <input type="number" value="${(c.percentual*100).toFixed(0)}" min="0" max="100" step="1"
+              id="gpct_${i}"
+              onchange="gorjetaConfigCargos[${i}].percentual=parseFloat(this.value)/100||0;atualizarSomaGorjeta()"
+              oninput="gorjetaConfigCargos[${i}].percentual=parseFloat(this.value)/100||0;atualizarSomaGorjeta()"
+              style="width:60px;background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;
+              padding:6px 8px;font-size:16px;font-weight:800;color:var(--accent-dk);text-align:center;font-family:inherit">
+            <span style="font-size:13px;color:var(--muted);font-weight:700">%</span>
+          </div>
+        </div>
+        <div style="padding:6px 8px;min-width:120px">
+          <div style="display:flex;align-items:center;gap:4px;justify-content:center">
+            <span style="font-size:12px;color:var(--muted)">R$</span>
+            <input type="number" value="${c.diaria||0}" min="0" step="0.01"
+              onchange="gorjetaConfigCargos[${i}].diaria=parseFloat(this.value)||0"
+              oninput="gorjetaConfigCargos[${i}].diaria=parseFloat(this.value)||0"
+              style="width:72px;background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;
+              padding:6px 8px;font-size:14px;font-weight:700;color:var(--text);text-align:center;font-family:inherit">
+          </div>
+        </div>
+        <div style="padding:6px 8px;text-align:center">
+          <button onclick="removerCargo(${i})"
+            style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;line-height:1;padding:4px;transition:color .15s"
+            onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--muted)'"
+            title="Remover cargo">×</button>
+        </div>
+      </div>`).join('')}`;
+  atualizarSomaGorjeta();
+}
+
+function atualizarSomaGorjeta() {
+  const soma = gorjetaConfigCargos.reduce((a,c) => a+(c.percentual||0), 0);
+  const casa = Math.max(0, 1 - soma);
+  const el1 = $('gorjetaSomaDistrib');
+  const el2 = $('gorjetaSomaCasa');
+  if(el1) {
+    el1.textContent = (soma*100).toFixed(0) + '%';
+    el1.style.color = soma > 1 ? 'var(--danger)' : 'var(--accent)';
+  }
+  if(el2) el2.textContent = (casa*100).toFixed(0) + '%';
+}
+
+function removerCargo(idx) {
+  if(!confirm(`Remover o cargo "${gorjetaConfigCargos[idx].cargo}"?`)) return;
+  gorjetaConfigCargos.splice(idx, 1);
+  renderConfigGorjeta();
+}
+
+function adicionarCargo() {
+  const nome   = $('novoCargo').value.trim();
+  const gorj   = parseFloat($('novoCargoGorjeta').value) || 0;
+  const diaria = parseFloat($('novoCargodiaria').value)  || 0;
+  if(!nome) { showAlert('gorjetaConfigAlert','Informe o nome do cargo.','error'); return; }
+  if(gorjetaConfigCargos.find(c => c.cargo.toLowerCase() === nome.toLowerCase())) {
+    showAlert('gorjetaConfigAlert','Este cargo já existe.','error'); return;
+  }
+  gorjetaConfigCargos.push({ cargo: nome, percentual: gorj/100, diaria });
+  $('novoCargo').value = ''; $('novoCargoGorjeta').value = '0'; $('novoCargodiaria').value = '0';
+  renderConfigGorjeta();
+  showAlert('gorjetaConfigAlert',`✅ Cargo "${nome}" adicionado. Clique em Salvar para gravar.`,'success');
+}
+
+async function salvarConfigGorjeta() {
+  try {
+    const regras = {};
+    gorjetaConfigCargos.forEach(c => {
+      regras[c.cargo] = {
+        percentual: c.percentual || 0,
+        diaria: c.diaria || 0,
+        descricao: c.cargo
+      };
+    });
+    const soma = gorjetaConfigCargos.reduce((a,c) => a+(c.percentual||0), 0);
+    await db.collection('configuracoes').doc('gorjeta').set({
+      regras,
+      percentualCasa: Math.max(0, 1-soma),
+      totalDistribuido: soma,
+      atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      atualizadoPor: currentUser.uid
+    });
+    // Atualizar DIARIA_PADRAO em memória
+    gorjetaConfigCargos.forEach(c => {
+      if(c.diaria > 0) DIARIA_PADRAO[c.cargo] = c.diaria;
+    });
+    // Recarregar regras de gorjeta em memória
+    gorjetaRegras = regras;
+    showAlert('gorjetaConfigAlert','✅ Configurações salvas com sucesso!','success');
+    await logAuditoria('GORJETA_ATUALIZADA','configuracoes/gorjeta',{},{regras});
+  } catch(e) {
+    showAlert('gorjetaConfigAlert','❌ Erro: '+e.message,'error',0);
+  }
 }
 
 </script>
