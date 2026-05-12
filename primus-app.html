@@ -843,7 +843,7 @@ function configurarAbas() {
   const isDir = ['diretoria','admin'].includes(currentPerfil);
   const isAdm = currentPerfil === 'admin';
   const mapa  = {
-    presenca:isGer, escala:isGer, calendario:isFin, fechamento:isFin, pagamentos:isFin,
+    presenca:isGer||isAdm, escala:isGer||isAdm, calendario:isFin, fechamento:isFin, pagamentos:isFin,
     historico:isFin, resumo:isFin, cadastro:isGer||isDir, usuarios:isAdm
   };
   Object.entries(mapa).forEach(([tab,vis]) =>
@@ -2164,6 +2164,7 @@ function escalaRender() {
     <th style="text-align:left;padding:10px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;border-bottom:2px solid var(--border);min-width:180px">Funcionário</th>
     ${DIAS_CURTO.map(d=>`<th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px 4px;border-bottom:2px solid var(--border);min-width:44px;text-align:center">${d}</th>`).join('')}
     <th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px;border-bottom:2px solid var(--border);text-align:center">Total</th>
+    <th style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;padding:8px;border-bottom:2px solid var(--border);text-align:center;min-width:44px">WPP</th>
   </tr>`;
 
   // Agrupar por cargo
@@ -2205,6 +2206,15 @@ function escalaRender() {
         </td>
         ${cells}
         <td style="font-weight:800;color:${tot>0?'var(--accent)':'var(--muted)'};font-size:15px;text-align:center;border-bottom:1px solid var(--border)">${tot||'—'}</td>
+        <td style="border-bottom:1px solid var(--border);text-align:center;padding:4px">
+          ${tot>0 && f.telefone ? `<button onclick="wppEscala('${f.id}')"
+            title="Enviar WhatsApp para ${f.nome}"
+            style="background:#25D366;border:none;border-radius:6px;width:32px;height:32px;cursor:pointer;
+            display:inline-flex;align-items:center;justify-content:center;font-size:16px;transition:opacity .15s"
+            onmouseover="this.style.opacity='.8'" onmouseout="this.style.opacity='1'">
+            📲
+          </button>` : `<span style="font-size:11px;color:var(--border2)" title="${tot===0?'Nenhum dia marcado':'Sem telefone cadastrado'}">—</span>`}
+        </td>
       </tr>`;
     });
   });
@@ -2990,6 +3000,43 @@ async function salvarConfigGorjeta() {
   } catch(e) {
     showAlert('gorjetaConfigAlert','❌ Erro: '+e.message,'error',0);
   }
+}
+
+
+/* ── WhatsApp da Escala ── */
+function wppEscala(funcId) {
+  const f = escalaCadastro.find(fc => fc.id === funcId);
+  if(!f || !f.telefone) { alert('Telefone não cadastrado para este funcionário.'); return; }
+
+  // Pegar dias marcados
+  const diasFunc = escalaDias[funcId] || {};
+  const diasMarcados = DIAS_SEMANA.filter(d => diasFunc[d]);
+  if(!diasMarcados.length) { alert('Nenhum dia marcado para este funcionário.'); return; }
+
+  // Formatar dias com datas se disponível
+  let diasTexto = '';
+  if(escalaDataInicioAtual) {
+    const inicio = new Date(escalaDataInicioAtual + 'T12:00:00');
+    diasTexto = diasMarcados.map(d => {
+      const idx = DIAS_SEMANA.indexOf(d);
+      const dt = new Date(inicio);
+      dt.setDate(inicio.getDate() + idx);
+      return `${d} (${dt.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})})`;
+    }).join(', ');
+  } else {
+    diasTexto = diasMarcados.join(', ');
+  }
+
+  // Montar mensagem
+  const msg = `📅 Olá, ${f.nome.split(' ')[0]}! Você está escalado(a) para trabalhar nos seguintes dias:\n\n${diasTexto}\n\nQualquer dúvida, entre em contato. Obrigado! 🙏\n— Peixaria Primus`;
+
+  // Limpar telefone (só números)
+  const tel = f.telefone.replace(/\D/g,'');
+  // Adicionar 55 (Brasil) se não tiver
+  const telCompleto = tel.startsWith('55') ? tel : '55' + tel;
+
+  const url = `https://wa.me/${telCompleto}?text=${encodeURIComponent(msg)}`;
+  window.open(url, '_blank');
 }
 
 </script>
