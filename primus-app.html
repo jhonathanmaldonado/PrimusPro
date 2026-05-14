@@ -582,6 +582,8 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
           <button class="btn btn-secondary btn-sm no-print" onclick="escalaSalvarManual()">💾 Salvar</button>
           <button class="btn btn-secondary btn-sm no-print" onclick="escalaPrevisualizarPublicacao()">👁️ Pré-visualizar</button>
           <button class="btn btn-primary no-print" onclick="abrirPublicarEscala()">📤 Publicar no Sistema</button>
+          <button class="btn btn-secondary btn-sm no-print" onclick="escalaReiniciar()" title="Zera marcações e reaplica apenas os pré-agendados">🔄 Nova Semana</button>
+          <button class="btn btn-danger btn-sm no-print" onclick="escalaLimpar()">🗑️ Limpar Tudo</button>
         </div>
       </div>
 
@@ -2283,11 +2285,38 @@ function escalaFuncsEscalados() {
     }));
 }
 
-/* ── Limpar ── */
+/* ── Limpar tudo ── */
 function escalaLimpar() {
   if(!Object.keys(escalaDias).length) return;
-  if(!confirm('Limpar todas as marcações da semana?')) return;
+  if(!confirm('Limpar TODAS as marcações? Isso inclui os pré-agendados.')) return;
   escalaDias = {};
+  escalaDocId = null;
+  $('escalaBadgePublicada').style.display = 'none';
+  escalaRender();
+  escalaSalvarFirebase();
+}
+
+/* ── Nova semana: zera e reaplica pré-agendados ── */
+function escalaReiniciar() {
+  if(!confirm('Iniciar nova semana? As marcações atuais serão apagadas e os funcionários pré-agendados (Qua–Dom) voltarão marcados automaticamente.')) return;
+
+  // Zerar todas as marcações
+  escalaDias = {};
+
+  // Reaplicar pré-agendados (escalaFixa = true)
+  const DIAS_FIXOS = ['Quarta','Quinta','Sexta','Sábado','Domingo'];
+  escalaCadastro.forEach(f => {
+    if(f.escalaFixa) {
+      escalaDias[f.id] = {};
+      DIAS_FIXOS.forEach(d => escalaDias[f.id][d] = true);
+    }
+  });
+
+  // Limpar badge de publicação
+  $('escalaBadgePublicada').style.display = 'none';
+  escalaDataInicioAtual = null;
+  escalaDocId = null;
+
   escalaRender();
   escalaSalvarFirebase();
 }
