@@ -488,7 +488,7 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
           <input type="hidden" id="cadId"><div><div class="field-label">Nome</div><input type="text" id="cadNome" class="form-input" placeholder="Nome completo"></div>
           <div class="grid2"><div><div class="field-label">Cargo</div><select id="cadCargo" class="form-select"><option>Gerente</option><option>Garçom</option><option>Cumim</option><option>Cozinheiro</option>
         <option>Bar</option><option>Aux. Bar</option><option>Caixa</option><option>Recepcionista</option>
-        <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div><div><div class="field-label">Tipo</div><select id="cadTipo" class="form-select"><option value="fixo">Fixo (registrado)</option><option value="frequente">Frequente (vai sempre)</option></select></div></div>
+        <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div><div><div class="field-label">Tipo</div><select id="cadTipo" class="form-select"><option value="fixo">Fixo (registrado)</option><option value="frequente">Frequente (vai sempre)</option></select></div><div><div class="field-label">Escala padrão Qua–Dom</div><select id="cadEscalaFixa" class="form-select"><option value="nao">Manual</option><option value="sim">✅ Pré-marcar Qua a Dom</option></select></div></div>
           <div class="grid2"><div><div class="field-label">Diária Padrão (R$)</div><input type="number" id="cadDiaria" class="form-input" step="0.01"></div><div><div class="field-label">Chave Pix</div><input type="text" id="cadPix" class="form-input" placeholder="CPF, celular ou e-mail"></div></div>
       <div class="grid2">
         <div><div class="field-label">CPF <span style="color:var(--danger)">*</span></div><input type="text" id="cadCpf" class="form-input" placeholder="000.000.000-00" maxlength="14" oninput="mascaraCpf(this)"></div>
@@ -1531,7 +1531,9 @@ async function renderPagamentos() {
           pix.toLowerCase().includes('itaú') || pix.toLowerCase().includes('salário') || pix.toLowerCase().includes('salario')
         ));
         totals[r.funcId] = {
-          nome:r.nomeSnapshot, cargo:r.cargoSnapshot, pix,
+          nome: cad.nome || r.nomeSnapshot,       // nome atual do cadastro
+          cargo: cad.cargo || r.cargoSnapshot,    // cargo atual do cadastro
+          pix,
           cpf: cad.cpf || r.cpf || '',
           telefone: cad.telefone || r.telefone || '',
           isRegistrado, tipo: cad.tipo || 'fixo', dias:[], gorjeta:0, diarias:0, consumo:0, total:0
