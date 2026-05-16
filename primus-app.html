@@ -382,7 +382,7 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
           <div id="grpFreq" class="grupo-section"><div class="grupo-header">🔄 Frequentes</div><div class="emp-list" id="listFreq"></div><div id="emptyFreq" style="font-size:13px;color:var(--muted);padding:8px 0;display:none">Nenhum frequente cadastrado</div></div>
           <div id="grpExtras" class="grupo-section"><div class="grupo-header">➕ Extras do Dia</div><div class="emp-list" id="listExtras"></div></div>
           <div id="btnAddExtra" style="margin-top:10px;display:none" class="no-print">
-            <button class="btn btn-secondary btn-block" style="border-style:dashed" onclick="abrirModal('modalExtra');preencherDiariaExtra()">➕ Adicionar Extra do Dia</button>
+            <button class="btn btn-secondary btn-block" style="border-style:dashed" onclick="abrirModalExtra()">➕ Adicionar Extra do Dia</button>
           </div>
         </div>
         <div class="card"><div class="card-title">Observações do Dia</div><textarea id="gerObs" placeholder="Ocorrências, avisos, informações para o Jhonathan..."></textarea></div>
@@ -1009,7 +1009,10 @@ function renderGerStatus() {
   const bloqueado  = gerDayStatus === 'fechado';
   const banner = $('gerBanner');
   if(bloqueado) {
-    banner.innerHTML = '🔒 Dia fechado. Apenas Diretoria pode reabrir.';
+    const podeDir = ['diretoria','admin'].includes(currentPerfil);
+    banner.innerHTML = podeDir
+      ? '🔒 Dia fechado. <button onclick="gerReobrirRapido()" class="btn btn-sm" style="background:var(--danger);color:#fff;margin-left:10px;padding:4px 12px;font-size:12px">🔓 Reabrir</button>'
+      : '🔒 Dia fechado. Apenas Diretoria pode reabrir.';
     banner.className = 'bloqueado-banner lock'; banner.style.display = 'block';
   } else if(soPadeObs) {
     banner.innerHTML = '📤 Enviado para o financeiro. <strong>Presença e consumo bloqueados.</strong>';
@@ -3156,6 +3159,61 @@ function wppMensagemReset() {
   if(!confirm('Restaurar a mensagem padrão?')) return;
   $('wppMensagemEdit').value = WPP_MSG_PADRAO;
   $('wppMensagemPreviewBox').style.display = 'none';
+}
+
+
+/* ── Reabrir dia rápido (Admin/Diretoria da tela de presença) ── */
+async function gerReobrirRapido() {
+  const motivo = prompt('Motivo da reabertura (obrigatório):');
+  if(!motivo || !motivo.trim()) return;
+  try {
+    const e = {de:'fechado',para:'reaberto',por:currentUser.uid,
+      em:new Date().toISOString(),motivo:motivo.trim()};
+    await db.collection('presencas_diarias').doc(gerCurrentDate).update({
+      status:'reaberto',
+      atualizadoPor:currentUser.uid,
+      atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      statusHistorico:firebase.firestore.FieldValue.arrayUnion(e)
+    });
+    await logAuditoria('DIA_REABERTO_PRESENCA',
+      `presencas_diarias/${gerCurrentDate}`,{status:'fechado'},{status:'reaberto',motivo});
+    gerDayStatus = 'reaberto';
+    gerDiasStatus[gerCurrentDate] = 'reaberto';
+    renderGerCal(); renderGerStatus(); renderGerList();
+    showAlert('gerAlert','✅ Dia reaberto. Você pode editar agora.','success');
+  } catch(e) {
+    showAlert('gerAlert','❌ Erro: '+e.message,'error',0);
+  }
+}
+
+/* ── Abrir modal Extra carregando funcionários do Firebase ── */
+async function abrirModalExtra() {
+  // Limpar e popular o select de funcionários do modal extra
+  const sel = $('escFuncSel');
+  if(sel) {
+    sel.innerHTML = '<option value="">⏳ Carregando...</option>';
+    try {
+      const snap = await db.collection('funcionarios').where('ativo','==',true).get();
+      const docs = snap.docs
+        .map(d => ({id:d.id,...d.data()}))
+        .sort((a,b) => a.nome.localeCompare(b.nome,'pt-BR'));
+      sel.innerHTML = '<option value="">— selecione do cadastro —</option>';
+      docs.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.id;
+        opt.textContent = `${f.nome} (${f.cargo})`;
+        opt.dataset.nome  = f.nome;
+        opt.dataset.cargo = f.cargo;
+        opt.dataset.pix   = f.pix || '';
+        opt.dataset.diaria = f.diariaPadrao || 0;
+        sel.appendChild(opt);
+      });
+    } catch(e) {
+      sel.innerHTML = '<option value="">Erro ao carregar</option>';
+    }
+  }
+  preencherDiariaExtra();
+  abrirModal('modalExtra');
 }
 
 </script>
