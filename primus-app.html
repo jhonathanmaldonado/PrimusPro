@@ -236,7 +236,13 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
 <!-- MODAL EXTRA -->
 <div class="modal-overlay" id="modalExtra"><div class="modal-box">
   <div class="modal-title">➕ Funcionário Extra do Dia</div>
-  <div class="form-group"><div class="field-label">Nome completo</div><input type="text" id="extNome" class="form-input" placeholder="Nome"></div>
+  <div class="form-group"><div class="field-label">Funcionário (do cadastro)</div>
+    <select id="extFuncSel" class="form-select" onchange="preencherDadosExtra()">
+      <option value="">⏳ Carregando...</option>
+    </select>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;font-style:italic">Não está na lista? <span style="color:var(--accent);font-weight:600">Cadastre primeiro em Funcionários</span></div>
+  </div>
+  <input type="hidden" id="extNome">
   <div class="form-group"><div class="field-label">Função no dia</div><select id="extCargo" class="form-select" onchange="preencherDiariaExtra()"><option>Gerente</option><option>Garçom</option><option>Cumim</option><option>Cozinheiro</option>
         <option>Bar</option><option>Aux. Bar</option><option>Caixa</option><option>Recepcionista</option>
         <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div>
@@ -328,11 +334,14 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
     </div>
   </div>
 
+  <div id="alertaPresencaHoje" style="display:none;background:#FEE2E2;border:2px solid #DC2626;color:#7F1D1D;padding:12px 16px;margin:8px 0;border-radius:8px;font-weight:600;font-size:13px;line-height:1.4"></div>
+
   <div class="tabs" id="tabsBar">
     <div class="tab hidden" data-tab="presenca"   onclick="showTab('presenca',this)">📋 Presença</div>
     <div class="tab hidden" data-tab="calendario" onclick="showTab('calendario',this)">📅 Calendário</div>
     <div class="tab hidden" data-tab="fechamento" onclick="showTab('fechamento',this)">💰 Fechamento</div>
     <div class="tab hidden" data-tab="pagamentos" onclick="showTab('pagamentos',this)">💳 Pagamentos</div>
+    <div class="tab hidden" data-tab="frequencia" onclick="showTab('frequencia',this)">📊 Frequência</div>
     <div class="tab hidden" data-tab="historico"  onclick="showTab('historico',this)">📋 Histórico</div>
     <div class="tab hidden" data-tab="resumo"     onclick="showTab('resumo',this)">📊 Resumo</div>
     <div class="tab hidden" data-tab="cadastro"   onclick="showTab('cadastro',this)">👥 Funcionários</div>
@@ -447,6 +456,9 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
         </div>
         <div id="fechAlert2" class="alert"></div>
         <div id="fechAcoes"></div>
+        <div id="fechPdfBtn" style="margin-top:10px;display:none">
+          <button class="btn btn-secondary btn-block" onclick="gerarPDFDia()">📄 PDF do Fechamento (conferência)</button>
+        </div>
       </div>
       <div id="fechEmpty" class="empty-state"><div class="icon">📅</div><p>Selecione um dia no <strong>Calendário</strong></p></div>
     </div>
@@ -458,9 +470,28 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
         <div><div class="field-label">Período</div><select id="pgtoTipo" class="form-select" style="max-width:200px" onchange="onPgtoTipo()"><option value="semana">Esta Semana (Qua–Dom)</option><option value="semana_ant">Semana Anterior</option><option value="mes">Este Mês</option><option value="custom">Personalizado</option></select></div>
         <div id="pgtoCustom" style="display:none;gap:8px;flex-wrap:wrap"><div><div class="field-label">De</div><input type="date" id="pgtoDe" class="form-input" style="max-width:150px"></div><div><div class="field-label">Até</div><input type="date" id="pgtoAte" class="form-input" style="max-width:150px"></div><div style="align-self:flex-end"><button class="btn btn-primary btn-sm" onclick="renderPagamentos()">Buscar</button></div></div>
         <button class="btn btn-secondary btn-sm" onclick="renderPagamentos()" style="align-self:flex-end">Atualizar</button>
+        <button class="btn btn-secondary btn-sm" onclick="gerarPDFPagamentos('semana')" style="align-self:flex-end">📄 PDF Semanal</button>
+        <button class="btn btn-secondary btn-sm" onclick="gerarPDFPagamentos('mes')" style="align-self:flex-end">📄 PDF Mensal</button>
         <button class="btn btn-secondary btn-sm" onclick="window.print()" style="align-self:flex-end">🖨️ Imprimir</button>
       </div>
       <div id="pgtoAlert" class="alert"></div><div id="pgtoContent"></div>
+    </div>
+
+    <!-- FREQUÊNCIA -->
+    <div class="section" id="sec-frequencia">
+      <div class="section-header"><div class="section-title">Frequência — Faltas e Atrasos</div></div>
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:flex-end">
+        <div><div class="field-label">Período</div><select id="freqTipo" class="form-select" style="max-width:200px" onchange="onFreqTipo()"><option value="mes">Mês Corrente</option><option value="custom">Personalizado</option></select></div>
+        <div id="freqCustom" style="display:none;gap:8px;flex-wrap:wrap">
+          <div><div class="field-label">De</div><input type="date" id="freqDe" class="form-input" style="max-width:150px"></div>
+          <div><div class="field-label">Até</div><input type="date" id="freqAte" class="form-input" style="max-width:150px"></div>
+          <div style="align-self:flex-end"><button class="btn btn-primary btn-sm" onclick="renderFrequencia()">Buscar</button></div>
+        </div>
+        <button class="btn btn-secondary btn-sm" onclick="renderFrequencia()" style="align-self:flex-end">🔄 Atualizar</button>
+        <button class="btn btn-secondary btn-sm" onclick="window.print()" style="align-self:flex-end">🖨️ Imprimir</button>
+      </div>
+      <div id="freqAlert" class="alert"></div>
+      <div id="freqContent"></div>
     </div>
 
     <!-- HISTÓRICO -->
@@ -747,6 +778,7 @@ let gerFuncionarios = [], gerDayStatus = null, gerDocExists = false;
 let gerSaveTimer = null, gerCurrentDate = '';
 let gerCalAno = new Date().getFullYear(), gerCalMes = new Date().getMonth();
 let gerDiasStatus = {}, gerFiltro = 'todos', gerCargoIdx = -1, gerAuxExtra = 2;
+let gerDestravamentoAte = null; // ISO timestamp (string) ou null
 
 // Financeiro
 let finDate = null, finPresentes = [], finGorjetaMap = {}, finDayStatus = null;
@@ -833,7 +865,41 @@ function showApp() {
   $('gerObs').addEventListener('input', () => gerAutoSave());
   if(currentPerfil === 'gerente') { ativarTab('presenca'); gerCarregarMes(); }
   else { ativarTab('calendario'); carregarCalFin(); }
+  // Item 2 — alerta presença não enviada (Qua-Dom após 16h)
+  verificarAlertaPresenca();
+  if(window._alertaPresencaTimer) clearInterval(window._alertaPresencaTimer);
+  window._alertaPresencaTimer = setInterval(verificarAlertaPresenca, 5*60*1000); // re-check a cada 5 min
   // Escala carrega apenas quando o usuário abre a aba
+}
+
+/* ── Item 2: Alerta de presença não enviada hoje ── */
+async function verificarAlertaPresenca() {
+  const banner = $('alertaPresencaHoje');
+  if(!banner) return;
+  const now = new Date();
+  const dow = now.getDay(); // 0=Dom, 3=Qua, 4=Qui, 5=Sex, 6=Sáb
+  // Qua, Qui, Sex, Sáb, Dom = dias de operação (3,4,5,6,0)
+  const isDiaOperacao = [0,3,4,5,6].includes(dow);
+  const horaOK = now.getHours() >= 16;
+  if(!isDiaOperacao || !horaOK) { banner.style.display = 'none'; return; }
+  const hoje = todayStr();
+  try {
+    const snap = await db.collection('presencas_diarias').doc(hoje).get();
+    if(!snap.exists) {
+      banner.innerHTML = `⚠️ <strong>Presença de hoje ainda não foi registrada.</strong> ${currentPerfil==='gerente'?'Abra a aba Presença para começar.':'O gerente ainda não lançou.'}`;
+      banner.style.display = 'block';
+      return;
+    }
+    const st = snap.data().status;
+    if(st === 'em_aberto' || st === 'reaberto') {
+      banner.innerHTML = `⚠️ <strong>Presença de hoje ainda não foi enviada ao financeiro.</strong> ${currentPerfil==='gerente'?'Não esqueça de enviar quando terminar.':'Aguardando o gerente enviar.'}`;
+      banner.style.display = 'block';
+    } else {
+      banner.style.display = 'none';
+    }
+  } catch(_) {
+    banner.style.display = 'none';
+  }
 }
 async function doLogin() {
   const email = $('loginEmail').value.trim();
@@ -862,7 +928,7 @@ function configurarAbas() {
   const isAdm = currentPerfil === 'admin';
   const mapa  = {
     presenca:isGer||isAdm, escala:isGer||isAdm, calendario:isFin, fechamento:isFin, pagamentos:isFin,
-    historico:isFin, resumo:isFin, cadastro:isGer||isDir, usuarios:isAdm
+    frequencia:isFin, historico:isFin, resumo:isFin, cadastro:isGer||isDir, usuarios:isAdm
   };
   Object.entries(mapa).forEach(([tab,vis]) =>
     document.querySelector(`[data-tab="${tab}"]`)?.classList.toggle('hidden',!vis)
@@ -883,6 +949,7 @@ function showTab(tab, el) {
   if(tab==='resumo')    renderResumoInit();
   if(tab==='cadastro')  renderCadList();
   if(tab==='pagamentos') renderPagamentos();
+  if(tab==='frequencia') renderFrequenciaInit();
   if(tab==='calendario') carregarCalFin();
   if(tab==='usuarios')   { renderUsuarios(); carregarConfigGorjeta(); carregarWppMensagem(); }
   if(tab==='escala')     escalaCarregar();
@@ -946,13 +1013,16 @@ async function gerCarregarDia(dateStr) {
     if(daySnap.exists) {
       const dd = daySnap.data();
       gerDayStatus = dd.status; gerDocExists = true;
+      gerDestravamentoAte = dd.destravamentoAte || null;
       const cadMap = {};
       cadastros.forEach(f => cadMap[f.id] = f);
 
       // Mostrar SOMENTE quem esta em presencas_diarias (veio da escala ou foi adicionado)
       gerFuncionarios = [];
       Object.entries(dd.funcionarios||{}).forEach(([id, p]) => {
-        if(id.startsWith('EXTRA_')) {
+        // Compat: legado usava prefixo EXTRA_; novo padrão usa flag isExtra com ID do cadastro
+        const ehExtra = !!p.isExtra || id.startsWith('EXTRA_');
+        if(ehExtra) {
           gerFuncionarios.push({
             id, nome:p.nome||id, cargo:p.cargo||'Garcom', pix:p.pix||'',
             diariaPadrao:p.diariaPadrao||DIARIA_PADRAO[p.cargo]||0,
@@ -987,6 +1057,7 @@ async function gerCarregarDia(dateStr) {
     } else {
       // Dia sem registro — lista vazia, gerente adiciona ou publica escala
       gerDayStatus = null; gerDocExists = false;
+      gerDestravamentoAte = null;
       gerFuncionarios = [];
       $('gerObs').value = '';
     }
@@ -1004,9 +1075,15 @@ function renderGerStatus() {
   pill.innerHTML = gerDayStatus
     ? `<span class="status-pill status-${gerDayStatus}">${STATUS_LABEL[gerDayStatus]}</span>`
     : `<span class="status-pill status-em_aberto">🔵 Novo dia</span>`;
-  const podeEditar = !gerDayStatus || gerDayStatus === 'em_aberto';
-  const soPodeObs  = gerDayStatus === 'aguardando_fechamento';
+  const isAdm  = currentPerfil === 'admin';
+  // Janela de destravamento ativa? (timestamp futuro salvo no doc)
+  const destAte = gerDestravamentoAte ? new Date(gerDestravamentoAte).getTime() : 0;
+  const destravado = destAte > Date.now();
+  const statusEmAberto = !gerDayStatus || gerDayStatus === 'em_aberto' || gerDayStatus === 'reaberto';
+  // Admin sempre edita enquanto não está "fechado". Outros: só se em_aberto/reaberto OU destravamento ativo.
+  const podeEditar = gerDayStatus !== 'fechado' && (isAdm || statusEmAberto || destravado);
   const bloqueado  = gerDayStatus === 'fechado';
+  const aguardando = gerDayStatus === 'aguardando_fechamento';
   const banner = $('gerBanner');
   if(bloqueado) {
     const podeDir = ['diretoria','admin'].includes(currentPerfil);
@@ -1014,8 +1091,17 @@ function renderGerStatus() {
       ? '🔒 Dia fechado. <button onclick="gerReobrirRapido()" class="btn btn-sm" style="background:var(--danger);color:#fff;margin-left:10px;padding:4px 12px;font-size:12px">🔓 Reabrir</button>'
       : '🔒 Dia fechado. Apenas Diretoria pode reabrir.';
     banner.className = 'bloqueado-banner lock'; banner.style.display = 'block';
-  } else if(soPadeObs) {
-    banner.innerHTML = '📤 Enviado para o financeiro. <strong>Presença e consumo bloqueados.</strong>';
+  } else if(aguardando && destravado) {
+    const minRest = Math.max(1, Math.round((destAte - Date.now())/60000));
+    banner.innerHTML = `🔓 <strong>Destravado para edição</strong> · ${minRest} min restantes. As alterações que você fizer agora vão valer.`;
+    banner.className = 'bloqueado-banner warn'; banner.style.display = 'block';
+    banner.style.background = '#FEF3C7'; banner.style.borderColor = '#F59E0B';
+  } else if(aguardando && isAdm) {
+    banner.innerHTML = `📤 Enviado ao financeiro. Como Admin, você pode editar mesmo assim — ou <button onclick="adminDestravar()" class="btn btn-sm" style="background:#F59E0B;color:#fff;margin-left:6px;padding:4px 12px;font-size:12px">🔓 Destravar por 60min</button> para liberar para o gerente.`;
+    banner.className = 'bloqueado-banner warn'; banner.style.display = 'block';
+  } else if(aguardando) {
+    banner.innerHTML = `📤 Enviado para o financeiro. <strong>Presença e consumo bloqueados.</strong>
+      <div style="margin-top:8px;font-size:12px;color:var(--muted)">Precisa ajustar? <button onclick="gerPedirDestravamento()" class="btn btn-sm" style="background:var(--accent);color:#fff;padding:4px 12px;font-size:12px">📞 Pedir destravamento ao Admin</button></div>`;
     banner.className = 'bloqueado-banner warn'; banner.style.display = 'block';
   } else { banner.style.display = 'none'; }
   $('btnAddExtra').style.display = podeEditar ? 'block' : 'none';
@@ -1023,14 +1109,25 @@ function renderGerStatus() {
   const acoes = $('gerAcoes'), qrW = $('gerQrWrap');
   if(bloqueado) {
     acoes.innerHTML = ''; qrW.style.display = 'none';
-  } else if(soPadeObs) {
+  } else if(podeEditar) {
+    // Em aberto OU destravado/admin editando
+    if(aguardando) {
+      // Já foi enviado mas está destravado/admin: mostra "salvar" + nota
+      acoes.innerHTML = `
+        <button class="btn btn-primary btn-block" onclick="gerSalvar(false)">💾 Salvar Alterações</button>
+        <button class="btn btn-secondary btn-block" onclick="gerSalvar(true)" style="margin-top:8px">💾 Salvar Só Observações</button>`;
+    } else {
+      acoes.innerHTML = `
+        <button class="btn btn-primary btn-block" onclick="gerSalvar(false)">💾 Salvar Presença</button>
+        <button class="btn btn-success btn-block" onclick="gerEnviar()" style="margin-top:8px">📤 Enviar para o Financeiro</button>`;
+    }
+    qrW.style.display = 'block';
+  } else if(aguardando) {
+    // Bloqueado (gerente sem destravamento)
     acoes.innerHTML = `<button class="btn btn-secondary btn-block" onclick="gerSalvar(true)">💾 Salvar Observações</button>`;
     qrW.style.display = 'block';
   } else {
-    acoes.innerHTML = `
-      <button class="btn btn-primary btn-block" onclick="gerSalvar(false)">💾 Salvar Presença</button>
-      <button class="btn btn-success btn-block" onclick="gerEnviar()" style="margin-top:8px">📤 Enviar para o Financeiro</button>`;
-    qrW.style.display = 'block';
+    acoes.innerHTML = ''; qrW.style.display = 'none';
   }
 }
 // typo fix helper
@@ -1045,7 +1142,11 @@ function setFiltro(f) {
   renderGerList();
 }
 function renderGrupoGer(lista) {
-  const podeEditar = !gerDayStatus || gerDayStatus === 'em_aberto';
+  const isAdm = currentPerfil === 'admin';
+  const destAte = gerDestravamentoAte ? new Date(gerDestravamentoAte).getTime() : 0;
+  const destravado = destAte > Date.now();
+  const statusEmAberto = !gerDayStatus || gerDayStatus === 'em_aberto' || gerDayStatus === 'reaberto';
+  const podeEditar = gerDayStatus !== 'fechado' && (isAdm || statusEmAberto || destravado);
   return lista.map(f => {
     const idx = gerFuncionarios.indexOf(f);
     const isSeg = f.cargo === 'Segurança';
@@ -1132,13 +1233,20 @@ function atualizarTotalSegExtra() {
   $('extDiaria').value = t;
 }
 function confirmarExtra() {
+  const sel    = $('extFuncSel');
+  const funcId = sel?.value || '';
   const nome   = $('extNome').value.trim();
   const cargo  = $('extCargo').value;
   const pix    = $('extPix').value.trim();
   const diaria = parseFloat($('extDiaria').value) || 0;
-  if(!nome) { alert('Informe o nome.'); return; }
+  if(!funcId || !nome) { alert('Selecione um funcionário do cadastro. Se não estiver na lista, cadastre primeiro em Funcionários.'); return; }
+  // Não permitir duplicata (já filtrado no select, mas reforço)
+  if(gerFuncionarios.some(f => f.id === funcId)) {
+    alert('Esse funcionário já está na lista do dia.');
+    return;
+  }
   gerFuncionarios.push({
-    id:'EXTRA_'+Date.now(), nome, cargo, pix, diariaPadrao:diaria,
+    id:funcId, nome, cargo, pix, diariaPadrao:diaria,
     isExtra:true, isFrequente:false, presente:true, atrasado:false,
     consumo:0, auxCount:cargo==='Segurança'?gerAuxExtra:0
   });
@@ -1155,6 +1263,17 @@ function gerAutoSave() {
 async function gerSalvar(apenasObs=false, silencioso=false) {
   if(!gerCurrentDate || !currentUser) return;
   if(gerDayStatus === 'fechado') return;
+  // Em "aguardando_fechamento", só permite escrever funcionarios se: admin OU destravamento ativo
+  // (apenasObs continua liberado para qualquer um — só salva o campo "obs")
+  if(!apenasObs && gerDayStatus === 'aguardando_fechamento') {
+    const destAte = gerDestravamentoAte ? new Date(gerDestravamentoAte).getTime() : 0;
+    const destravado = destAte > Date.now();
+    const isAdm = currentPerfil === 'admin';
+    if(!isAdm && !destravado) {
+      showAlert('gerAlert','🔒 Dia bloqueado. Peça destravamento ao Admin.','error');
+      return;
+    }
+  }
   setSyncStatus('saving');
   try {
     const obs = $('gerObs').value.trim();
@@ -1167,7 +1286,8 @@ async function gerSalvar(apenasObs=false, silencioso=false) {
       const fm = {};
       gerFuncionarios.forEach(f => {
         fm[f.id] = {nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,
-          presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0,auxCount:f.auxCount||0};
+          presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0,auxCount:f.auxCount||0,
+          isExtra:!!f.isExtra};
       });
       payload.funcionarios = fm;
     }
@@ -1178,7 +1298,7 @@ async function gerSalvar(apenasObs=false, silencioso=false) {
       payload.statusHistorico = [{de:null,para:'em_aberto',por:currentUser.uid,em:new Date().toISOString(),motivo:''}];
       if(!payload.funcionarios) {
         const fm = {};
-        gerFuncionarios.forEach(f => { fm[f.id]={nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0,auxCount:f.auxCount||0}; });
+        gerFuncionarios.forEach(f => { fm[f.id]={nome:f.nome,cargo:f.cargo,pix:f.pix||'',diariaPadrao:f.diariaPadrao||0,presente:f.presente,atrasado:f.atrasado,consumo:f.consumo||0,auxCount:f.auxCount||0,isExtra:!!f.isExtra}; });
         payload.funcionarios = fm;
       }
       await db.collection('presencas_diarias').doc(gerCurrentDate).set(payload);
@@ -1334,6 +1454,7 @@ async function loadFechamento(date) {
     ).join('');
     $('fechContent').style.display = 'block';
     $('fechEmpty').style.display   = 'none';
+    $('fechPdfBtn').style.display  = 'block';
     await carregarDiariasSalvas(date);
     calcGorjeta();
     renderFechAcoes(bloqueado);
@@ -1655,6 +1776,182 @@ async function renderPagamentos() {
       ` : ''}
     `;
   } catch(e) { cont.innerHTML=`<div class="empty-state"><p>Erro: ${e.message}</p></div>`; }
+}
+
+/* ── Frequência (Item 3) ── */
+function renderFrequenciaInit() {
+  const hoje = new Date();
+  const y = hoje.getFullYear(), m = String(hoje.getMonth()+1).padStart(2,'0');
+  const lastDay = new Date(y, hoje.getMonth()+1, 0).getDate();
+  $('freqDe').value  = `${y}-${m}-01`;
+  $('freqAte').value = `${y}-${m}-${String(lastDay).padStart(2,'0')}`;
+  if($('freqTipo').value === 'custom') $('freqCustom').style.display='flex';
+  renderFrequencia();
+}
+function onFreqTipo() {
+  const c = $('freqTipo').value === 'custom';
+  $('freqCustom').style.display = c ? 'flex' : 'none';
+  if(!c) renderFrequencia();
+}
+function getFreqPeriodo() {
+  const t = $('freqTipo').value, h = new Date();
+  if(t === 'mes') {
+    const ld = new Date(h.getFullYear(), h.getMonth()+1, 0).getDate();
+    return {
+      de:  `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-01`,
+      ate: `${h.getFullYear()}-${String(h.getMonth()+1).padStart(2,'0')}-${String(ld).padStart(2,'0')}`
+    };
+  }
+  return { de: $('freqDe').value, ate: $('freqAte').value };
+}
+async function renderFrequencia() {
+  const {de, ate} = getFreqPeriodo();
+  if(!de || !ate) { showAlert('freqAlert','Selecione o período.','error'); return; }
+  const cont = $('freqContent');
+  cont.innerHTML = '<div class="empty-state"><span class="loading-spinner"></span></div>';
+  try {
+    const [diasSnap, cadSnap] = await Promise.all([
+      db.collection('presencas_diarias').where('data','>=',de).where('data','<=',ate).get(),
+      db.collection('funcionarios').get()
+    ]);
+    const cadMap = {};
+    cadSnap.docs.forEach(d => cadMap[d.id] = {id:d.id, ...d.data()});
+    // Agrega por funcionário
+    const stats = {}; // funcId -> {nome, cargo, escalados, presentes, faltas, atrasos, diasDetalhe[]}
+    let totalDias = 0;
+    diasSnap.docs.forEach(d => {
+      const dd = d.data();
+      const data = d.id;
+      // Considera só dias que existiram (qualquer status) — se status indefinido, pula
+      if(!dd.funcionarios) return;
+      totalDias++;
+      Object.entries(dd.funcionarios).forEach(([fid, p]) => {
+        // Pular extras — eles não foram escalados
+        if(p.isExtra) return;
+        if(!stats[fid]) {
+          const cad = cadMap[fid] || {};
+          stats[fid] = {
+            id: fid,
+            nome: cad.nome || p.nome || fid,
+            cargo: cad.cargo || p.cargo || '—',
+            ativo: cad.ativo !== false,
+            escalados: 0, presentes: 0, faltas: 0, atrasos: 0,
+            diasFalta: [], diasAtraso: []
+          };
+        }
+        stats[fid].escalados++;
+        if(p.presente !== false) {
+          stats[fid].presentes++;
+          if(p.atrasado) {
+            stats[fid].atrasos++;
+            stats[fid].diasAtraso.push(data);
+          }
+        } else {
+          stats[fid].faltas++;
+          stats[fid].diasFalta.push(data);
+        }
+      });
+    });
+    const lista = Object.values(stats);
+    if(!lista.length) {
+      cont.innerHTML = `<div class="empty-state"><div class="icon">📊</div><p>Nenhum dado no período selecionado</p><p style="color:var(--muted);font-size:12px;margin-top:6px">${de} → ${ate}</p></div>`;
+      return;
+    }
+    // Ordenações pra ranking
+    const rankFaltas = [...lista].filter(s => s.faltas > 0).sort((a,b) => b.faltas - a.faltas).slice(0,5);
+    const rankAtrasos = [...lista].filter(s => s.atrasos > 0).sort((a,b) => b.atrasos - a.atrasos).slice(0,5);
+    const listaOrd = [...lista].sort((a,b) => a.nome.localeCompare(b.nome,'pt-BR'));
+    const totalFaltas = lista.reduce((acc,s) => acc + s.faltas, 0);
+    const totalAtrasos = lista.reduce((acc,s) => acc + s.atrasos, 0);
+    const totalPres = lista.reduce((acc,s) => acc + s.presentes, 0);
+    const totalEsc = lista.reduce((acc,s) => acc + s.escalados, 0);
+
+    function fmtDataCurta(ds) {
+      const [y,m,d] = ds.split('-');
+      return `${d}/${m}`;
+    }
+
+    cont.innerHTML = `
+      <!-- Resumo geral -->
+      <div class="card" style="border-color:var(--accent);margin-bottom:16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+          <div>
+            <div style="font-size:16px;font-weight:800">📊 Frequência do Período</div>
+            <div style="font-size:12px;color:var(--muted)">${de.split('-').reverse().join('/')} → ${ate.split('-').reverse().join('/')} · ${totalDias} dia(s) com lançamento</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px">
+          <div style="background:var(--surface2);border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">Funcionários</div>
+            <div style="font-size:22px;font-weight:800;color:var(--text)">${lista.length}</div>
+          </div>
+          <div style="background:#D1FAE5;border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:#065F46;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">✅ Presenças</div>
+            <div style="font-size:22px;font-weight:800;color:#065F46">${totalPres}</div>
+            <div style="font-size:11px;color:#065F46">de ${totalEsc} escalas</div>
+          </div>
+          <div style="background:#FEE2E2;border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:#7F1D1D;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">❌ Faltas</div>
+            <div style="font-size:22px;font-weight:800;color:#7F1D1D">${totalFaltas}</div>
+          </div>
+          <div style="background:#FEF3C7;border-radius:8px;padding:10px 12px">
+            <div style="font-size:10px;color:#78350F;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px">⏰ Atrasos</div>
+            <div style="font-size:22px;font-weight:800;color:#78350F">${totalAtrasos}</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rankings -->
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;margin-bottom:16px">
+        <div class="card" style="border-color:#FCA5A5">
+          <div class="card-title" style="color:#7F1D1D">🏆 Top 5 — Mais Faltaram</div>
+          ${rankFaltas.length ? rankFaltas.map((s,i) => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+              <div>
+                <div style="font-weight:700;font-size:13px">${i+1}. ${s.nome}</div>
+                <div style="font-size:11px;color:var(--muted)">${s.cargo}${!s.ativo?' · inativo':''}</div>
+              </div>
+              <div style="font-size:18px;font-weight:800;color:#7F1D1D">${s.faltas}</div>
+            </div>
+          `).join('') : '<div style="color:var(--muted);font-size:12px;padding:8px 0">Nenhuma falta no período 🎉</div>'}
+        </div>
+        <div class="card" style="border-color:#FCD34D">
+          <div class="card-title" style="color:#78350F">🏆 Top 5 — Mais Atrasaram</div>
+          ${rankAtrasos.length ? rankAtrasos.map((s,i) => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+              <div>
+                <div style="font-weight:700;font-size:13px">${i+1}. ${s.nome}</div>
+                <div style="font-size:11px;color:var(--muted)">${s.cargo}${!s.ativo?' · inativo':''}</div>
+              </div>
+              <div style="font-size:18px;font-weight:800;color:#78350F">${s.atrasos}</div>
+            </div>
+          `).join('') : '<div style="color:var(--muted);font-size:12px;padding:8px 0">Nenhum atraso no período 🎉</div>'}
+        </div>
+      </div>
+
+      <!-- Lista completa -->
+      <div class="card">
+        <div class="card-title">Lista por Funcionário (${listaOrd.length})</div>
+        <table class="result-table" style="margin-top:8px">
+          <thead><tr><th>Funcionário</th><th>Cargo</th><th class="right">Escalados</th><th class="right">Presentes</th><th class="right">Faltas</th><th class="right">Atrasos</th></tr></thead>
+          <tbody>${listaOrd.map(s => {
+            const cor = s.faltas > 0 ? '#7F1D1D' : 'var(--muted)';
+            const corAtr = s.atrasos > 0 ? '#78350F' : 'var(--muted)';
+            return `<tr>
+              <td><strong>${s.nome}</strong>${!s.ativo?'<span style="font-size:10px;color:var(--muted);margin-left:6px">inativo</span>':''}${s.diasFalta.length?`<div style="font-size:10px;color:#7F1D1D;margin-top:2px">❌ ${s.diasFalta.map(fmtDataCurta).join(', ')}</div>`:''}${s.diasAtraso.length?`<div style="font-size:10px;color:#78350F;margin-top:2px">⏰ ${s.diasAtraso.map(fmtDataCurta).join(', ')}</div>`:''}</td>
+              <td>${badge(s.cargo)}</td>
+              <td class="right">${s.escalados}</td>
+              <td class="right" style="color:#065F46;font-weight:600">${s.presentes}</td>
+              <td class="right" style="color:${cor};font-weight:${s.faltas>0?'700':'400'}">${s.faltas}</td>
+              <td class="right" style="color:${corAtr};font-weight:${s.atrasos>0?'700':'400'}">${s.atrasos}</td>
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>
+    `;
+  } catch(e) {
+    cont.innerHTML = `<div class="empty-state"><p>Erro: ${e.message}</p></div>`;
+  }
 }
 
 /* ── Histórico ── */
@@ -2667,6 +2964,206 @@ function resolverConflito(acao) {
    GERADOR DE RECIBO DE PAGAMENTO
 ════════════════════════════════════════ */
 
+/* ── Item 7: PDFs de conferência (dia / semanal / mensal) ── */
+function _pdfHeader(titulo, subtitulo) {
+  return `
+    <div class="header">
+      <div>
+        <div class="logo-txt">PRIMUS</div>
+        <div class="logo-sub">Peixaria · Gestão</div>
+      </div>
+      <div class="recibo-label">
+        <div class="recibo-titulo">${titulo}</div>
+        <div class="recibo-num">${subtitulo}</div>
+      </div>
+    </div>`;
+}
+function _pdfStyle() {
+  return `
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    * { box-sizing:border-box; margin:0; padding:0; }
+    body { font-family:'Inter',sans-serif; background:#fff; color:#1a1916; padding:32px 40px; font-size:12px; }
+    .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; padding-bottom:14px; border-bottom:3px solid #C8782A; }
+    .logo-txt { font-size:24px; font-weight:800; color:#C8782A; letter-spacing:-1px; }
+    .logo-sub { font-size:9px; color:#8A837A; text-transform:uppercase; letter-spacing:2px; margin-top:2px; }
+    .recibo-label { text-align:right; }
+    .recibo-titulo { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:2px; color:#C8782A; }
+    .recibo-num { font-size:10px; color:#8A837A; margin-top:4px; }
+    h2 { font-size:13px; margin:18px 0 8px; color:#1a1916; padding-bottom:4px; border-bottom:1px solid #E2DDD5; text-transform:uppercase; letter-spacing:1px; }
+    table { width:100%; border-collapse:collapse; font-size:11px; margin-top:6px; }
+    th { background:#F7F4EF; color:#4A4540; text-align:left; padding:6px 8px; border-bottom:1.5px solid #E2DDD5; font-weight:700; text-transform:uppercase; letter-spacing:.5px; font-size:9px; }
+    td { padding:6px 8px; border-bottom:1px solid #F0EDE6; }
+    td.r { text-align:right; }
+    td.pos { color:#065F46; font-weight:600; }
+    td.neg { color:#C0392B; }
+    .total-row td { font-weight:800; background:#F5E6D3; border-top:2px solid #C8782A; padding:8px; }
+    .resumo-box { background:#F7F4EF; border-radius:8px; padding:12px 16px; margin:12px 0; display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px; }
+    .resumo-box .lbl { font-size:9px; text-transform:uppercase; letter-spacing:.5px; color:#8A837A; }
+    .resumo-box .val { font-size:16px; font-weight:800; color:#1a1916; margin-top:2px; }
+    .resumo-box .val.accent { color:#C8782A; }
+    .resumo-box .val.success { color:#065F46; }
+    .obs { background:#FEF3C7; border-left:3px solid #F59E0B; padding:8px 12px; margin:10px 0; font-size:11px; }
+    .footer { margin-top:24px; padding-top:10px; border-top:1px solid #E2DDD5; display:flex; justify-content:space-between; font-size:9px; color:#8A837A; }
+    @media print { @page { margin: 12mm 14mm; size: A4; } body { padding: 0; } }
+  `;
+}
+function _pdfFooter() {
+  return `
+    <div class="footer">
+      <span>Primus Peixaria — São Gonçalo Beira Rio, Cuiabá/MT — CNPJ: 14.796.317/0001-90</span>
+      <span>Gerado em ${new Date().toLocaleString('pt-BR')}</span>
+    </div>`;
+}
+function _abrirPdfJanela(html) {
+  const w = window.open('','_blank');
+  if(!w) { alert('Permita pop-ups para gerar o PDF.'); return; }
+  w.document.write(html); w.document.close();
+}
+
+function gerarPDFDia() {
+  if(!finDate || !finPresentes.length) {
+    alert('Selecione um dia no calendário primeiro.');
+    return;
+  }
+  const obs = $('fechObsBox')?.textContent.replace(/^📝\s*/,'').trim() || '';
+  const gorjetaTotal = parseFloat($('gorjetaTotal').value) || 0;
+  // Reaproveita a lógica de calcResultado para pegar valores já calculados
+  let totalGeral = 0, totalDiarias = 0, totalGorjeta = 0, totalConsumo = 0, totalDesc = 0;
+  const linhas = finPresentes.map(f => {
+    const d  = parseFloat($(`diaria-${f.id}`)?.value||0)||0;
+    const g  = finGorjetaMap[f.id]||0;
+    const c  = f.consumo||0;
+    const dc = parseFloat($(`desconto-${f.id}`)?.value||0)||0;
+    const t  = d+g-c-dc;
+    const motivo = $(`motivo-${f.id}`)?.value?.trim() || '';
+    totalGeral += t; totalDiarias += d; totalGorjeta += g; totalConsumo += c; totalDesc += dc;
+    return { nome:f.nome, cargo:f.cargo, atrasado:f.atrasado, d, g, c, dc, t, motivo };
+  });
+  const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+    <title>Fechamento ${finDate}</title><style>${_pdfStyle()}</style></head><body>
+    ${_pdfHeader('Fechamento do Dia', fmtDate(finDate))}
+    ${obs ? `<div class="obs">📝 ${obs}</div>` : ''}
+    <div class="resumo-box">
+      <div><div class="lbl">Funcionários</div><div class="val">${linhas.length}</div></div>
+      <div><div class="lbl">Diárias</div><div class="val">${fmt(totalDiarias)}</div></div>
+      <div><div class="lbl">Gorjeta Distribuída</div><div class="val accent">${fmt(totalGorjeta)}</div></div>
+      <div><div class="lbl">(-) Consumo/Desc.</div><div class="val neg">${fmt(totalConsumo+totalDesc)}</div></div>
+      <div><div class="lbl">Total Líquido</div><div class="val success">${fmt(totalGeral)}</div></div>
+      <div><div class="lbl">Gorjeta Total (taxa)</div><div class="val">${fmt(gorjetaTotal)}</div></div>
+    </div>
+    <h2>Resumo por Funcionário</h2>
+    <table>
+      <thead><tr><th>Funcionário</th><th>Cargo</th><th class="r">Diária</th><th class="r">Gorjeta</th><th class="r">Desc/Cons</th><th class="r">Total</th></tr></thead>
+      <tbody>
+        ${linhas.map(l => `<tr>
+          <td><strong>${l.nome}</strong>${l.atrasado?' ⏰':''}${l.motivo?`<div style="font-size:9px;color:#C0392B;margin-top:2px">✂️ ${l.motivo}</div>`:''}</td>
+          <td>${l.cargo}</td>
+          <td class="r">${fmt(l.d)}</td>
+          <td class="r">${fmt(l.g)}</td>
+          <td class="r neg">${(l.c>0||l.dc>0)?'- '+fmt(l.c+l.dc):'—'}</td>
+          <td class="r pos">${fmt(l.t)}</td>
+        </tr>`).join('')}
+        <tr class="total-row"><td colspan="5">Total do Dia</td><td class="r">${fmt(totalGeral)}</td></tr>
+      </tbody>
+    </table>
+    ${_pdfFooter()}
+    <script>window.onload = () => window.print();<\/script>
+    </body></html>`;
+  _abrirPdfJanela(html);
+}
+
+async function gerarPDFPagamentos(tipoForcado) {
+  // Forçar o tipo no select e renderizar para garantir dados frescos
+  if(tipoForcado === 'semana') $('pgtoTipo').value = 'semana';
+  else if(tipoForcado === 'mes') $('pgtoTipo').value = 'mes';
+  onPgtoTipo(); // re-renderiza
+  const {de, ate} = getPeriodo();
+  if(!de || !ate) { alert('Selecione um período válido.'); return; }
+  try {
+    const [fechSnap, cadSnap] = await Promise.all([
+      db.collection('fechamento_funcionario').where('data','>=',de).where('data','<=',ate).get(),
+      db.collection('funcionarios').get()
+    ]);
+    const cadMap = {};
+    cadSnap.docs.forEach(d => cadMap[d.id] = d.data());
+    const totals = {};
+    fechSnap.docs.forEach(d => {
+      const r=d.data(); if(!r.presente) return;
+      if(!totals[r.funcId]) {
+        const cad = cadMap[r.funcId] || {};
+        const pix = r.pix || cad.pix || '';
+        const isRegistrado = (cad.tipo === 'fixo') || (!cad.tipo && (
+          pix.toLowerCase().includes('itaú') || pix.toLowerCase().includes('salário') || pix.toLowerCase().includes('salario')
+        ));
+        totals[r.funcId] = {
+          nome: cad.nome || r.nomeSnapshot,
+          cargo: cad.cargo || r.cargoSnapshot,
+          pix, isRegistrado, dias:[], gorjeta:0, diarias:0, consumo:0, total:0
+        };
+      }
+      totals[r.funcId].dias.push(r.data);
+      totals[r.funcId].gorjeta  += r.gorjeta||0;
+      totals[r.funcId].diarias  += r.diaria||0;
+      totals[r.funcId].consumo  += r.consumo||0;
+      totals[r.funcId].total    += r.totalLiquido||0;
+    });
+    const sorted = Object.values(totals).sort((a,b) => b.total - a.total);
+    if(!sorted.length) { alert('Nenhum fechamento no período.'); return; }
+    const registrados = sorted.filter(t => t.isRegistrado);
+    const diaristas   = sorted.filter(t => !t.isRegistrado);
+    const totalGeral      = sorted.reduce((a,t) => a + t.total, 0);
+    const totalRegistrado = registrados.reduce((a,t) => a + t.total, 0);
+    const totalDiarista   = diaristas.reduce((a,t) => a + t.total, 0);
+    const totalPix        = diaristas.reduce((a,t) => a + (t.pix && t.pix.toUpperCase()!=='DINHEIRO' ? t.total : 0), 0);
+    const totalDinheiro   = sorted.reduce((a,t) => a + (t.pix.toUpperCase()==='DINHEIRO' ? t.total : 0), 0);
+
+    function _metodo(pix) {
+      const p = (pix||'').toLowerCase();
+      if(p.includes('itaú')||p.includes('salário')||p.includes('salario')) return 'Conta Salário Itaú';
+      if((pix||'').toUpperCase()==='DINHEIRO') return 'Dinheiro';
+      return pix ? 'Pix: '+pix : '—';
+    }
+    function _tabela(titulo, lista, totalGrupo) {
+      if(!lista.length) return '';
+      return `<h2>${titulo} — ${fmt(totalGrupo)}</h2>
+        <table>
+          <thead><tr><th>Funcionário</th><th>Cargo</th><th>Pagamento</th><th class="r">Dias</th><th class="r">Diárias</th><th class="r">Gorjeta</th><th class="r">(-) Cons.</th><th class="r">Total</th></tr></thead>
+          <tbody>
+            ${lista.map(t => `<tr>
+              <td><strong>${t.nome}</strong></td>
+              <td>${t.cargo}</td>
+              <td style="font-size:10px">${_metodo(t.pix)}</td>
+              <td class="r">${t.dias.length}</td>
+              <td class="r">${fmt(t.diarias)}</td>
+              <td class="r">${fmt(t.gorjeta)}</td>
+              <td class="r neg">${t.consumo>0?'- '+fmt(t.consumo):'—'}</td>
+              <td class="r pos">${fmt(t.total)}</td>
+            </tr>`).join('')}
+            <tr class="total-row"><td colspan="7">Subtotal</td><td class="r">${fmt(totalGrupo)}</td></tr>
+          </tbody>
+        </table>`;
+    }
+    const lblPeriodo = {semana:'Pagamentos da Semana',semana_ant:'Pagamentos da Semana Anterior',mes:'Pagamentos do Mês',custom:'Pagamentos do Período'}[$('pgtoTipo').value] || 'Pagamentos';
+    const subtitulo = `${de.split('-').reverse().join('/')} → ${ate.split('-').reverse().join('/')} · ${sorted.length} funcionário(s)`;
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+      <title>${lblPeriodo}</title><style>${_pdfStyle()}</style></head><body>
+      ${_pdfHeader(lblPeriodo, subtitulo)}
+      <div class="resumo-box">
+        <div><div class="lbl">Total Geral</div><div class="val accent">${fmt(totalGeral)}</div></div>
+        <div><div class="lbl">Fixos (folha)</div><div class="val">${fmt(totalRegistrado)}</div><div class="lbl" style="margin-top:4px">${registrados.length} func.</div></div>
+        <div><div class="lbl">Frequentes</div><div class="val">${fmt(totalDiarista)}</div><div class="lbl" style="margin-top:4px">${diaristas.length} func.</div></div>
+        <div><div class="lbl">Pix a transferir</div><div class="val success">${fmt(totalPix)}</div></div>
+        <div><div class="lbl">Dinheiro</div><div class="val">${fmt(totalDinheiro)}</div></div>
+      </div>
+      ${_tabela('📋 Fixos — Conta Salário Itaú', registrados, totalRegistrado)}
+      ${_tabela('👤 Frequentes — Diaristas', diaristas, totalDiarista)}
+      ${_pdfFooter()}
+      <script>window.onload = () => window.print();<\/script>
+      </body></html>`;
+    _abrirPdfJanela(html);
+  } catch(e) { alert('Erro ao gerar PDF: ' + e.message); }
+}
+
 function valorPorExtenso(valor) {
   if(valor === 0) return 'zero reais';
   const inteiro = Math.floor(valor);
@@ -3162,6 +3659,70 @@ function wppMensagemReset() {
 }
 
 
+/* ── Destravamento por Admin (Ajuste 1 - Opção C) ── */
+async function adminDestravar() {
+  if(currentPerfil !== 'admin') {
+    alert('Apenas Admin pode destravar.');
+    return;
+  }
+  if(!gerCurrentDate) return;
+  if(gerDayStatus !== 'aguardando_fechamento') {
+    alert('Só faz sentido destravar um dia que já foi enviado ao financeiro.');
+    return;
+  }
+  const min = parseInt(prompt('Liberar edição por quantos minutos?', '60'), 10);
+  if(!min || min < 1 || min > 240) { alert('Informe um número entre 1 e 240.'); return; }
+  const ate = new Date(Date.now() + min*60000).toISOString();
+  try {
+    const e = {de:'aguardando_fechamento_bloqueado',para:'aguardando_fechamento_destravado',
+      por:currentUser.uid,em:new Date().toISOString(),motivo:`destravado por ${min} min`};
+    await db.collection('presencas_diarias').doc(gerCurrentDate).update({
+      destravamentoAte: ate,
+      destravamentoPor: currentUser.uid,
+      destravamentoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      atualizadoPor: currentUser.uid,
+      atualizadoEm: firebase.firestore.FieldValue.serverTimestamp(),
+      statusHistorico: firebase.firestore.FieldValue.arrayUnion(e)
+    });
+    await logAuditoria('DIA_DESTRAVADO',`presencas_diarias/${gerCurrentDate}`,
+      {destravamentoAte:gerDestravamentoAte||null},{destravamentoAte:ate,minutos:min});
+    gerDestravamentoAte = ate;
+    renderGerStatus(); renderGerList();
+    showAlert('gerAlert',`🔓 Dia destravado por ${min} minutos.`,'success');
+  } catch(e) {
+    showAlert('gerAlert','❌ Erro: '+e.message,'error',0);
+  }
+}
+
+async function gerPedirDestravamento() {
+  // Busca telefone do primeiro Admin ativo no cadastro de usuários
+  let tel = '', nomeAdm = '';
+  try {
+    const snap = await db.collection('usuarios').where('perfil','==','admin').where('ativo','==',true).limit(5).get();
+    for(const d of snap.docs) {
+      const u = d.data();
+      if(u.telefone) { tel = u.telefone; nomeAdm = u.nome || ''; break; }
+    }
+  } catch(_) {}
+  const meuNome = $('userLabel')?.textContent || 'Gerente';
+  const dataFmt = fmtDate(gerCurrentDate);
+  const msg = encodeURIComponent(
+    `Olá${nomeAdm?', '+nomeAdm:''}! Aqui é ${meuNome}.\n\n`+
+    `Preciso destravar o dia *${dataFmt}* para fazer um ajuste no Primus Pro.\n\n`+
+    `Pode liberar quando puder? Obrigado!`
+  );
+  if(tel) {
+    const telLimpo = tel.replace(/\D/g,'');
+    const telFinal = telLimpo.startsWith('55') ? telLimpo : '55'+telLimpo;
+    window.open(`https://wa.me/${telFinal}?text=${msg}`, '_blank');
+  } else {
+    // Sem admin com telefone cadastrado, abre WhatsApp sem destinatário
+    window.open(`https://wa.me/?text=${msg}`, '_blank');
+    alert('Nenhum admin com telefone cadastrado foi encontrado. A mensagem foi aberta sem destinatário — escolha o contato manualmente.');
+  }
+  await logAuditoria('PEDIDO_DESTRAVAMENTO',`presencas_diarias/${gerCurrentDate}`,{},{para:nomeAdm||'admin'});
+}
+
 /* ── Reabrir dia rápido (Admin/Diretoria da tela de presença) ── */
 async function gerReobrirRapido() {
   const motivo = prompt('Motivo da reabertura (obrigatório):');
@@ -3188,32 +3749,62 @@ async function gerReobrirRapido() {
 
 /* ── Abrir modal Extra carregando funcionários do Firebase ── */
 async function abrirModalExtra() {
-  // Limpar e popular o select de funcionários do modal extra
-  const sel = $('escFuncSel');
+  // Limpar campos
+  const sel = $('extFuncSel');
+  $('extNome').value = '';
+  $('extPix').value = '';
+  $('extDiaria').value = '';
+  $('extHint').textContent = '';
+  $('segAuxWrap').style.display = 'none';
+  // Popular o select com cadastrados ativos que ainda não estão na lista do dia
   if(sel) {
     sel.innerHTML = '<option value="">⏳ Carregando...</option>';
     try {
       const snap = await db.collection('funcionarios').where('ativo','==',true).get();
+      const idsNoDia = new Set(gerFuncionarios.map(f => f.id));
       const docs = snap.docs
         .map(d => ({id:d.id,...d.data()}))
-        .sort((a,b) => a.nome.localeCompare(b.nome,'pt-BR'));
-      sel.innerHTML = '<option value="">— selecione do cadastro —</option>';
-      docs.forEach(f => {
-        const opt = document.createElement('option');
-        opt.value = f.id;
-        opt.textContent = `${f.nome} (${f.cargo})`;
-        opt.dataset.nome  = f.nome;
-        opt.dataset.cargo = f.cargo;
-        opt.dataset.pix   = f.pix || '';
-        opt.dataset.diaria = f.diariaPadrao || 0;
-        sel.appendChild(opt);
-      });
+        .filter(f => !idsNoDia.has(f.id))
+        .sort((a,b) => (a.nome||'').localeCompare(b.nome||'','pt-BR'));
+      if(!docs.length) {
+        sel.innerHTML = '<option value="">— Todos os cadastrados já estão na lista —</option>';
+      } else {
+        sel.innerHTML = '<option value="">— selecione do cadastro —</option>';
+        docs.forEach(f => {
+          const opt = document.createElement('option');
+          opt.value = f.id;
+          opt.textContent = `${f.nome} (${f.cargo})`;
+          opt.dataset.nome  = f.nome || '';
+          opt.dataset.cargo = f.cargo || 'Garçom';
+          opt.dataset.pix   = f.pix || '';
+          opt.dataset.diaria = f.diariaPadrao || 0;
+          sel.appendChild(opt);
+        });
+      }
     } catch(e) {
       sel.innerHTML = '<option value="">Erro ao carregar</option>';
     }
   }
-  preencherDiariaExtra();
   abrirModal('modalExtra');
+}
+
+/* ── Preencher dados do extra ao selecionar do cadastro ── */
+function preencherDadosExtra() {
+  const sel = $('extFuncSel');
+  const opt = sel.options[sel.selectedIndex];
+  if(!opt || !opt.value) {
+    $('extNome').value = '';
+    $('extPix').value = '';
+    $('extDiaria').value = '';
+    return;
+  }
+  $('extNome').value  = opt.dataset.nome  || '';
+  $('extCargo').value = opt.dataset.cargo || 'Garçom';
+  $('extPix').value   = opt.dataset.pix   || '';
+  preencherDiariaExtra();
+  // Se o cadastro tem diária própria, usa ela em vez do padrão de cargo
+  const diariaCad = parseFloat(opt.dataset.diaria) || 0;
+  if(diariaCad > 0) $('extDiaria').value = diariaCad;
 }
 
 </script>
