@@ -446,6 +446,28 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
             <div><div class="field-label">Divisão por Setor</div><div class="gorjeta-chips" id="gorjetaChips"></div></div>
           </div>
         </div>
+        <div class="card" id="cardMonitoras" style="display:none">
+          <div class="card-title">👶 Gorjeta Monitoras (Passaport Kids)</div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-top:6px">
+            <div>
+              <div class="field-label">Qtd de Passaports</div>
+              <input type="number" class="form-input" id="monitQtd" placeholder="0" min="0" step="1" value="0" oninput="calcMonitoras()">
+            </div>
+            <div>
+              <div class="field-label">Valor por Passaport (R$)</div>
+              <input type="number" class="form-input" id="monitValor" placeholder="20,00" step="0.01" min="0" value="20" oninput="calcMonitoras()">
+            </div>
+            <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;justify-content:center">
+              <div style="font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">Total Arrecadado</div>
+              <div id="monitTotalArrec" style="font-size:18px;font-weight:800;color:var(--text)">R$ 0,00</div>
+            </div>
+            <div style="background:var(--success-lt,#D1FAE5);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;justify-content:center">
+              <div style="font-size:10px;color:#065F46;text-transform:uppercase;letter-spacing:.5px">Por Monitora</div>
+              <div id="monitPorMonitora" style="font-size:18px;font-weight:800;color:#065F46">R$ 0,00</div>
+              <div id="monitCountInfo" style="font-size:10px;color:#065F46;margin-top:2px"></div>
+            </div>
+          </div>
+        </div>
         <div class="card"><div class="card-title">Diárias</div><div id="diariasList"></div></div>
         <div class="card">
           <div class="card-title">Resumo do Dia</div>
@@ -768,6 +790,7 @@ const STATUS_LABEL = {
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 const COLORS = ['#C8782A','#1A6FA8','#276749','#C0392B','#6B3FA8','#D4A03A','#A05E1E','#56d364'];
+const RECEPCIONISTA_BONUS = 20; // R$ fixo por recepcionista presente, por dia
 
 /* ══ ESTADO GLOBAL ══ */
 let currentUser = null, currentPerfil = null;
@@ -784,6 +807,7 @@ let gerDestravamentoAte = null; // ISO timestamp (string) ou null
 let finDate = null, finPresentes = [], finGorjetaMap = {}, finDayStatus = null;
 let finCalAno = new Date().getFullYear(), finCalMes = new Date().getMonth();
 let finDiasStatus = {};
+let finMonitoraGorjeta = 0; // valor por monitora (Passaport Kids ÷ qtd monitoras)
 
 // QR
 let pendingQR = null;
@@ -1426,6 +1450,12 @@ async function loadFechamento(date) {
       }));
     const bloqueado = finDayStatus === 'fechado';
     $('gorjetaTotal').value = '';
+    // Reset campos da monitora (carregarDiariasSalvas pode sobrescrever)
+    $('monitQtd').value = 0;
+    $('monitValor').value = 20;
+    $('monitQtd').disabled = bloqueado;
+    $('monitValor').disabled = bloqueado;
+    finMonitoraGorjeta = 0;
     $('diariasList').innerHTML = finPresentes.map(f =>
       `<div style="border-bottom:1.5px solid var(--border);padding:10px 0">
         <div class="diaria-row" style="border:none;padding:0 0 6px">
@@ -1478,6 +1508,15 @@ async function carregarDiariasSalvas(date) {
       }
     });
     if(gt) $('gorjetaTotal').value = gt;
+    // Carregar config de monitoras (Passaport Kids)
+    try {
+      const diaSnap = await db.collection('fechamento_diario').doc(date).get();
+      if(diaSnap.exists) {
+        const d = diaSnap.data();
+        if(d.monitQtd != null)   $('monitQtd').value   = d.monitQtd;
+        if(d.monitValor != null) $('monitValor').value = d.monitValor;
+      }
+    } catch(_) {}
     calcGorjeta();
   } catch(_) {}
 }
@@ -1493,26 +1532,57 @@ function calcGorjeta() {
   });
   const seen = {};
   finPresentes.forEach(f => seen[f.cargo]=(seen[f.cargo]||0)+1);
-  $('gorjetaChips').innerHTML = Object.entries(seen).map(([c,cnt]) => {
+  const chipsPct = Object.entries(seen).map(([c,cnt]) => {
     const pct = pctGorjeta(c); if(!pct) return '';
     return `<div class="chip"><strong>${c}</strong> ${(pct*100).toFixed(0)}% → ${fmt(total*pct)} ÷ ${cnt}</div>`;
   }).filter(Boolean).join('');
+  // Chip da recepcionista (bônus fixo R$ 20 por presente)
+  const numRecep = seen['Recepcionista'] || 0;
+  const chipRecep = numRecep > 0
+    ? `<div class="chip" style="background:#FEF3C7;border-color:#F59E0B"><strong>Recepcionista</strong> ${fmt(RECEPCIONISTA_BONUS)} fixo × ${numRecep} = ${fmt(RECEPCIONISTA_BONUS*numRecep)}</div>`
+    : '';
+  $('gorjetaChips').innerHTML = chipsPct + chipRecep;
+  calcMonitoras();
+}
+function calcMonitoras() {
+  const monitoras = finPresentes.filter(f => f.cargo === 'Monitora');
+  const card = $('cardMonitoras');
+  if(!card) return;
+  if(!monitoras.length) {
+    card.style.display = 'none';
+    finMonitoraGorjeta = 0;
+    calcResultado();
+    return;
+  }
+  card.style.display = 'block';
+  const qtd   = parseInt($('monitQtd')?.value, 10) || 0;
+  const valor = parseFloat($('monitValor')?.value) || 0;
+  const totalArrec = qtd * valor;
+  finMonitoraGorjeta = monitoras.length ? totalArrec / monitoras.length : 0;
+  $('monitTotalArrec').textContent  = fmt(totalArrec);
+  $('monitPorMonitora').textContent = fmt(finMonitoraGorjeta);
+  $('monitCountInfo').textContent   = `÷ ${monitoras.length} monitora${monitoras.length>1?'s':''}`;
   calcResultado();
 }
 function calcResultado() {
   let total = 0;
   $('resultBody').innerHTML = finPresentes.map(f => {
     const d  = parseFloat($(`diaria-${f.id}`)?.value||0)||0;
-    const g  = finGorjetaMap[f.id]||0;
+    // Soma gorjeta padrão + gorjeta de monitora (se aplicável) + bônus recepcionista (se aplicável)
+    const gMon  = f.cargo === 'Monitora' ? finMonitoraGorjeta : 0;
+    const gRec  = f.cargo === 'Recepcionista' ? RECEPCIONISTA_BONUS : 0;
+    const g  = (finGorjetaMap[f.id]||0) + gMon + gRec;
     const c  = f.consumo||0;
     const dc = parseFloat($(`desconto-${f.id}`)?.value||0)||0;
     const t  = d+g-c-dc; total += t;
     const motivo = $(`motivo-${f.id}`)?.value?.trim() || '';
+    const extraInfo = gMon > 0 ? `<div style="font-size:9px;color:var(--muted)">👶 ${fmt(gMon)}</div>` :
+                      gRec > 0 ? `<div style="font-size:9px;color:var(--muted)">🎟️ ${fmt(gRec)} fixo</div>` : '';
     return `<tr>
       <td>${f.nome}${f.atrasado?' <span class="tag-atrasado">⏰</span>':''}${motivo?`<div style="font-size:10px;color:var(--danger);margin-top:2px">✂️ ${motivo}</div>`:''}</td>
       <td>${badge(f.cargo)}</td>
       <td class="right">${fmt(d)}</td>
-      <td class="right">${fmt(g)}</td>
+      <td class="right">${fmt(g)}${extraInfo}</td>
       <td class="right val-neg">${c>0||dc>0?'- '+fmt(c+dc):'—'}${dc>0&&motivo?`<div style="font-size:10px;color:var(--danger)">✂️ ${fmt(dc)}</div>`:dc>0?`<div style="font-size:10px;color:var(--danger)">desconto: ${fmt(dc)}</div>`:''}</td>
       <td class="right val-pos">${fmt(t)}</td>
     </tr>`;
@@ -1537,13 +1607,23 @@ async function salvarFechamento(fechar=false) {
   try {
     const gt  = parseFloat($('gorjetaTotal').value)||0;
     const gd  = Object.values(finGorjetaMap).reduce((a,b)=>a+b,0);
+    // Dados da gorjeta de monitora (Passaport Kids)
+    const monitQtd     = parseInt($('monitQtd')?.value, 10) || 0;
+    const monitValor   = parseFloat($('monitValor')?.value) || 0;
+    const monitArrec   = monitQtd * monitValor;
+    const numMonitoras = finPresentes.filter(f => f.cargo === 'Monitora').length;
+    const monitPorMon  = numMonitoras ? monitArrec / numMonitoras : 0;
     let td=0,tc=0,tl=0;
     const rSnap = await db.collection('configuracoes').doc('gorjeta').get();
     const rSnapshot = rSnap.exists ? rSnap.data().regras : {};
     const batch = db.batch();
     finPresentes.forEach(f => {
       const d  = parseFloat($(`diaria-${f.id}`)?.value||0)||0;
-      const g  = finGorjetaMap[f.id]||0;
+      // Gorjeta normal + acréscimo da monitora se for Monitora + bônus fixo se Recepcionista
+      const gBase = finGorjetaMap[f.id]||0;
+      const gMon  = f.cargo === 'Monitora' ? monitPorMon : 0;
+      const gRec  = f.cargo === 'Recepcionista' ? RECEPCIONISTA_BONUS : 0;
+      const g     = gBase + gMon + gRec;
       const c  = f.consumo||0;
       const dc = parseFloat($(`desconto-${f.id}`)?.value||0)||0;
       const motivo = $(`motivo-${f.id}`)?.value?.trim()||'';
@@ -1552,6 +1632,7 @@ async function salvarFechamento(fechar=false) {
       batch.set(db.collection('fechamento_funcionario').doc(`${finDate}_${f.id}`),{
         data:finDate,funcId:f.id,nomeSnapshot:f.nome,cargoSnapshot:f.cargo,
         presente:true,atrasado:f.atrasado,consumo:c,diaria:d,gorjeta:g,
+        gorjetaBase:gBase,gorjetaMonitora:gMon,gorjetaRecep:gRec,
         desconto:dc,motivoDesconto:motivo,
         baseGorjeta:gt,percentualCargo:pctGorjeta(f.cargo),
         regrasGorjetaSnapshot:rSnapshot,totalLiquido:l,pix:f.pix||'',
@@ -1561,6 +1642,8 @@ async function salvarFechamento(fechar=false) {
     batch.set(db.collection('fechamento_diario').doc(finDate),{
       data:finDate,gorjetaTotal:gt,gorjetaDistribuida:gd,gorjetaCasa:gt-gd,
       gorjetaPerFunc:finGorjetaMap,regrasGorjetaSnapshot:rSnapshot,
+      monitQtd, monitValor, monitTotalArrec:monitArrec,
+      monitGorjetaPorMonitora:monitPorMon, monitNumMonitoras:numMonitoras,
       totalFuncionarios:finPresentes.length,totalDiarias:td,totalConsumos:tc,
       totalLiquidoDia:tl,fechadoPor:currentUser.uid,
       fechadoEm:firebase.firestore.FieldValue.serverTimestamp(),versao:1
@@ -1599,6 +1682,8 @@ async function confirmarReabrir() {
     fecharModal('modalReabrir'); renderFechAcoes(false); renderCalFin();
     finPresentes.forEach(f => { const el=$(`diaria-${f.id}`); if(el) el.disabled=false; });
     $('gorjetaTotal').disabled=false;
+    $('monitQtd').disabled=false;
+    $('monitValor').disabled=false;
     showAlert('fechAlert','✅ Dia reaberto.','success');
   } catch(e) { showAlert('fechAlert','❌ Erro: '+e.message,'error',0); }
 }
@@ -3027,17 +3112,26 @@ function gerarPDFDia() {
   }
   const obs = $('fechObsBox')?.textContent.replace(/^📝\s*/,'').trim() || '';
   const gorjetaTotal = parseFloat($('gorjetaTotal').value) || 0;
+  // Dados da gorjeta de monitora
+  const monitQtd     = parseInt($('monitQtd')?.value, 10) || 0;
+  const monitValor   = parseFloat($('monitValor')?.value) || 0;
+  const monitArrec   = monitQtd * monitValor;
+  const numMonitoras = finPresentes.filter(f => f.cargo === 'Monitora').length;
+  const monitPorMon  = numMonitoras ? monitArrec / numMonitoras : 0;
   // Reaproveita a lógica de calcResultado para pegar valores já calculados
   let totalGeral = 0, totalDiarias = 0, totalGorjeta = 0, totalConsumo = 0, totalDesc = 0;
   const linhas = finPresentes.map(f => {
     const d  = parseFloat($(`diaria-${f.id}`)?.value||0)||0;
-    const g  = finGorjetaMap[f.id]||0;
+    const gBase = finGorjetaMap[f.id]||0;
+    const gMon  = f.cargo === 'Monitora' ? monitPorMon : 0;
+    const gRec  = f.cargo === 'Recepcionista' ? RECEPCIONISTA_BONUS : 0;
+    const g  = gBase + gMon + gRec;
     const c  = f.consumo||0;
     const dc = parseFloat($(`desconto-${f.id}`)?.value||0)||0;
     const t  = d+g-c-dc;
     const motivo = $(`motivo-${f.id}`)?.value?.trim() || '';
     totalGeral += t; totalDiarias += d; totalGorjeta += g; totalConsumo += c; totalDesc += dc;
-    return { nome:f.nome, cargo:f.cargo, atrasado:f.atrasado, d, g, c, dc, t, motivo };
+    return { nome:f.nome, cargo:f.cargo, atrasado:f.atrasado, d, g, gBase, gMon, gRec, c, dc, t, motivo };
   });
   const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
     <title>Fechamento ${finDate}</title><style>${_pdfStyle()}</style></head><body>
@@ -3051,6 +3145,11 @@ function gerarPDFDia() {
       <div><div class="lbl">Total Líquido</div><div class="val success">${fmt(totalGeral)}</div></div>
       <div><div class="lbl">Gorjeta Total (taxa)</div><div class="val">${fmt(gorjetaTotal)}</div></div>
     </div>
+    ${monitArrec > 0 ? `
+    <div class="obs" style="background:#FEF3C7;border-left-color:#F59E0B">
+      👶 <strong>Passaport Kids:</strong> ${monitQtd} × ${fmt(monitValor)} = <strong>${fmt(monitArrec)}</strong>
+      ${numMonitoras > 0 ? ` ÷ ${numMonitoras} monitora${numMonitoras>1?'s':''} = <strong>${fmt(monitPorMon)} cada</strong>` : ''}
+    </div>` : ''}
     <h2>Resumo por Funcionário</h2>
     <table>
       <thead><tr><th>Funcionário</th><th>Cargo</th><th class="r">Diária</th><th class="r">Gorjeta</th><th class="r">Desc/Cons</th><th class="r">Total</th></tr></thead>
@@ -3059,7 +3158,7 @@ function gerarPDFDia() {
           <td><strong>${l.nome}</strong>${l.atrasado?' ⏰':''}${l.motivo?`<div style="font-size:9px;color:#C0392B;margin-top:2px">✂️ ${l.motivo}</div>`:''}</td>
           <td>${l.cargo}</td>
           <td class="r">${fmt(l.d)}</td>
-          <td class="r">${fmt(l.g)}</td>
+          <td class="r">${fmt(l.g)}${l.gMon > 0 ? `<div style="font-size:8px;color:#8A837A">inclui 👶 ${fmt(l.gMon)}</div>` : ''}${l.gRec > 0 ? `<div style="font-size:8px;color:#8A837A">inclui 🎟️ ${fmt(l.gRec)} fixo</div>` : ''}</td>
           <td class="r neg">${(l.c>0||l.dc>0)?'- '+fmt(l.c+l.dc):'—'}</td>
           <td class="r pos">${fmt(l.t)}</td>
         </tr>`).join('')}
