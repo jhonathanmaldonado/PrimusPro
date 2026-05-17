@@ -857,6 +857,24 @@ async function carregarGorjetaConfig() {
 }
 function pctGorjeta(c) { return gorjetaRegras[c]?.percentual ?? 0; }
 
+/* Popular um <select> com cargos da configuração (gorjetaRegras).
+   Garante que o valor atual fique selecionado mesmo se for legado. */
+function popularSelectCargos(selectId, valorAtual) {
+  const sel = $(selectId);
+  if(!sel) return;
+  const cargosConfig = Object.keys(gorjetaRegras || {});
+  const cargos = cargosConfig.length ? cargosConfig.slice().sort((a,b)=>a.localeCompare(b,'pt-BR'))
+    : ['Garçom','Bar','Cozinheiro','Cumim','Gerente','Aux. Bar','Caixa','Recepcionista','Monitora','Aux. Cozinha','Limpeza','Segurança'];
+  // Garantir que o valor atual esteja na lista (mesmo se renomeado/legado)
+  if(valorAtual && !cargos.includes(valorAtual)) cargos.push(valorAtual + ' (legado)');
+  sel.innerHTML = cargos.map(c => {
+    const isLegado = c.endsWith(' (legado)');
+    const valor = isLegado ? c.replace(' (legado)','') : c;
+    const selected = valor === valorAtual ? ' selected' : '';
+    return `<option value="${valor}"${selected}>${c}</option>`;
+  }).join('');
+}
+
 /* ══ AUTH ══ */
 auth.onAuthStateChanged(async user => {
   if(!user) { showLogin(); return; }
@@ -1225,7 +1243,7 @@ function gerAjustarAux(i,d){ gerFuncionarios[i].auxCount=Math.max(0,Math.min(4,(
 function gerAbrirCargo(i) {
   gerCargoIdx = i;
   $('modalCargoNome').textContent = gerFuncionarios[i].nome;
-  $('modalCargoSel').value = gerFuncionarios[i].cargo;
+  popularSelectCargos('modalCargoSel', gerFuncionarios[i].cargo);
   abrirModal('modalCargo');
 }
 function confirmarCargo() {
@@ -2173,6 +2191,9 @@ async function renderCadList() {
   const podeEditar = ['gerente','diretoria','admin'].includes(currentPerfil);
   const cardNovo = $('cadNovoCard');
   if(cardNovo) cardNovo.style.display = 'block'; // todos os perfis com acesso à aba veem o form
+  // Recarregar config e popular dropdown de cargo do form de novo funcionário
+  await carregarGorjetaConfig();
+  popularSelectCargos('cadCargo', $('cadCargo')?.value || 'Garçom');
   try {
     const snap = await db.collection('funcionarios').orderBy('nome').get();
     if(!snap.size) { el.innerHTML='<div class="empty-state"><p>Nenhum cadastrado</p></div>'; return; }
@@ -2200,8 +2221,11 @@ async function renderCadList() {
 async function abrirEditFunc(id) {
   const snap = await db.collection('funcionarios').doc(id).get();
   if(!snap.exists) return; const f=snap.data();
+  // Recarrega config de cargos (caso tenha mudado em outra aba/sessão) e popula o select
+  await carregarGorjetaConfig();
+  popularSelectCargos('editCargo', f.cargo || 'Garçom');
   $('editFuncId').value=id; $('editNome').value=f.nome||'';
-  $('editCargo').value=f.cargo||'Garçom'; $('editTipo').value=f.tipo||'fixo';
+  $('editTipo').value=f.tipo||'fixo';
   $('editPix').value=f.pix||''; $('editDiaria').value=f.diariaPadrao||'';
   $('editEscalaFixa').value=f.escalaFixa?'sim':'nao';
   $('editCpf').value=f.cpf||''; $('editTelefone').value=f.telefone||'';
@@ -3855,6 +3879,9 @@ async function abrirModalExtra() {
   $('extDiaria').value = '';
   $('extHint').textContent = '';
   $('segAuxWrap').style.display = 'none';
+  // Recarrega config de cargos e popula o select de função
+  await carregarGorjetaConfig();
+  popularSelectCargos('extCargo', $('extCargo')?.value || 'Garçom');
   // Popular o select com cadastrados ativos que ainda não estão na lista do dia
   if(sel) {
     sel.innerHTML = '<option value="">⏳ Carregando...</option>';
