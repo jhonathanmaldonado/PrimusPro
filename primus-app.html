@@ -3275,8 +3275,13 @@ async function gerarPDFPagamentos(tipoForcado) {
     const totalGeral      = sorted.reduce((a,t) => a + t.total, 0);
     const totalRegistrado = registrados.reduce((a,t) => a + t.total, 0);
     const totalDiarista   = diaristas.reduce((a,t) => a + t.total, 0);
-    const totalPix        = diaristas.reduce((a,t) => a + (t.pix && t.pix.toUpperCase()!=='DINHEIRO' ? t.total : 0), 0);
-    const totalDinheiro   = sorted.reduce((a,t) => a + (t.pix.toUpperCase()==='DINHEIRO' ? t.total : 0), 0);
+    // Pix x Dinheiro com contagem (apenas entre diaristas — fixos vão pela folha)
+    const pixList      = diaristas.filter(t => t.pix && t.pix.toUpperCase() !== 'DINHEIRO');
+    const dinheiroList = sorted.filter(t => t.pix.toUpperCase() === 'DINHEIRO');
+    const totalPix      = pixList.reduce((a,t) => a + t.total, 0);
+    const totalDinheiro = dinheiroList.reduce((a,t) => a + t.total, 0);
+    const qtdPix      = pixList.length;
+    const qtdDinheiro = dinheiroList.length;
     const lblPeriodo = {semana:'Pagamentos da Semana',semana_ant:'Pagamentos da Semana Anterior',mes:'Pagamentos do Mês',custom:'Pagamentos do Período'}[$('pgtoTipo').value] || 'Pagamentos';
     const subtitulo = `${de.split('-').reverse().join('/')} → ${ate.split('-').reverse().join('/')} · ${sorted.length} funcionário(s)`;
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
@@ -3286,8 +3291,8 @@ async function gerarPDFPagamentos(tipoForcado) {
         <div><div class="lbl">Total Geral</div><div class="val accent">${fmt(totalGeral)}</div></div>
         <div><div class="lbl">Fixos (folha)</div><div class="val">${fmt(totalRegistrado)}</div><div class="lbl" style="margin-top:4px">${registrados.length} func.</div></div>
         <div><div class="lbl">Frequentes</div><div class="val">${fmt(totalDiarista)}</div><div class="lbl" style="margin-top:4px">${diaristas.length} func.</div></div>
-        <div><div class="lbl">Pix a transferir</div><div class="val success">${fmt(totalPix)}</div></div>
-        <div><div class="lbl">Dinheiro</div><div class="val">${fmt(totalDinheiro)}</div></div>
+        <div><div class="lbl">📱 Pix a transferir</div><div class="val success">${fmt(totalPix)}</div><div class="lbl" style="margin-top:4px">${qtdPix} transferência${qtdPix!==1?'s':''}</div></div>
+        <div><div class="lbl">💵 Dinheiro</div><div class="val">${fmt(totalDinheiro)}</div><div class="lbl" style="margin-top:4px">${qtdDinheiro} pagamento${qtdDinheiro!==1?'s':''}</div></div>
       </div>
       ${_tabelaPgto('📋 Fixos — Conta Salário Itaú', registrados, totalRegistrado)}
       ${_tabelaPgto('👤 Frequentes — Diaristas', diaristas, totalDiarista)}
@@ -3306,18 +3311,22 @@ async function gerarPDFDiaristas() {
     const diaristas = sorted.filter(t => !t.isRegistrado);
     if(!diaristas.length) { alert('Nenhum diarista no período.'); return; }
     const totalDiarista = diaristas.reduce((a,t) => a + t.total, 0);
-    const totalPix      = diaristas.reduce((a,t) => a + (t.pix && t.pix.toUpperCase()!=='DINHEIRO' ? t.total : 0), 0);
-    const totalDinheiro = diaristas.reduce((a,t) => a + (t.pix.toUpperCase()==='DINHEIRO' ? t.total : 0), 0);
+    // Contar e somar separadamente Pix x Dinheiro
+    const pixList      = diaristas.filter(t => t.pix && t.pix.toUpperCase() !== 'DINHEIRO');
+    const dinheiroList = diaristas.filter(t => t.pix.toUpperCase() === 'DINHEIRO');
+    const totalPix      = pixList.reduce((a,t) => a + t.total, 0);
+    const totalDinheiro = dinheiroList.reduce((a,t) => a + t.total, 0);
+    const qtdPix      = pixList.length;
+    const qtdDinheiro = dinheiroList.length;
     const lblPeriodo = {semana:'Diaristas da Semana',semana_ant:'Diaristas da Semana Anterior',mes:'Diaristas do Mês',custom:'Diaristas do Período'}[$('pgtoTipo').value] || 'Diaristas';
     const subtitulo = `${de.split('-').reverse().join('/')} → ${ate.split('-').reverse().join('/')} · ${diaristas.length} diarista(s)`;
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
       <title>${lblPeriodo}</title><style>${_pdfStyle()}</style></head><body>
       ${_pdfHeader(lblPeriodo, subtitulo)}
       <div class="resumo-box">
-        <div><div class="lbl">Total Diaristas</div><div class="val accent">${fmt(totalDiarista)}</div></div>
-        <div><div class="lbl">Pix a transferir</div><div class="val success">${fmt(totalPix)}</div></div>
-        <div><div class="lbl">Dinheiro</div><div class="val">${fmt(totalDinheiro)}</div></div>
-        <div><div class="lbl">Funcionários</div><div class="val">${diaristas.length}</div></div>
+        <div><div class="lbl">Total Diaristas</div><div class="val accent">${fmt(totalDiarista)}</div><div class="lbl" style="margin-top:4px">${diaristas.length} func.</div></div>
+        <div><div class="lbl">📱 Pix a transferir</div><div class="val success">${fmt(totalPix)}</div><div class="lbl" style="margin-top:4px">${qtdPix} transferência${qtdPix!==1?'s':''}</div></div>
+        <div><div class="lbl">💵 Dinheiro</div><div class="val">${fmt(totalDinheiro)}</div><div class="lbl" style="margin-top:4px">${qtdDinheiro} pagamento${qtdDinheiro!==1?'s':''}</div></div>
       </div>
       <div class="obs">💡 Tique ☐ ao lado de cada nome conforme for pagando.</div>
       ${_tabelaPgto('👤 Frequentes — Diaristas a Pagar', diaristas, totalDiarista)}
