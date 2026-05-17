@@ -494,6 +494,7 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
         <button class="btn btn-secondary btn-sm" onclick="renderPagamentos()" style="align-self:flex-end">Atualizar</button>
         <button class="btn btn-secondary btn-sm" onclick="gerarPDFPagamentos('semana')" style="align-self:flex-end">📄 PDF Semanal</button>
         <button class="btn btn-secondary btn-sm" onclick="gerarPDFPagamentos('mes')" style="align-self:flex-end">📄 PDF Mensal</button>
+        <button class="btn btn-secondary btn-sm" onclick="gerarPDFDiaristas()" style="align-self:flex-end;background:#FEF3C7;border-color:#F59E0B">👤 PDF Diaristas</button>
         <button class="btn btn-secondary btn-sm" onclick="window.print()" style="align-self:flex-end">🖨️ Imprimir</button>
       </div>
       <div id="pgtoAlert" class="alert"></div><div id="pgtoContent"></div>
@@ -3112,8 +3113,10 @@ function _pdfStyle() {
     .resumo-box .val.accent { color:#C8782A; }
     .resumo-box .val.success { color:#065F46; }
     .obs { background:#FEF3C7; border-left:3px solid #F59E0B; padding:8px 12px; margin:10px 0; font-size:11px; }
+    .check-cell { text-align:center; width:24px; }
+    .check-box { display:inline-block; width:14px; height:14px; border:1.5px solid #1a1916; border-radius:3px; vertical-align:middle; }
     .footer { margin-top:24px; padding-top:10px; border-top:1px solid #E2DDD5; display:flex; justify-content:space-between; font-size:9px; color:#8A837A; }
-    @media print { @page { margin: 12mm 14mm; size: A4; } body { padding: 0; } }
+    @media print { @page { margin: 12mm 14mm; size: A4; } body { padding: 0; } .check-box { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
   `;
 }
 function _pdfFooter() {
@@ -3176,9 +3179,10 @@ function gerarPDFDia() {
     </div>` : ''}
     <h2>Resumo por Funcionário</h2>
     <table>
-      <thead><tr><th>Funcionário</th><th>Cargo</th><th class="r">Diária</th><th class="r">Gorjeta</th><th class="r">Desc/Cons</th><th class="r">Total</th></tr></thead>
+      <thead><tr><th class="check-cell">✓</th><th>Funcionário</th><th>Cargo</th><th class="r">Diária</th><th class="r">Gorjeta</th><th class="r">Desc/Cons</th><th class="r">Total</th></tr></thead>
       <tbody>
         ${linhas.map(l => `<tr>
+          <td class="check-cell"><span class="check-box"></span></td>
           <td><strong>${l.nome}</strong>${l.atrasado?' ⏰':''}${l.motivo?`<div style="font-size:9px;color:#C0392B;margin-top:2px">✂️ ${l.motivo}</div>`:''}</td>
           <td>${l.cargo}</td>
           <td class="r">${fmt(l.d)}</td>
@@ -3186,13 +3190,74 @@ function gerarPDFDia() {
           <td class="r neg">${(l.c>0||l.dc>0)?'- '+fmt(l.c+l.dc):'—'}</td>
           <td class="r pos">${fmt(l.t)}</td>
         </tr>`).join('')}
-        <tr class="total-row"><td colspan="5">Total do Dia</td><td class="r">${fmt(totalGeral)}</td></tr>
+        <tr class="total-row"><td colspan="6">Total do Dia</td><td class="r">${fmt(totalGeral)}</td></tr>
       </tbody>
     </table>
     ${_pdfFooter()}
     <script>window.onload = () => window.print();<\/script>
     </body></html>`;
   _abrirPdfJanela(html);
+}
+
+/* Agregar pagamentos por funcionário num período (para PDFs) */
+async function _agregarPagamentos(de, ate) {
+  const [fechSnap, cadSnap] = await Promise.all([
+    db.collection('fechamento_funcionario').where('data','>=',de).where('data','<=',ate).get(),
+    db.collection('funcionarios').get()
+  ]);
+  const cadMap = {};
+  cadSnap.docs.forEach(d => cadMap[d.id] = d.data());
+  const totals = {};
+  fechSnap.docs.forEach(d => {
+    const r=d.data(); if(!r.presente) return;
+    if(!totals[r.funcId]) {
+      const cad = cadMap[r.funcId] || {};
+      const pix = r.pix || cad.pix || '';
+      const isRegistrado = (cad.tipo === 'fixo') || (!cad.tipo && (
+        pix.toLowerCase().includes('itaú') || pix.toLowerCase().includes('salário') || pix.toLowerCase().includes('salario')
+      ));
+      totals[r.funcId] = {
+        nome: cad.nome || r.nomeSnapshot,
+        cargo: cad.cargo || r.cargoSnapshot,
+        pix, isRegistrado, dias:[], gorjeta:0, diarias:0, consumo:0, total:0
+      };
+    }
+    totals[r.funcId].dias.push(r.data);
+    totals[r.funcId].gorjeta  += r.gorjeta||0;
+    totals[r.funcId].diarias  += r.diaria||0;
+    totals[r.funcId].consumo  += r.consumo||0;
+    totals[r.funcId].total    += r.totalLiquido||0;
+  });
+  return Object.values(totals).sort((a,b) => b.total - a.total);
+}
+
+function _metodoPgto(pix) {
+  const p = (pix||'').toLowerCase();
+  if(p.includes('itaú')||p.includes('salário')||p.includes('salario')) return 'Conta Salário Itaú';
+  if((pix||'').toUpperCase()==='DINHEIRO') return 'Dinheiro';
+  return pix ? 'Pix: '+pix : '—';
+}
+
+function _tabelaPgto(titulo, lista, totalGrupo) {
+  if(!lista.length) return '';
+  return `<h2>${titulo} — ${fmt(totalGrupo)}</h2>
+    <table>
+      <thead><tr><th class="check-cell">✓</th><th>Funcionário</th><th>Cargo</th><th>Pagamento</th><th class="r">Dias</th><th class="r">Diárias</th><th class="r">Gorjeta</th><th class="r">(-) Cons.</th><th class="r">Total</th></tr></thead>
+      <tbody>
+        ${lista.map(t => `<tr>
+          <td class="check-cell"><span class="check-box"></span></td>
+          <td><strong>${t.nome}</strong></td>
+          <td>${t.cargo}</td>
+          <td style="font-size:10px">${_metodoPgto(t.pix)}</td>
+          <td class="r">${t.dias.length}</td>
+          <td class="r">${fmt(t.diarias)}</td>
+          <td class="r">${fmt(t.gorjeta)}</td>
+          <td class="r neg">${t.consumo>0?'- '+fmt(t.consumo):'—'}</td>
+          <td class="r pos">${fmt(t.total)}</td>
+        </tr>`).join('')}
+        <tr class="total-row"><td colspan="8">Subtotal</td><td class="r">${fmt(totalGrupo)}</td></tr>
+      </tbody>
+    </table>`;
 }
 
 async function gerarPDFPagamentos(tipoForcado) {
@@ -3203,34 +3268,7 @@ async function gerarPDFPagamentos(tipoForcado) {
   const {de, ate} = getPeriodo();
   if(!de || !ate) { alert('Selecione um período válido.'); return; }
   try {
-    const [fechSnap, cadSnap] = await Promise.all([
-      db.collection('fechamento_funcionario').where('data','>=',de).where('data','<=',ate).get(),
-      db.collection('funcionarios').get()
-    ]);
-    const cadMap = {};
-    cadSnap.docs.forEach(d => cadMap[d.id] = d.data());
-    const totals = {};
-    fechSnap.docs.forEach(d => {
-      const r=d.data(); if(!r.presente) return;
-      if(!totals[r.funcId]) {
-        const cad = cadMap[r.funcId] || {};
-        const pix = r.pix || cad.pix || '';
-        const isRegistrado = (cad.tipo === 'fixo') || (!cad.tipo && (
-          pix.toLowerCase().includes('itaú') || pix.toLowerCase().includes('salário') || pix.toLowerCase().includes('salario')
-        ));
-        totals[r.funcId] = {
-          nome: cad.nome || r.nomeSnapshot,
-          cargo: cad.cargo || r.cargoSnapshot,
-          pix, isRegistrado, dias:[], gorjeta:0, diarias:0, consumo:0, total:0
-        };
-      }
-      totals[r.funcId].dias.push(r.data);
-      totals[r.funcId].gorjeta  += r.gorjeta||0;
-      totals[r.funcId].diarias  += r.diaria||0;
-      totals[r.funcId].consumo  += r.consumo||0;
-      totals[r.funcId].total    += r.totalLiquido||0;
-    });
-    const sorted = Object.values(totals).sort((a,b) => b.total - a.total);
+    const sorted = await _agregarPagamentos(de, ate);
     if(!sorted.length) { alert('Nenhum fechamento no período.'); return; }
     const registrados = sorted.filter(t => t.isRegistrado);
     const diaristas   = sorted.filter(t => !t.isRegistrado);
@@ -3239,33 +3277,6 @@ async function gerarPDFPagamentos(tipoForcado) {
     const totalDiarista   = diaristas.reduce((a,t) => a + t.total, 0);
     const totalPix        = diaristas.reduce((a,t) => a + (t.pix && t.pix.toUpperCase()!=='DINHEIRO' ? t.total : 0), 0);
     const totalDinheiro   = sorted.reduce((a,t) => a + (t.pix.toUpperCase()==='DINHEIRO' ? t.total : 0), 0);
-
-    function _metodo(pix) {
-      const p = (pix||'').toLowerCase();
-      if(p.includes('itaú')||p.includes('salário')||p.includes('salario')) return 'Conta Salário Itaú';
-      if((pix||'').toUpperCase()==='DINHEIRO') return 'Dinheiro';
-      return pix ? 'Pix: '+pix : '—';
-    }
-    function _tabela(titulo, lista, totalGrupo) {
-      if(!lista.length) return '';
-      return `<h2>${titulo} — ${fmt(totalGrupo)}</h2>
-        <table>
-          <thead><tr><th>Funcionário</th><th>Cargo</th><th>Pagamento</th><th class="r">Dias</th><th class="r">Diárias</th><th class="r">Gorjeta</th><th class="r">(-) Cons.</th><th class="r">Total</th></tr></thead>
-          <tbody>
-            ${lista.map(t => `<tr>
-              <td><strong>${t.nome}</strong></td>
-              <td>${t.cargo}</td>
-              <td style="font-size:10px">${_metodo(t.pix)}</td>
-              <td class="r">${t.dias.length}</td>
-              <td class="r">${fmt(t.diarias)}</td>
-              <td class="r">${fmt(t.gorjeta)}</td>
-              <td class="r neg">${t.consumo>0?'- '+fmt(t.consumo):'—'}</td>
-              <td class="r pos">${fmt(t.total)}</td>
-            </tr>`).join('')}
-            <tr class="total-row"><td colspan="7">Subtotal</td><td class="r">${fmt(totalGrupo)}</td></tr>
-          </tbody>
-        </table>`;
-    }
     const lblPeriodo = {semana:'Pagamentos da Semana',semana_ant:'Pagamentos da Semana Anterior',mes:'Pagamentos do Mês',custom:'Pagamentos do Período'}[$('pgtoTipo').value] || 'Pagamentos';
     const subtitulo = `${de.split('-').reverse().join('/')} → ${ate.split('-').reverse().join('/')} · ${sorted.length} funcionário(s)`;
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
@@ -3278,8 +3289,38 @@ async function gerarPDFPagamentos(tipoForcado) {
         <div><div class="lbl">Pix a transferir</div><div class="val success">${fmt(totalPix)}</div></div>
         <div><div class="lbl">Dinheiro</div><div class="val">${fmt(totalDinheiro)}</div></div>
       </div>
-      ${_tabela('📋 Fixos — Conta Salário Itaú', registrados, totalRegistrado)}
-      ${_tabela('👤 Frequentes — Diaristas', diaristas, totalDiarista)}
+      ${_tabelaPgto('📋 Fixos — Conta Salário Itaú', registrados, totalRegistrado)}
+      ${_tabelaPgto('👤 Frequentes — Diaristas', diaristas, totalDiarista)}
+      ${_pdfFooter()}
+      <script>window.onload = () => window.print();<\/script>
+      </body></html>`;
+    _abrirPdfJanela(html);
+  } catch(e) { alert('Erro ao gerar PDF: ' + e.message); }
+}
+
+async function gerarPDFDiaristas() {
+  const {de, ate} = getPeriodo();
+  if(!de || !ate) { alert('Selecione um período válido.'); return; }
+  try {
+    const sorted = await _agregarPagamentos(de, ate);
+    const diaristas = sorted.filter(t => !t.isRegistrado);
+    if(!diaristas.length) { alert('Nenhum diarista no período.'); return; }
+    const totalDiarista = diaristas.reduce((a,t) => a + t.total, 0);
+    const totalPix      = diaristas.reduce((a,t) => a + (t.pix && t.pix.toUpperCase()!=='DINHEIRO' ? t.total : 0), 0);
+    const totalDinheiro = diaristas.reduce((a,t) => a + (t.pix.toUpperCase()==='DINHEIRO' ? t.total : 0), 0);
+    const lblPeriodo = {semana:'Diaristas da Semana',semana_ant:'Diaristas da Semana Anterior',mes:'Diaristas do Mês',custom:'Diaristas do Período'}[$('pgtoTipo').value] || 'Diaristas';
+    const subtitulo = `${de.split('-').reverse().join('/')} → ${ate.split('-').reverse().join('/')} · ${diaristas.length} diarista(s)`;
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+      <title>${lblPeriodo}</title><style>${_pdfStyle()}</style></head><body>
+      ${_pdfHeader(lblPeriodo, subtitulo)}
+      <div class="resumo-box">
+        <div><div class="lbl">Total Diaristas</div><div class="val accent">${fmt(totalDiarista)}</div></div>
+        <div><div class="lbl">Pix a transferir</div><div class="val success">${fmt(totalPix)}</div></div>
+        <div><div class="lbl">Dinheiro</div><div class="val">${fmt(totalDinheiro)}</div></div>
+        <div><div class="lbl">Funcionários</div><div class="val">${diaristas.length}</div></div>
+      </div>
+      <div class="obs">💡 Tique ☐ ao lado de cada nome conforme for pagando.</div>
+      ${_tabelaPgto('👤 Frequentes — Diaristas a Pagar', diaristas, totalDiarista)}
       ${_pdfFooter()}
       <script>window.onload = () => window.print();<\/script>
       </body></html>`;
