@@ -377,6 +377,13 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
           <div><span>Ausentes: </span><strong id="gerAus">0</strong></div>
           <div><span>Atrasados: </span><strong id="gerAtras">0</strong></div>
         </div>
+        <div class="card no-print" style="padding:0;overflow:hidden">
+          <div onclick="toggleCargoBreakdown()" style="padding:10px 14px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;user-select:none">
+            <span style="font-size:13px;font-weight:700;color:var(--text)">👥 Presença por Cargo</span>
+            <span id="cargoBreakdownArrow" style="font-size:12px;color:var(--muted);transition:transform .2s">▼</span>
+          </div>
+          <div id="cargoBreakdownBody" style="display:none;padding:0 14px 12px;border-top:1px solid var(--border)"></div>
+        </div>
         <div class="card">
           <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
             <span>Funcionários</span>
@@ -906,7 +913,12 @@ function showApp() {
   $('loginScreen').style.display = 'none';
   $('appScreen').style.display = 'block';
   $('gerObs').addEventListener('input', () => gerAutoSave());
-  if(currentPerfil === 'gerente') { ativarTab('presenca'); gerCarregarMes(); }
+  if(currentPerfil === 'gerente') {
+    ativarTab('presenca');
+    // requestAnimationFrame garante que a seção .active já está visível (display:block)
+    // antes de renderizar o grid do calendário, evitando grid vazio no 1º carregamento
+    requestAnimationFrame(() => gerCarregarMes());
+  }
   else { ativarTab('calendario'); carregarCalFin(); }
   // Item 2 — alerta presença não enviada (Qua-Dom após 16h)
   verificarAlertaPresenca();
@@ -1023,6 +1035,7 @@ function mudarMesGer(delta) {
 function renderGerCal() {
   $('gerCalLabel').textContent = `${MESES[gerCalMes]} ${gerCalAno}`;
   const grid = $('gerCalGrid'), hoje = todayStr();
+  if(!grid) return;
   const pDia = new Date(gerCalAno,gerCalMes,1).getDay();
   const nDias = new Date(gerCalAno,gerCalMes+1,0).getDate();
   let html = ['D','S','T','Q','Q','S','S'].map(d=>`<div class="cal-sem">${d}</div>`).join('');
@@ -1039,6 +1052,15 @@ function renderGerCal() {
     html += `<div class="cal-day${isH?' hoje':''}${isS?' selecionado':''}" style="background:${bg};color:${color}" onclick="gerSelecionarDia('${ds}')">${d}</div>`;
   }
   grid.innerHTML = html;
+  // Salvaguarda: se o grid foi preenchido mas não tem altura (renderizado enquanto oculto),
+  // força um reflow no próximo frame para o navegador recalcular o layout do grid
+  requestAnimationFrame(() => {
+    if(grid.children.length && grid.offsetHeight === 0) {
+      grid.style.display = 'none';
+      void grid.offsetHeight; // trigger reflow
+      grid.style.display = '';
+    }
+  });
 }
 async function gerSelecionarDia(ds) {
   gerCurrentDate = ds; renderGerCal(); await gerCarregarDia(ds);
@@ -1236,6 +1258,42 @@ function renderGerList() {
   $('gerAus').textContent   = gerFuncionarios.filter(f=>!f.presente).length;
   $('gerAtras').textContent = gerFuncionarios.filter(f=>f.atrasado).length;
   $('gerEmpCount').textContent = `${pres} presentes de ${gerFuncionarios.length} (${fixos.length} fixos · ${freq.length} frequentes · ${extras.length} extras)`;
+  renderCargoBreakdown();
+}
+function renderCargoBreakdown() {
+  const body = $('cargoBreakdownBody');
+  if(!body) return;
+  // Agrupa por cargo: total, presentes, ausentes, atrasados
+  const porCargo = {};
+  gerFuncionarios.forEach(f => {
+    const c = f.cargo || '—';
+    if(!porCargo[c]) porCargo[c] = {presentes:0, ausentes:0, atrasados:0};
+    if(f.presente) { porCargo[c].presentes++; if(f.atrasado) porCargo[c].atrasados++; }
+    else porCargo[c].ausentes++;
+  });
+  const cargos = Object.keys(porCargo).sort((a,b)=>a.localeCompare(b,'pt-BR'));
+  if(!cargos.length) { body.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">Nenhum funcionário na lista</div>'; return; }
+  body.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;padding-top:10px">` +
+    cargos.map(c => {
+      const v = porCargo[c];
+      const temAusencia = v.ausentes > 0;
+      return `<div style="background:${temAusencia?'#FEF3C7':'var(--surface2)'};border-radius:8px;padding:8px 10px;border:1px solid ${temAusencia?'#F59E0B':'var(--border)'}">
+        <div style="font-size:12px;font-weight:700;color:var(--text);margin-bottom:3px">${c}</div>
+        <div style="display:flex;gap:10px;font-size:12px;align-items:center">
+          <span style="color:#065F46;font-weight:600" title="presentes">✓ ${v.presentes}</span>
+          <span style="color:${temAusencia?'#C0392B':'var(--muted)'};font-weight:${temAusencia?'700':'400'}" title="ausentes">✗ ${v.ausentes}</span>
+          ${v.atrasados>0?`<span style="color:#A05E1E;font-weight:600" title="atrasados">⏰ ${v.atrasados}</span>`:''}
+        </div>
+      </div>`;
+    }).join('') + `</div>`;
+}
+function toggleCargoBreakdown() {
+  const body = $('cargoBreakdownBody');
+  const arrow = $('cargoBreakdownArrow');
+  if(!body) return;
+  const aberto = body.style.display !== 'none';
+  body.style.display = aberto ? 'none' : 'block';
+  if(arrow) arrow.style.transform = aberto ? 'rotate(0deg)' : 'rotate(180deg)';
 }
 function gerTogglePres(i)  { gerFuncionarios[i].presente=!gerFuncionarios[i].presente; if(!gerFuncionarios[i].presente)gerFuncionarios[i].atrasado=false; renderGerList(); gerAutoSave(); }
 function gerToggleAtras(i) { gerFuncionarios[i].atrasado=!gerFuncionarios[i].atrasado; renderGerList(); gerAutoSave(); }
