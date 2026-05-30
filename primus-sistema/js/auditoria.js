@@ -3146,13 +3146,7 @@ function renderizarDashboardHistorico(auditorias) {
   const container = document.getElementById('hist-container');
 
   container.innerHTML = `
-    <div class="hist-aviso">
-      <span>📋</span>
-      <div>
-        <strong>Auditorias fechadas</strong>
-        <small>Ranking + gráficos + calendário serão adicionados na próxima entrega, conforme você acumular mais auditorias fechadas.</small>
-      </div>
-    </div>
+    <div id="hist-ranking-secao"></div>
 
     <div class="hist-legenda">
       <div class="hist-legenda-titulo">Entendendo os status:</div>
@@ -3192,7 +3186,276 @@ function renderizarDashboardHistorico(auditorias) {
       ${auditorias.map(a => renderLinhaHistorico(a)).join('')}
     </div>
   `;
+
+  // Renderiza o ranking com período padrão de 30 dias
+  renderizarRankingProdutos(auditorias, 30);
 }
+
+// ===== RANKING DE PRODUTOS MAIS PROBLEMÁTICOS =====
+// Combina 3 critérios (frequência, magnitude média, pior caso) num score
+// ponderado 40/35/25 e mostra Top 10 expansíveis.
+//
+// Considera apenas auditorias OPERACIONAIS fechadas (a virada compara
+// FIN vs INI sem vendas, então diferença ali é outro tipo de problema —
+// caberia outro ranking se útil no futuro).
+//
+// Status considerados: CRITICO + ATENCAO (DIF >= 2 un).
+
+function renderizarRankingProdutos(todasAuditorias, periodoDias) {
+  const secao = document.getElementById('hist-ranking-secao');
+  if (!secao) return;
+
+  // 1. Filtra auditorias operacionais pelo período
+  const auditoriasOp = todasAuditorias.filter(a => a.modo === 'operacional');
+
+  let auditoriasFiltradas;
+  if (periodoDias === 'todos') {
+    auditoriasFiltradas = auditoriasOp;
+  } else {
+    const hoje = new Date();
+    const corte = new Date(hoje);
+    corte.setDate(corte.getDate() - periodoDias);
+    const corteISO = corte.toISOString().slice(0, 10);
+    auditoriasFiltradas = auditoriasOp.filter(a => (a.dataFim || a.dataInicio) >= corteISO);
+  }
+
+  // 2. Agrega por produto
+  const produtos = calcularAgregadoProdutos(auditoriasFiltradas);
+
+  // 3. Calcula score com pesos 40/35/25
+  const ranking = calcularScoreProdutos(produtos);
+
+  // 4. Filtra Top 10
+  const top10 = ranking.slice(0, 10);
+
+  // 5. Renderiza
+  const toggleHtml = `
+    <div class="hist-rank-toggle">
+      ${[7, 30, 90, 'todos'].map(p => {
+        const lbl = p === 'todos' ? 'Todos' : `${p} dias`;
+        const cls = p === periodoDias ? 'active' : '';
+        return `<button class="hist-rank-btn ${cls}" data-periodo="${p}">${lbl}</button>`;
+      }).join('')}
+    </div>
+  `;
+
+  let conteudo;
+  if (auditoriasFiltradas.length === 0) {
+    conteudo = `
+      <div class="hist-rank-vazio">
+        <span>📊</span>
+        <p>Nenhuma auditoria operacional fechada nesse período.</p>
+        <small>Tente um período maior, ou feche mais auditorias.</small>
+      </div>
+    `;
+  } else if (top10.length === 0) {
+    conteudo = `
+      <div class="hist-rank-vazio">
+        <span>🎉</span>
+        <p>Nenhum produto com divergência relevante!</p>
+        <small>${auditoriasFiltradas.length} auditoria(s) analisada(s) — todos os produtos batendo (DIF &lt; 2 un).</small>
+      </div>
+    `;
+  } else {
+    conteudo = `
+      <div class="hist-rank-explicacao">
+        <strong>Score de problematicidade</strong> ·
+        combina <em>frequência</em> (40%) + <em>magnitude média</em> (35%) + <em>pior caso</em> (25%).
+        <br><small>Clique num produto pra ver o histórico de auditorias onde ele apareceu.</small>
+      </div>
+      <div class="hist-rank-lista">
+        ${top10.map((p, i) => renderLinhaRanking(p, i + 1)).join('')}
+      </div>
+    `;
+  }
+
+  secao.innerHTML = `
+    <div class="hist-rank-secao">
+      <div class="hist-rank-cabecalho">
+        <h3>🏆 Produtos mais problemáticos</h3>
+        ${toggleHtml}
+      </div>
+      ${conteudo}
+    </div>
+  `;
+
+  // Listeners do toggle de período
+  secao.querySelectorAll('.hist-rank-btn').forEach(btn => {
+    btn.onclick = () => {
+      const p = btn.dataset.periodo;
+      const periodo = p === 'todos' ? 'todos' : parseInt(p, 10);
+      renderizarRankingProdutos(todasAuditorias, periodo);
+    };
+  });
+}
+
+/**
+ * Agrega ocorrências de cada produto em todas as auditorias.
+ * Retorna { slug: { nome, ocorrencias, ocorrenciasProblema, diferencas[], piorCaso, historico[] } }
+ */
+function calcularAgregadoProdutos(auditorias) {
+  const produtos = {};
+
+  auditorias.forEach(a => {
+    (a.resultado || []).forEach(r => {
+      if (!produtos[r.slug]) {
+        produtos[r.slug] = {
+          slug: r.slug,
+          nome: r.nome,
+          grupo: r.grupo,
+          ocorrencias: 0,
+          ocorrenciasProblema: 0,
+          diferencasProblema: [],   // |DIF| nas auditorias com problema
+          piorCaso: 0,
+          historico: []             // pra detalhe expansível
+        };
+      }
+      const p = produtos[r.slug];
+      p.ocorrencias++;
+
+      const dif = Math.abs(r.diferenca || 0);
+      const temProblema = r.status === 'critico' || r.status === 'atencao';
+
+      if (temProblema) {
+        p.ocorrenciasProblema++;
+        p.diferencasProblema.push(dif);
+      }
+      if (dif > p.piorCaso) p.piorCaso = dif;
+
+      p.historico.push({
+        dataInicio: a.dataInicio,
+        dataFim: a.dataFim,
+        status: r.status,
+        diferenca: r.diferenca,
+        ini: r.ini,
+        recebido: r.recebido,
+        vendido: r.vendido,
+        real: r.real
+      });
+    });
+  });
+
+  return produtos;
+}
+
+/**
+ * Calcula score ponderado dos produtos.
+ * Considera só produtos com pelo menos 1 ocorrência com problema (CRITICO ou ATENCAO).
+ *
+ * Score = 0.40 × freqNorm + 0.35 × magNorm + 0.25 × piorNorm
+ *
+ * Cada métrica é normalizada (dividida pelo maior valor entre todos os produtos)
+ * pra que tenham mesma escala (0 a 1).
+ */
+function calcularScoreProdutos(produtosMap) {
+  // Filtra só os que tiveram problema pelo menos 1 vez
+  const candidatos = Object.values(produtosMap).filter(p => p.ocorrenciasProblema > 0);
+  if (candidatos.length === 0) return [];
+
+  // Calcula métricas brutas
+  candidatos.forEach(p => {
+    p.frequencia = p.ocorrenciasProblema / p.ocorrencias;
+    p.magnitudeMedia = p.diferencasProblema.reduce((s, x) => s + x, 0) / p.diferencasProblema.length;
+  });
+
+  // Encontra máximos pra normalizar
+  const maxFreq = Math.max(...candidatos.map(p => p.frequencia)) || 1;
+  const maxMag  = Math.max(...candidatos.map(p => p.magnitudeMedia)) || 1;
+  const maxPior = Math.max(...candidatos.map(p => p.piorCaso)) || 1;
+
+  // Calcula score normalizado
+  candidatos.forEach(p => {
+    p.scoreFreq = p.frequencia / maxFreq;
+    p.scoreMag  = p.magnitudeMedia / maxMag;
+    p.scorePior = p.piorCaso / maxPior;
+    p.score = 0.40 * p.scoreFreq + 0.35 * p.scoreMag + 0.25 * p.scorePior;
+  });
+
+  // Ordena por score desc
+  candidatos.sort((a, b) => b.score - a.score);
+
+  return candidatos;
+}
+
+function renderLinhaRanking(p, posicao) {
+  const medalha = posicao === 1 ? '🥇' : posicao === 2 ? '🥈' : posicao === 3 ? '🥉' : `#${posicao}`;
+  const freqPct = Math.round(p.frequencia * 100);
+
+  // Cor do score: alto = vermelho, médio = amarelo, baixo = cinza
+  const corScore = p.score >= 0.7 ? 'hist-rank-score-alto' :
+                   p.score >= 0.4 ? 'hist-rank-score-medio' :
+                   'hist-rank-score-baixo';
+
+  return `
+    <div class="hist-rank-item">
+      <div class="hist-rank-item-resumo" onclick="window.__hist_toggleRanking('${p.slug}')">
+        <div class="hist-rank-pos">${medalha}</div>
+        <div class="hist-rank-nome">
+          <strong>${p.nome}</strong>
+          <small>${p.grupo || ''}</small>
+        </div>
+        <div class="hist-rank-metricas">
+          <div class="hist-rank-metr">
+            <small>Frequência</small>
+            <strong>${freqPct}%</strong>
+            <span class="hist-rank-detalhe">${p.ocorrenciasProblema}/${p.ocorrencias} audit.</span>
+          </div>
+          <div class="hist-rank-metr">
+            <small>Magnitude média</small>
+            <strong>${fmtInt(p.magnitudeMedia)}</strong>
+            <span class="hist-rank-detalhe">un / audit.</span>
+          </div>
+          <div class="hist-rank-metr">
+            <small>Pior caso</small>
+            <strong>${fmtInt(p.piorCaso)}</strong>
+            <span class="hist-rank-detalhe">un</span>
+          </div>
+        </div>
+        <div class="hist-rank-score ${corScore}" title="Score: ${(p.score * 100).toFixed(0)}/100">
+          ${(p.score * 100).toFixed(0)}
+        </div>
+        <div class="hist-rank-seta" id="hist-rank-seta-${p.slug}">▼</div>
+      </div>
+      <div class="hist-rank-item-detalhe" id="hist-rank-det-${p.slug}" style="display:none">
+        <div class="hist-rank-det-titulo">📋 Histórico (${p.historico.length} auditoria${p.historico.length === 1 ? '' : 's'})</div>
+        <div class="hist-rank-det-tabela">
+          <div class="hist-rank-det-cab">
+            <div>Data</div>
+            <div>INI</div>
+            <div>+REC</div>
+            <div>−VEN</div>
+            <div>REAL</div>
+            <div>DIF</div>
+            <div>Status</div>
+          </div>
+          ${p.historico
+            .slice()
+            .sort((a, b) => (b.dataInicio || '').localeCompare(a.dataInicio || ''))
+            .map(h => `
+              <div class="hist-rank-det-linha hist-rank-det-${h.status}">
+                <div>${fmtData(h.dataInicio)}</div>
+                <div>${fmtInt(h.ini)}</div>
+                <div>${h.recebido > 0 ? '+' + fmtInt(h.recebido) : '—'}</div>
+                <div>${h.vendido > 0 ? '−' + fmtInt(h.vendido) : '—'}</div>
+                <div>${fmtInt(h.real)}</div>
+                <div class="${h.diferenca < 0 ? 'aud-dif-neg' : h.diferenca > 0 ? 'aud-dif-pos' : 'aud-dif-zero'}">${fmtSgn(h.diferenca)}</div>
+                <div class="hist-rank-det-status hist-s-${h.status[0]}">${h.status.toUpperCase()}</div>
+              </div>
+            `).join('')}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+window.__hist_toggleRanking = function(slug) {
+  const det = document.getElementById(`hist-rank-det-${slug}`);
+  const seta = document.getElementById(`hist-rank-seta-${slug}`);
+  if (!det) return;
+  const aberto = det.style.display !== 'none';
+  det.style.display = aberto ? 'none' : 'block';
+  if (seta) seta.textContent = aberto ? '▼' : '▲';
+};
 
 function renderLinhaHistorico(a) {
   const modoLbl = a.modo === 'operacional' ? '📊 Operacional' : '🌙 Virada';
