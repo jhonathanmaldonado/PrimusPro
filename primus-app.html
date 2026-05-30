@@ -801,6 +801,28 @@ const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
 const COLORS = ['#C8782A','#1A6FA8','#276749','#C0392B','#6B3FA8','#D4A03A','#A05E1E','#56d364'];
 const RECEPCIONISTA_BONUS = 20; // R$ fixo por recepcionista presente, por dia
 
+/* Ordem canônica de exibição por setor (cozinha → salão → bar → apoio) */
+const ORDEM_CARGO = [
+  'Cozinheiro','Aux. Cozinha',
+  'Garçom','Cumim',
+  'Bar','Aux. Bar',
+  'Caixa','Recepcionista','Monitora',
+  'Gerente',
+  'Limpeza','Segurança'
+];
+function _ordemCargo(c) {
+  const i = ORDEM_CARGO.indexOf(c);
+  return i === -1 ? 999 : i; // cargos desconhecidos vão pro final
+}
+/* Ordena array de funcionários por setor, depois por nome */
+function sortPorSetor(arr) {
+  return arr.sort((a,b) => {
+    const da = _ordemCargo(a.cargo), db = _ordemCargo(b.cargo);
+    if(da !== db) return da - db;
+    return (a.nome || '').localeCompare(b.nome || '', 'pt-BR');
+  });
+}
+
 /* ══ ESTADO GLOBAL ══ */
 let currentUser = null, currentPerfil = null;
 let gorjetaRegras = {};
@@ -3570,6 +3592,17 @@ async function gerarRelatorioMensalFixos() {
     const mesLabel = `${MESES_FMT[mes-1]}/${ano}`;
     // Gerar uma seção por funcionário
     let totalFolha = 0;
+    // Definição única das colunas para garantir alinhamento entre todas as tabelas
+    const COLGROUP = `<colgroup>
+      <col style="width:90px">
+      <col style="width:90px">
+      <col style="width:90px">
+      <col style="width:180px">
+      <col style="width:95px">
+    </colgroup>`;
+    const TABLE_HEAD = `<thead><tr>
+      <th>Data</th><th class="r">Diária</th><th class="r">Gorjeta</th><th class="r">Desconto</th><th class="r">Total</th>
+    </tr></thead>`;
     const secoes = fixos.map((func, idx) => {
       let totalFunc = 0, presencas = 0, faltas = 0;
       const linhas = datasOrdenadas.map(data => {
@@ -3579,63 +3612,102 @@ async function gerarRelatorioMensalFixos() {
         if(!p) return null;
         if(!p.presente) {
           faltas++;
-          return `<tr style="background:#FEF2F2"><td>${fmtDataCurta(data)}</td><td colspan="3" style="color:#C0392B;font-style:italic">— Faltou —</td><td class="r" style="color:#C0392B">R$ 0,00</td></tr>`;
+          return `<tr class="row-falta"><td>${fmtDataCurta(data)}</td><td class="r">—</td><td class="r">—</td><td class="r" style="font-style:italic">Faltou</td><td class="r">R$ 0,00</td></tr>`;
         }
         presencas++;
         if(!f) {
-          // Estava presente mas não tem fechamento ainda
-          return `<tr style="background:#FEF3C7"><td>${fmtDataCurta(data)}</td><td colspan="3" style="color:#A05E1E;font-style:italic">Presente — fechamento pendente</td><td class="r">—</td></tr>`;
+          return `<tr class="row-pend"><td>${fmtDataCurta(data)}</td><td class="r">—</td><td class="r">—</td><td class="r" style="font-style:italic">Pendente</td><td class="r">—</td></tr>`;
         }
         const liq = f.totalLiquido || 0;
         totalFunc += liq;
         const desc = f.desconto || 0;
         const motivo = f.motivoDesconto || '';
+        const diaria = f.diaria || 0;
         return `<tr>
           <td>${fmtDataCurta(data)}${p.atrasado?' ⏰':''}</td>
-          <td class="r">${fmt(f.diaria||0)}</td>
+          <td class="r">${diaria>0?fmt(diaria):'—'}</td>
           <td class="r">${fmt(f.gorjeta||0)}</td>
-          <td class="r neg">${desc>0?'- '+fmt(desc):'—'}${motivo?`<div style="font-size:9px;color:#C0392B">✂️ ${motivo}</div>`:''}</td>
+          <td class="r neg">${desc>0?'- '+fmt(desc):'—'}${motivo?`<div class="motivo">✂️ ${motivo}</div>`:''}</td>
           <td class="r pos">${fmt(liq)}</td>
         </tr>`;
       }).filter(Boolean).join('');
       totalFolha += totalFunc;
       const pixInfo = func.pix || '—';
-      // page-break-after para Admin querer cada um numa folha; padrão: avoid (sequencial)
       return `
-        <div class="func-secao" style="page-break-inside:avoid;margin-top:${idx===0?0:18}px">
-          <div style="background:#F7F4EF;border-left:4px solid #C8782A;padding:8px 12px;margin-bottom:6px">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
-              <div>
-                <div style="font-size:13px;font-weight:800">${func.nome}</div>
-                <div style="font-size:10px;color:#8A837A">${func.cargo} · ${pixInfo}</div>
-              </div>
-              <div style="text-align:right">
-                <div style="font-size:9px;color:#8A837A;text-transform:uppercase;letter-spacing:.5px">Total do Mês</div>
-                <div style="font-size:16px;font-weight:800;color:#065F46">${fmt(totalFunc)}</div>
-                <div style="font-size:9px;color:#8A837A">${presencas} presença${presencas!==1?'s':''} · ${faltas} falta${faltas!==1?'s':''}</div>
-              </div>
+        <div class="func-secao">
+          <div class="func-head">
+            <div class="func-nome">
+              <div class="nome">${func.nome}</div>
+              <div class="sub">${func.cargo} · ${pixInfo}</div>
+            </div>
+            <div class="func-total">
+              <div class="lbl">Total do Mês</div>
+              <div class="val">${fmt(totalFunc)}</div>
+              <div class="sub">${presencas} pres · ${faltas} falt</div>
             </div>
           </div>
-          ${linhas ? `<table>
-            <thead><tr><th>Data</th><th class="r">Diária</th><th class="r">Gorjeta</th><th class="r">Desconto</th><th class="r">Total</th></tr></thead>
+          ${linhas ? `<table class="folha-table">${COLGROUP}${TABLE_HEAD}
             <tbody>${linhas}<tr class="total-row"><td colspan="4">Total ${func.nome.split(' ')[0]}</td><td class="r">${fmt(totalFunc)}</td></tr></tbody>
-          </table>` : `<div style="padding:8px 12px;color:#8A837A;font-size:11px;font-style:italic">Sem lançamentos para este funcionário no período.</div>`}
+          </table>` : `<div class="sem-lanc">Sem lançamentos no período.</div>`}
         </div>`;
     }).join('');
-    const subtitulo = `${mesLabel} · ${fixos.length} fixo(s) · ${datasOrdenadas.length} dia(s) com lançamento`;
+    const subtitulo = `${mesLabel} · ${fixos.length} fixo(s) · ${datasOrdenadas.length} dia(s)`;
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-      <title>Folha Mensal — Fixos — ${mesLabel}</title><style>${_pdfStyle()}
-      .func-secao { margin-bottom: 14px; }
+      <title>Folha Mensal — Fixos — ${mesLabel}</title>
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+        * { box-sizing:border-box; margin:0; padding:0; }
+        body { font-family:'Inter',sans-serif; background:#fff; color:#1a1916; padding:14px 16px; font-size:10px; }
+        .pdf-head { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px; padding-bottom:6px; border-bottom:2px solid #C8782A; }
+        .pdf-head .logo { font-size:18px; font-weight:800; color:#C8782A; letter-spacing:-.5px; }
+        .pdf-head .logo-sub { font-size:8px; color:#8A837A; text-transform:uppercase; letter-spacing:1.5px; }
+        .pdf-head .titulo { text-align:right; }
+        .pdf-head .titulo .t { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:1.5px; color:#C8782A; }
+        .pdf-head .titulo .s { font-size:9px; color:#8A837A; margin-top:1px; }
+        .resumo-mini { display:flex; gap:14px; padding:6px 10px; background:#F7F4EF; border-radius:6px; margin-bottom:8px; font-size:10px; }
+        .resumo-mini .item { display:flex; gap:5px; align-items:baseline; }
+        .resumo-mini .lbl { color:#8A837A; text-transform:uppercase; letter-spacing:.5px; font-size:8px; }
+        .resumo-mini .val { font-weight:800; }
+        .resumo-mini .val.accent { color:#C8782A; }
+        .func-secao { page-break-inside:avoid; margin-bottom:10px; }
+        .func-head { display:flex; justify-content:space-between; align-items:center; padding:5px 10px; background:#F7F4EF; border-left:3px solid #C8782A; }
+        .func-nome .nome { font-size:11px; font-weight:800; }
+        .func-nome .sub { font-size:9px; color:#8A837A; }
+        .func-total { text-align:right; }
+        .func-total .lbl { font-size:7px; color:#8A837A; text-transform:uppercase; letter-spacing:.5px; }
+        .func-total .val { font-size:13px; font-weight:800; color:#065F46; line-height:1.1; }
+        .func-total .sub { font-size:8px; color:#8A837A; }
+        table.folha-table { width:100%; border-collapse:collapse; font-size:9px; table-layout:fixed; }
+        table.folha-table th { background:#FAF7F2; color:#4A4540; text-align:left; padding:3px 6px; border-bottom:1px solid #E2DDD5; font-weight:700; text-transform:uppercase; letter-spacing:.3px; font-size:8px; }
+        table.folha-table th.r { text-align:right; }
+        table.folha-table td { padding:2px 6px; border-bottom:1px solid #F2EFE9; vertical-align:top; }
+        table.folha-table td.r { text-align:right; }
+        table.folha-table td.pos { color:#065F46; font-weight:700; }
+        table.folha-table td.neg { color:#C0392B; }
+        table.folha-table .motivo { font-size:7px; color:#C0392B; font-style:italic; line-height:1.1; }
+        .row-falta td { color:#C0392B; background:#FEF5F4; }
+        .row-pend td { color:#A05E1E; background:#FEF9EB; }
+        .total-row td { font-weight:800; background:#F5E6D3; border-top:1.5px solid #C8782A; padding:3px 6px; font-size:9px; }
+        .sem-lanc { padding:5px 10px; color:#8A837A; font-size:9px; font-style:italic; background:#FAFAF8; }
+        .obs-mini { background:#FEF3C7; border-left:3px solid #F59E0B; padding:5px 8px; margin:6px 0 10px; font-size:9px; color:#78350F; }
+        .footer-mini { margin-top:12px; padding-top:5px; border-top:1px solid #E2DDD5; display:flex; justify-content:space-between; font-size:7px; color:#8A837A; }
+        @media print { @page { margin: 8mm 10mm; size: A4; } body { padding: 0; } }
       </style></head><body>
-      ${_pdfHeader('Folha Mensal — Fixos', subtitulo)}
-      <div class="resumo-box">
-        <div><div class="lbl">Total Folha (Fixos)</div><div class="val accent">${fmt(totalFolha)}</div></div>
-        <div><div class="lbl">Funcionários</div><div class="val">${fixos.length}</div></div>
-        <div><div class="lbl">Dias com lançamento</div><div class="val">${datasOrdenadas.length}</div></div>
+      <div class="pdf-head">
+        <div><div class="logo">PRIMUS</div><div class="logo-sub">Peixaria · Gestão</div></div>
+        <div class="titulo"><div class="t">Folha Mensal — Fixos</div><div class="s">${subtitulo}</div></div>
       </div>
-      <div class="obs">📋 Conferência da folha mensal dos fixos. Use para revisar com a chef antes de pagar.</div>
+      <div class="resumo-mini">
+        <div class="item"><span class="lbl">Total Folha</span><span class="val accent">${fmt(totalFolha)}</span></div>
+        <div class="item"><span class="lbl">Funcionários</span><span class="val">${fixos.length}</span></div>
+        <div class="item"><span class="lbl">Dias</span><span class="val">${datasOrdenadas.length}</span></div>
+      </div>
+      <div class="obs-mini">📋 Conferência da folha. Revisar com a chef antes de pagar.</div>
       ${secoes}
-      ${_pdfFooter()}
+      <div class="footer-mini">
+        <span>Primus Peixaria — São Gonçalo Beira Rio, Cuiabá/MT — CNPJ: 14.796.317/0001-90</span>
+        <span>Gerado em ${new Date().toLocaleString('pt-BR')}</span>
+      </div>
       <script>window.onload = () => window.print();<\/script>
       </body></html>`;
     _abrirPdfJanela(html);
