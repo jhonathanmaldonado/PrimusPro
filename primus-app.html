@@ -3585,21 +3585,23 @@ async function gerarRelatorioMensalFixos() {
     function fmtDataCurta(ds) {
       const [_y, _m, _d] = ds.split('-');
       const dow = new Date(ds + 'T12:00').getDay();
+      // Versão curta: dia + dia da semana abreviado (sem mês repetido — todos do mesmo mês)
       const dias = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-      return `${_d}/${_m} ${dias[dow]}`;
+      return `${_d} ${dias[dow]}`;
     }
     const MESES_FMT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
     const mesLabel = `${MESES_FMT[mes-1]}/${ano}`;
     // Gerar uma seção por funcionário
     let totalFolha = 0;
     // Larguras compactas para layout 2x2 (cada célula ~ quarto da A4 retrato)
+    // Data narrowed; outras colunas com largura proporcional para acomodar valores
     const COLGROUP = `<colgroup>
-      <col style="width:50px">
-      <col style="width:38px">
-      <col style="width:42px">
       <col style="width:38px">
       <col style="width:42px">
       <col style="width:46px">
+      <col style="width:42px">
+      <col style="width:46px">
+      <col style="width:50px">
     </colgroup>`;
     const TABLE_HEAD = `<thead><tr>
       <th>Data</th><th class="r">Diár.</th><th class="r">Gorj.</th><th class="r">Cons.</th><th class="r">Desc.</th><th class="r">Total</th>
@@ -3684,30 +3686,31 @@ async function gerarRelatorioMensalFixos() {
         .resumo-mini .val.accent { color:#C8782A; }
         .obs-mini { background:#FEF3C7; border-left:3px solid #F59E0B; padding:4px 8px; margin:4px 0 8px; font-size:8px; color:#78350F; }
         /* Layout 2x2 — 4 funcionários por página (grid 2 cols × 2 rows) */
-        .pagina-quad { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:8px 10px; page-break-after:always; height:calc(100vh - 80px); }
+        /* Altura fixa em mm garante que cada quadrante tenha o mesmo tamanho independente do conteúdo */
+        .pagina-quad { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:130mm 130mm; gap:5mm 6mm; page-break-after:always; }
         .pagina-quad.last { page-break-after:auto; }
-        .quad-cel { min-width:0; min-height:0; overflow:hidden; }
-        .func-card { page-break-inside:avoid; }
-        .func-head { display:flex; justify-content:space-between; align-items:center; padding:3px 6px; background:#F7F4EF; border-left:2px solid #C8782A; gap:5px; }
+        .quad-cel { min-width:0; overflow:hidden; }
+        .func-card { page-break-inside:avoid; height:100%; display:flex; flex-direction:column; }
+        .func-head { display:flex; justify-content:space-between; align-items:center; padding:3px 7px; background:#F7F4EF; border-left:2.5px solid #C8782A; gap:5px; flex-shrink:0; }
         .func-nome { min-width:0; flex:1; }
-        .func-nome .nome { font-size:9px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .func-nome .sub { font-size:7px; color:#8A837A; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .func-nome .nome { font-size:10px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .func-nome .sub { font-size:7.5px; color:#8A837A; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .func-total { text-align:right; flex-shrink:0; }
-        .func-total .lbl { font-size:5.5px; color:#8A837A; text-transform:uppercase; letter-spacing:.5px; }
-        .func-total .val { font-size:10px; font-weight:800; color:#065F46; line-height:1.1; }
-        .func-total .sub { font-size:6.5px; color:#8A837A; }
-        table.folha-table { width:100%; border-collapse:collapse; font-size:7px; table-layout:fixed; margin-top:2px; }
-        table.folha-table th { background:#FAF7F2; color:#4A4540; text-align:left; padding:1.5px 3px; border-bottom:1px solid #E2DDD5; font-weight:700; text-transform:uppercase; letter-spacing:.2px; font-size:6.5px; }
+        .func-total .lbl { font-size:6px; color:#8A837A; text-transform:uppercase; letter-spacing:.5px; }
+        .func-total .val { font-size:11px; font-weight:800; color:#065F46; line-height:1.1; }
+        .func-total .sub { font-size:7px; color:#8A837A; }
+        table.folha-table { width:100%; border-collapse:collapse; font-size:8px; table-layout:fixed; margin-top:2px; }
+        table.folha-table th { background:#FAF7F2; color:#4A4540; text-align:left; padding:2px 3px; border-bottom:1px solid #E2DDD5; font-weight:700; text-transform:uppercase; letter-spacing:.2px; font-size:7px; }
         table.folha-table th.r { text-align:right; }
-        table.folha-table td { padding:1px 3px; border-bottom:1px solid #F2EFE9; vertical-align:top; word-break:break-word; line-height:1.25; }
+        table.folha-table td { padding:1.5px 3px; border-bottom:1px solid #F2EFE9; vertical-align:top; word-break:break-word; line-height:1.2; }
         table.folha-table td.r { text-align:right; }
         table.folha-table td.pos { color:#065F46; font-weight:700; }
         table.folha-table td.neg { color:#C0392B; }
-        table.folha-table .motivo { font-size:5.5px; color:#C0392B; font-style:italic; line-height:1.1; margin-top:0.5px; }
+        table.folha-table .motivo { font-size:6px; color:#C0392B; font-style:italic; line-height:1.1; margin-top:0.5px; }
         .row-falta td { color:#C0392B; background:#FEF5F4; }
         .row-pend td { color:#A05E1E; background:#FEF9EB; }
-        .total-row td { font-weight:800; background:#F5E6D3; border-top:1px solid #C8782A; padding:1.5px 3px; font-size:7px; }
-        .sem-lanc { padding:3px 6px; color:#8A837A; font-size:7px; font-style:italic; background:#FAFAF8; }
+        .total-row td { font-weight:800; background:#F5E6D3; border-top:1.2px solid #C8782A; padding:2px 3px; font-size:8px; }
+        .sem-lanc { padding:4px 7px; color:#8A837A; font-size:8px; font-style:italic; background:#FAFAF8; }
         .footer-mini { margin-top:8px; padding-top:4px; border-top:1px solid #E2DDD5; display:flex; justify-content:space-between; font-size:6.5px; color:#8A837A; }
         @media print { @page { margin: 7mm 8mm; size: A4; } body { padding: 0; } }
       </style></head><body>
