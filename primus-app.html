@@ -535,6 +535,7 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
       <div class="section-header"><div class="section-title">Resumo Mensal</div></div>
       <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
         <select id="resumoMes" class="form-select" style="max-width:210px" onchange="renderResumo()"><option value="">Todos os meses</option></select>
+        <button class="btn btn-secondary btn-sm" onclick="gerarRelatorioMensalFixos()" style="background:#FEF3C7;border-color:#F59E0B">📄 Relatório Mensal — Fixos (conferência)</button>
         <button class="btn btn-secondary btn-sm" onclick="window.print()">🖨️ Imprimir</button>
       </div>
       <div id="resumoContent"></div>
@@ -1502,6 +1503,9 @@ async function finSelecionarDia(ds) {
 /* ── Fechamento ── */
 async function loadFechamento(date) {
   finDate = date;
+  // Reset flag de ajuste retroativo ao trocar de dia
+  window._ajusteRetroativoAtivo = false;
+  window._ajusteRetroativoMotivo = null;
   $('fechContent').style.display = 'none';
   $('fechEmpty').style.display   = 'block';
   hideAlert('fechAlert');
@@ -1669,10 +1673,23 @@ function renderFechAcoes(bloqueado) {
   const el = $('fechAcoes');
   const podeFin = ['financeiro','admin'].includes(currentPerfil);
   const podeDir = ['diretoria','admin'].includes(currentPerfil);
+  const isAdm   = currentPerfil === 'admin';
+  // Indicador visual de ajuste retroativo ativo
+  const emAjuste = !!window._ajusteRetroativoAtivo;
   if(bloqueado) {
-    el.innerHTML = podeDir
-      ? `<button class="btn btn-danger btn-block" onclick="abrirModal('modalReabrir')">🔴 Reabrir Dia</button>`
-      : `<div class="empty-state" style="padding:14px"><p style="color:var(--muted)">Dia fechado. Somente Diretoria pode reabrir.</p></div>`;
+    let acoes = '';
+    if(emAjuste && isAdm) {
+      acoes = `
+        <div class="bloqueado-banner warn" style="margin-bottom:10px">✏️ <strong>Ajuste Retroativo em andamento.</strong> Edite o que precisa e clique em salvar.</div>
+        <button class="btn btn-primary btn-block" onclick="salvarAjusteRetroativo()">💾 Salvar Ajuste e Refechar Dia</button>
+        <button class="btn btn-secondary btn-block" onclick="cancelarAjusteRetroativo()" style="margin-top:8px">↩️ Cancelar Ajuste</button>`;
+    } else if(podeDir) {
+      acoes = `<button class="btn btn-danger btn-block" onclick="abrirModal('modalReabrir')">🔴 Reabrir Dia</button>`;
+      if(isAdm) acoes += `<button class="btn btn-secondary btn-block" onclick="iniciarAjusteRetroativo()" style="margin-top:8px;background:#FEF3C7;border-color:#F59E0B;color:#78350F">✏️ Ajuste Retroativo (sem reabrir)</button>`;
+    } else {
+      acoes = `<div class="empty-state" style="padding:14px"><p style="color:var(--muted)">Dia fechado. Somente Diretoria pode reabrir.</p></div>`;
+    }
+    el.innerHTML = acoes;
   } else if(['aguardando_fechamento','reaberto','em_aberto'].includes(finDayStatus) && podeFin) {
     el.innerHTML = `
       <button class="btn btn-primary btn-block" onclick="salvarFechamento(false)">💾 Salvar Fechamento</button>
@@ -1763,6 +1780,132 @@ async function confirmarReabrir() {
     $('monitValor').disabled=false;
     showAlert('fechAlert','✅ Dia reaberto.','success');
   } catch(e) { showAlert('fechAlert','❌ Erro: '+e.message,'error',0); }
+}
+
+/* ── Ajuste Retroativo (Admin) ──
+   Permite Admin editar um dia fechado e refechar automaticamente,
+   sem mudar o status (continua "fechado"), registrando tudo na auditoria.
+   Útil para descontos retroativos de conduta enviados pela chef. */
+async function iniciarAjusteRetroativo() {
+  if(currentPerfil !== 'admin') { alert('Apenas Admin pode fazer ajuste retroativo.'); return; }
+  if(!finDate) return;
+  const motivo = prompt('Motivo do ajuste retroativo (obrigatório):\nEx: "Avaliação da chef - conduta da Maria em 03/05"');
+  if(!motivo || motivo.trim().length < 5) { alert('Informe um motivo de no mínimo 5 caracteres.'); return; }
+  window._ajusteRetroativoAtivo = true;
+  window._ajusteRetroativoMotivo = motivo.trim();
+  window._ajusteRetroativoInicio = new Date().toISOString();
+  // Liberar campos
+  finPresentes.forEach(f => {
+    const el=$(`diaria-${f.id}`); if(el) el.disabled=false;
+    const ed=$(`desconto-${f.id}`); if(ed) ed.disabled=false;
+    const em=$(`motivo-${f.id}`); if(em) em.disabled=false;
+  });
+  $('gorjetaTotal').disabled = false;
+  if($('monitQtd'))   $('monitQtd').disabled = false;
+  if($('monitValor')) $('monitValor').disabled = false;
+  renderFechAcoes(true);
+  showAlert('fechAlert','✏️ Ajuste retroativo iniciado. Edite os campos e salve.','success');
+  await logAuditoria('AJUSTE_RETROATIVO_INICIADO',`presencas_diarias/${finDate}`,{},{motivo:motivo.trim()});
+}
+
+function cancelarAjusteRetroativo() {
+  if(!confirm('Cancelar o ajuste? As alterações não salvas serão perdidas.')) return;
+  window._ajusteRetroativoAtivo = false;
+  window._ajusteRetroativoMotivo = null;
+  // Recarrega o dia (descarta mudanças em memória)
+  loadFechamento(finDate);
+}
+
+async function salvarAjusteRetroativo() {
+  if(!window._ajusteRetroativoAtivo) return;
+  if(currentPerfil !== 'admin') { alert('Apenas Admin pode salvar ajuste retroativo.'); return; }
+  if(finDayStatus !== 'fechado') { alert('Ajuste retroativo é só para dias fechados.'); return; }
+  const motivo = window._ajusteRetroativoMotivo || 'sem motivo';
+  // Snapshot antes (para auditoria) — usa estado atual da tela
+  const antesPayload = {};
+  finPresentes.forEach(f => {
+    antesPayload[f.id] = {
+      diaria: parseFloat($(`diaria-${f.id}`)?.dataset.original) || null,
+      desconto: parseFloat($(`desconto-${f.id}`)?.dataset.original) || 0
+    };
+  });
+  try {
+    // Salva igual o salvarFechamento, mas SEM mexer no status (continua "fechado")
+    // Bypass do guard de status === 'fechado'
+    const gt  = parseFloat($('gorjetaTotal').value)||0;
+    const gd  = Object.values(finGorjetaMap).reduce((a,b)=>a+b,0);
+    const monitQtd     = parseInt($('monitQtd')?.value, 10) || 0;
+    const monitValor   = parseFloat($('monitValor')?.value) || 0;
+    const monitArrec   = monitQtd * monitValor;
+    const numMonitoras = finPresentes.filter(f => f.cargo === 'Monitora').length;
+    const monitPorMon  = numMonitoras ? monitArrec / numMonitoras : 0;
+    let td=0,tc=0,tl=0;
+    const rSnap = await db.collection('configuracoes').doc('gorjeta').get();
+    const rSnapshot = rSnap.exists ? rSnap.data().regras : {};
+    const batch = db.batch();
+    const depoisPayload = {};
+    finPresentes.forEach(f => {
+      const d  = parseFloat($(`diaria-${f.id}`)?.value||0)||0;
+      const gBase = finGorjetaMap[f.id]||0;
+      const gMon  = f.cargo === 'Monitora' ? monitPorMon : 0;
+      const gRec  = f.cargo === 'Recepcionista' ? RECEPCIONISTA_BONUS : 0;
+      const g     = gBase + gMon + gRec;
+      const c  = f.consumo||0;
+      const dc = parseFloat($(`desconto-${f.id}`)?.value||0)||0;
+      const motivoLinha = $(`motivo-${f.id}`)?.value?.trim()||'';
+      const l  = d+g-c-dc;
+      td+=d; tc+=c; tl+=l;
+      depoisPayload[f.id] = {diaria:d, desconto:dc, motivo:motivoLinha};
+      batch.set(db.collection('fechamento_funcionario').doc(`${finDate}_${f.id}`),{
+        data:finDate,funcId:f.id,nomeSnapshot:f.nome,cargoSnapshot:f.cargo,
+        presente:true,atrasado:f.atrasado,consumo:c,diaria:d,gorjeta:g,
+        gorjetaBase:gBase,gorjetaMonitora:gMon,gorjetaRecep:gRec,
+        desconto:dc,motivoDesconto:motivoLinha,
+        baseGorjeta:gt,percentualCargo:pctGorjeta(f.cargo),
+        regrasGorjetaSnapshot:rSnapshot,totalLiquido:l,pix:f.pix||'',
+        atualizadoPor:currentUser.uid,
+        atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+        ultimoAjusteRetroativo:{em:new Date().toISOString(),por:currentUser.uid,motivo}
+      },{merge:true});
+    });
+    batch.set(db.collection('fechamento_diario').doc(finDate),{
+      data:finDate,gorjetaTotal:gt,gorjetaDistribuida:gd,gorjetaCasa:gt-gd,
+      gorjetaPerFunc:finGorjetaMap,regrasGorjetaSnapshot:rSnapshot,
+      monitQtd, monitValor, monitTotalArrec:monitArrec,
+      monitGorjetaPorMonitora:monitPorMon, monitNumMonitoras:numMonitoras,
+      totalFuncionarios:finPresentes.length,totalDiarias:td,totalConsumos:tc,
+      totalLiquidoDia:tl,atualizadoPor:currentUser.uid,
+      atualizadoEm:firebase.firestore.FieldValue.serverTimestamp()
+    },{merge:true});
+    // Registrar no statusHistorico do dia (sem mudar status)
+    const ev = {de:'fechado',para:'fechado',tipo:'ajuste_retroativo',
+      por:currentUser.uid,em:new Date().toISOString(),motivo};
+    batch.update(db.collection('presencas_diarias').doc(finDate),{
+      statusHistorico:firebase.firestore.FieldValue.arrayUnion(ev),
+      atualizadoPor:currentUser.uid,
+      atualizadoEm:firebase.firestore.FieldValue.serverTimestamp(),
+      ultimoAjusteRetroativo:{em:new Date().toISOString(),por:currentUser.uid,motivo}
+    });
+    await batch.commit();
+    await logAuditoria('AJUSTE_RETROATIVO_SALVO',`presencas_diarias/${finDate}`,
+      antesPayload, {...depoisPayload, motivo});
+    // Bloqueia novamente os campos
+    finPresentes.forEach(f => {
+      const el=$(`diaria-${f.id}`); if(el) el.disabled=true;
+      const ed=$(`desconto-${f.id}`); if(ed) ed.disabled=true;
+      const em=$(`motivo-${f.id}`); if(em) em.disabled=true;
+    });
+    $('gorjetaTotal').disabled = true;
+    if($('monitQtd'))   $('monitQtd').disabled = true;
+    if($('monitValor')) $('monitValor').disabled = true;
+    window._ajusteRetroativoAtivo = false;
+    window._ajusteRetroativoMotivo = null;
+    renderFechAcoes(true);
+    calcGorjeta(); calcResultado();
+    showAlert('fechAlert','✅ Ajuste retroativo salvo. Dia continua fechado.','success');
+  } catch(e) {
+    showAlert('fechAlert','❌ Erro: '+e.message,'error',0);
+  }
 }
 
 /* ── Pagamentos ── */
@@ -3359,6 +3502,139 @@ async function gerarPDFPagamentos(tipoForcado) {
       </body></html>`;
     _abrirPdfJanela(html);
   } catch(e) { alert('Erro ao gerar PDF: ' + e.message); }
+}
+
+/* ── Relatório Mensal dos Fixos (conferência da folha) ──
+   Para cada Fixo, dia a dia do mês: presente/falta + valor.
+   Útil para conferência da folha mensal antes de pagar. */
+async function gerarRelatorioMensalFixos() {
+  // Pega o mês selecionado no select #resumoMes; se vazio, pega mês corrente
+  const mesSel = $('resumoMes')?.value || '';
+  const hoje = new Date();
+  let ym;
+  if(mesSel) ym = mesSel;
+  else ym = `${hoje.getFullYear()}-${String(hoje.getMonth()+1).padStart(2,'0')}`;
+  const [ano, mes] = ym.split('-').map(Number);
+  const ultimoDia = new Date(ano, mes, 0).getDate();
+  const de = `${ym}-01`;
+  const ate = `${ym}-${String(ultimoDia).padStart(2,'0')}`;
+  try {
+    // Busca cadastro dos fixos
+    const cadSnap = await db.collection('funcionarios').get();
+    const fixos = cadSnap.docs
+      .map(d => ({id:d.id, ...d.data()}))
+      .filter(f => f.tipo === 'fixo')
+      .sort((a,b) => (a.nome||'').localeCompare(b.nome||'','pt-BR'));
+    if(!fixos.length) { alert('Nenhum funcionário fixo cadastrado.'); return; }
+    // Busca todos os fechamentos do mês
+    const fechSnap = await db.collection('fechamento_funcionario')
+      .where('data','>=',de).where('data','<=',ate).get();
+    // Busca presenças do mês (para identificar quem foi escalado mas faltou)
+    const presSnap = await db.collection('presencas_diarias')
+      .where('data','>=',de).where('data','<=',ate).get();
+    // Indexar: fechs[funcId][data] = registro
+    const fechs = {};
+    fechSnap.docs.forEach(d => {
+      const r = d.data();
+      if(!fechs[r.funcId]) fechs[r.funcId] = {};
+      fechs[r.funcId][r.data] = r;
+    });
+    // Indexar presenças: pres[funcId][data] = {presente, atrasado}
+    const pres = {};
+    presSnap.docs.forEach(d => {
+      const dd = d.data();
+      Object.entries(dd.funcionarios || {}).forEach(([fid, p]) => {
+        if(!pres[fid]) pres[fid] = {};
+        pres[fid][dd.data] = {presente:p.presente!==false, atrasado:!!p.atrasado, isExtra:!!p.isExtra};
+      });
+    });
+    // Gerar a lista de datas do mês (só dias em que houve operação — Qua-Dom; mas mostra todos os dias com lançamento)
+    const datasComLancamento = new Set();
+    presSnap.docs.forEach(d => datasComLancamento.add(d.data().data));
+    const datasOrdenadas = Array.from(datasComLancamento).sort();
+    if(!datasOrdenadas.length) { alert('Nenhum lançamento no mês selecionado.'); return; }
+    function fmtDataCurta(ds) {
+      const [_y, _m, _d] = ds.split('-');
+      const dow = new Date(ds + 'T12:00').getDay();
+      const dias = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+      return `${_d}/${_m} ${dias[dow]}`;
+    }
+    const MESES_FMT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    const mesLabel = `${MESES_FMT[mes-1]}/${ano}`;
+    // Gerar uma seção por funcionário
+    let totalFolha = 0;
+    const secoes = fixos.map((func, idx) => {
+      let totalFunc = 0, presencas = 0, faltas = 0;
+      const linhas = datasOrdenadas.map(data => {
+        const f = fechs[func.id]?.[data];
+        const p = pres[func.id]?.[data];
+        // Só inclui linha se o funcionário foi escalado nesse dia (existe em pres)
+        if(!p) return null;
+        if(!p.presente) {
+          faltas++;
+          return `<tr style="background:#FEF2F2"><td>${fmtDataCurta(data)}</td><td colspan="3" style="color:#C0392B;font-style:italic">— Faltou —</td><td class="r" style="color:#C0392B">R$ 0,00</td></tr>`;
+        }
+        presencas++;
+        if(!f) {
+          // Estava presente mas não tem fechamento ainda
+          return `<tr style="background:#FEF3C7"><td>${fmtDataCurta(data)}</td><td colspan="3" style="color:#A05E1E;font-style:italic">Presente — fechamento pendente</td><td class="r">—</td></tr>`;
+        }
+        const liq = f.totalLiquido || 0;
+        totalFunc += liq;
+        const desc = f.desconto || 0;
+        const motivo = f.motivoDesconto || '';
+        return `<tr>
+          <td>${fmtDataCurta(data)}${p.atrasado?' ⏰':''}</td>
+          <td class="r">${fmt(f.diaria||0)}</td>
+          <td class="r">${fmt(f.gorjeta||0)}</td>
+          <td class="r neg">${desc>0?'- '+fmt(desc):'—'}${motivo?`<div style="font-size:9px;color:#C0392B">✂️ ${motivo}</div>`:''}</td>
+          <td class="r pos">${fmt(liq)}</td>
+        </tr>`;
+      }).filter(Boolean).join('');
+      totalFolha += totalFunc;
+      const pixInfo = func.pix || '—';
+      // page-break-after para Admin querer cada um numa folha; padrão: avoid (sequencial)
+      return `
+        <div class="func-secao" style="page-break-inside:avoid;margin-top:${idx===0?0:18}px">
+          <div style="background:#F7F4EF;border-left:4px solid #C8782A;padding:8px 12px;margin-bottom:6px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+              <div>
+                <div style="font-size:13px;font-weight:800">${func.nome}</div>
+                <div style="font-size:10px;color:#8A837A">${func.cargo} · ${pixInfo}</div>
+              </div>
+              <div style="text-align:right">
+                <div style="font-size:9px;color:#8A837A;text-transform:uppercase;letter-spacing:.5px">Total do Mês</div>
+                <div style="font-size:16px;font-weight:800;color:#065F46">${fmt(totalFunc)}</div>
+                <div style="font-size:9px;color:#8A837A">${presencas} presença${presencas!==1?'s':''} · ${faltas} falta${faltas!==1?'s':''}</div>
+              </div>
+            </div>
+          </div>
+          ${linhas ? `<table>
+            <thead><tr><th>Data</th><th class="r">Diária</th><th class="r">Gorjeta</th><th class="r">Desconto</th><th class="r">Total</th></tr></thead>
+            <tbody>${linhas}<tr class="total-row"><td colspan="4">Total ${func.nome.split(' ')[0]}</td><td class="r">${fmt(totalFunc)}</td></tr></tbody>
+          </table>` : `<div style="padding:8px 12px;color:#8A837A;font-size:11px;font-style:italic">Sem lançamentos para este funcionário no período.</div>`}
+        </div>`;
+    }).join('');
+    const subtitulo = `${mesLabel} · ${fixos.length} fixo(s) · ${datasOrdenadas.length} dia(s) com lançamento`;
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+      <title>Folha Mensal — Fixos — ${mesLabel}</title><style>${_pdfStyle()}
+      .func-secao { margin-bottom: 14px; }
+      </style></head><body>
+      ${_pdfHeader('Folha Mensal — Fixos', subtitulo)}
+      <div class="resumo-box">
+        <div><div class="lbl">Total Folha (Fixos)</div><div class="val accent">${fmt(totalFolha)}</div></div>
+        <div><div class="lbl">Funcionários</div><div class="val">${fixos.length}</div></div>
+        <div><div class="lbl">Dias com lançamento</div><div class="val">${datasOrdenadas.length}</div></div>
+      </div>
+      <div class="obs">📋 Conferência da folha mensal dos fixos. Use para revisar com a chef antes de pagar.</div>
+      ${secoes}
+      ${_pdfFooter()}
+      <script>window.onload = () => window.print();<\/script>
+      </body></html>`;
+    _abrirPdfJanela(html);
+  } catch(e) {
+    alert('Erro ao gerar relatório: ' + e.message);
+  }
 }
 
 async function gerarPDFDiaristas() {
