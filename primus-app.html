@@ -3521,9 +3521,16 @@ async function gerarRelatorioMensalFixos() {
   try {
     // Busca cadastro dos fixos
     const cadSnap = await db.collection('funcionarios').get();
+    // Mesma lógica que renderPagamentos: tipo === 'fixo' OU (sem tipo definido E pix indica conta-salário)
+    function ehFixo(f) {
+      if(f.tipo === 'fixo') return true;
+      if(f.tipo) return false; // tipo definido como 'frequente' ou outro
+      const pix = (f.pix || '').toLowerCase();
+      return pix.includes('itaú') || pix.includes('itau') || pix.includes('salário') || pix.includes('salario');
+    }
     const fixos = cadSnap.docs
       .map(d => ({id:d.id, ...d.data()}))
-      .filter(f => f.tipo === 'fixo')
+      .filter(f => f.ativo !== false && ehFixo(f))
       .sort((a,b) => (a.nome||'').localeCompare(b.nome||'','pt-BR'));
     if(!fixos.length) { alert('Nenhum funcionário fixo cadastrado.'); return; }
     // Busca todos os fechamentos do mês
