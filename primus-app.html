@@ -3592,14 +3592,14 @@ async function gerarRelatorioMensalFixos() {
     const mesLabel = `${MESES_FMT[mes-1]}/${ano}`;
     // Gerar uma seção por funcionário
     let totalFolha = 0;
-    // Larguras compactas para layout em 2 colunas (cada coluna ~ metade da A4 retrato)
+    // Larguras compactas para layout 2x2 (cada célula ~ quarto da A4 retrato)
     const COLGROUP = `<colgroup>
-      <col style="width:58px">
-      <col style="width:46px">
       <col style="width:50px">
+      <col style="width:38px">
+      <col style="width:42px">
+      <col style="width:38px">
+      <col style="width:42px">
       <col style="width:46px">
-      <col style="width:54px">
-      <col style="width:56px">
     </colgroup>`;
     const TABLE_HEAD = `<thead><tr>
       <th>Data</th><th class="r">Diár.</th><th class="r">Gorj.</th><th class="r">Cons.</th><th class="r">Desc.</th><th class="r">Total</th>
@@ -3653,17 +3653,16 @@ async function gerarRelatorioMensalFixos() {
           </table>` : `<div class="sem-lanc">Sem lançamentos no período.</div>`}
         </div>`;
     });
-    // Agrupa em pares para layout 2 colunas (com page-break a cada par)
-    const pares = [];
-    for(let i = 0; i < secoesArr.length; i += 2) {
-      pares.push(secoesArr.slice(i, i + 2));
+    // Agrupa em quartetos para layout 2x2 (4 funcionários por página)
+    const quartetos = [];
+    for(let i = 0; i < secoesArr.length; i += 4) {
+      quartetos.push(secoesArr.slice(i, i + 4));
     }
-    const secoes = pares.map((par, idx) => {
-      const isLast = idx === pares.length - 1;
-      return `<div class="pagina-par${isLast ? ' last' : ''}">
-        <div class="col">${par[0] || ''}</div>
-        <div class="col">${par[1] || '<div class="placeholder"></div>'}</div>
-      </div>`;
+    const secoes = quartetos.map((quart, idx) => {
+      const isLast = idx === quartetos.length - 1;
+      // Garante 4 células (preenche com vazios se ímpar no final)
+      const celulas = [0,1,2,3].map(i => `<div class="quad-cel">${quart[i] || ''}</div>`).join('');
+      return `<div class="pagina-quad${isLast ? ' last' : ''}">${celulas}</div>`;
     }).join('');
     const subtitulo = `${mesLabel} · ${fixos.length} fixo(s) · ${datasOrdenadas.length} dia(s)`;
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
@@ -3684,32 +3683,31 @@ async function gerarRelatorioMensalFixos() {
         .resumo-mini .val { font-weight:800; }
         .resumo-mini .val.accent { color:#C8782A; }
         .obs-mini { background:#FEF3C7; border-left:3px solid #F59E0B; padding:4px 8px; margin:4px 0 8px; font-size:8px; color:#78350F; }
-        /* Layout 2 colunas — par de funcionários por página */
-        .pagina-par { display:grid; grid-template-columns:1fr 1fr; gap:10px; page-break-after:always; }
-        .pagina-par.last { page-break-after:auto; }
-        .col { min-width:0; }
-        .placeholder { /* coluna vazia quando número de fixos é ímpar */ }
+        /* Layout 2x2 — 4 funcionários por página (grid 2 cols × 2 rows) */
+        .pagina-quad { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:8px 10px; page-break-after:always; height:calc(100vh - 80px); }
+        .pagina-quad.last { page-break-after:auto; }
+        .quad-cel { min-width:0; min-height:0; overflow:hidden; }
         .func-card { page-break-inside:avoid; }
-        .func-head { display:flex; justify-content:space-between; align-items:center; padding:4px 8px; background:#F7F4EF; border-left:3px solid #C8782A; gap:6px; }
+        .func-head { display:flex; justify-content:space-between; align-items:center; padding:3px 6px; background:#F7F4EF; border-left:2px solid #C8782A; gap:5px; }
         .func-nome { min-width:0; flex:1; }
-        .func-nome .nome { font-size:10px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .func-nome .sub { font-size:8px; color:#8A837A; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .func-nome .nome { font-size:9px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .func-nome .sub { font-size:7px; color:#8A837A; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .func-total { text-align:right; flex-shrink:0; }
-        .func-total .lbl { font-size:6px; color:#8A837A; text-transform:uppercase; letter-spacing:.5px; }
-        .func-total .val { font-size:12px; font-weight:800; color:#065F46; line-height:1.1; }
-        .func-total .sub { font-size:7px; color:#8A837A; }
-        table.folha-table { width:100%; border-collapse:collapse; font-size:8px; table-layout:fixed; }
-        table.folha-table th { background:#FAF7F2; color:#4A4540; text-align:left; padding:2px 4px; border-bottom:1px solid #E2DDD5; font-weight:700; text-transform:uppercase; letter-spacing:.2px; font-size:7px; }
+        .func-total .lbl { font-size:5.5px; color:#8A837A; text-transform:uppercase; letter-spacing:.5px; }
+        .func-total .val { font-size:10px; font-weight:800; color:#065F46; line-height:1.1; }
+        .func-total .sub { font-size:6.5px; color:#8A837A; }
+        table.folha-table { width:100%; border-collapse:collapse; font-size:7px; table-layout:fixed; margin-top:2px; }
+        table.folha-table th { background:#FAF7F2; color:#4A4540; text-align:left; padding:1.5px 3px; border-bottom:1px solid #E2DDD5; font-weight:700; text-transform:uppercase; letter-spacing:.2px; font-size:6.5px; }
         table.folha-table th.r { text-align:right; }
-        table.folha-table td { padding:1.5px 4px; border-bottom:1px solid #F2EFE9; vertical-align:top; word-break:break-word; }
+        table.folha-table td { padding:1px 3px; border-bottom:1px solid #F2EFE9; vertical-align:top; word-break:break-word; line-height:1.25; }
         table.folha-table td.r { text-align:right; }
         table.folha-table td.pos { color:#065F46; font-weight:700; }
         table.folha-table td.neg { color:#C0392B; }
-        table.folha-table .motivo { font-size:6.5px; color:#C0392B; font-style:italic; line-height:1.1; margin-top:1px; }
+        table.folha-table .motivo { font-size:5.5px; color:#C0392B; font-style:italic; line-height:1.1; margin-top:0.5px; }
         .row-falta td { color:#C0392B; background:#FEF5F4; }
         .row-pend td { color:#A05E1E; background:#FEF9EB; }
-        .total-row td { font-weight:800; background:#F5E6D3; border-top:1.5px solid #C8782A; padding:2px 4px; font-size:8px; }
-        .sem-lanc { padding:4px 8px; color:#8A837A; font-size:8px; font-style:italic; background:#FAFAF8; }
+        .total-row td { font-weight:800; background:#F5E6D3; border-top:1px solid #C8782A; padding:1.5px 3px; font-size:7px; }
+        .sem-lanc { padding:3px 6px; color:#8A837A; font-size:7px; font-style:italic; background:#FAFAF8; }
         .footer-mini { margin-top:8px; padding-top:4px; border-top:1px solid #E2DDD5; display:flex; justify-content:space-between; font-size:6.5px; color:#8A837A; }
         @media print { @page { margin: 7mm 8mm; size: A4; } body { padding: 0; } }
       </style></head><body>
