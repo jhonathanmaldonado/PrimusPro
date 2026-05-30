@@ -3447,3 +3447,301 @@ body {
     font-size: 11px;
   }
 }
+
+/* ========================================================================
+   HISTÓRICO — RANKING DE PRODUTOS MAIS PROBLEMÁTICOS
+   ======================================================================== */
+
+.hist-rank-secao {
+  background: white;
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  border: 1px solid var(--cinza-borda);
+}
+
+.hist-rank-cabecalho {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.hist-rank-cabecalho h3 {
+  margin: 0;
+  font-family: 'Raleway', sans-serif;
+  font-weight: 700;
+  color: var(--vinho);
+  font-size: 18px;
+}
+
+.hist-rank-toggle {
+  display: flex;
+  gap: 6px;
+  background: var(--cinza-bg);
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.hist-rank-btn {
+  background: transparent;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--cinza-texto);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.hist-rank-btn:hover { color: var(--vinho); }
+.hist-rank-btn.active {
+  background: var(--vinho);
+  color: white;
+}
+
+.hist-rank-explicacao {
+  background: #f8f5fb;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--cinza-texto);
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+.hist-rank-explicacao strong { color: var(--vinho); }
+.hist-rank-explicacao em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--vinho);
+}
+.hist-rank-explicacao small {
+  display: block;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--cinza-texto);
+  opacity: 0.8;
+}
+
+.hist-rank-vazio {
+  text-align: center;
+  padding: 30px 20px;
+  color: var(--cinza-texto);
+}
+.hist-rank-vazio span {
+  font-size: 36px;
+  display: block;
+  margin-bottom: 8px;
+}
+.hist-rank-vazio p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--vinho);
+  font-weight: 600;
+}
+.hist-rank-vazio small {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+.hist-rank-lista {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hist-rank-item {
+  border: 1px solid var(--cinza-borda);
+  border-radius: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.hist-rank-item:hover {
+  border-color: var(--amarelo);
+}
+
+.hist-rank-item-resumo {
+  display: grid;
+  grid-template-columns: 50px 2fr 3fr 70px 30px;
+  gap: 14px;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: pointer;
+  user-select: none;
+}
+.hist-rank-item-resumo:hover { background: #fafafa; }
+
+.hist-rank-pos {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: 'DM Mono', monospace;
+  text-align: center;
+  color: var(--cinza-texto);
+}
+
+.hist-rank-nome strong {
+  display: block;
+  font-family: 'Raleway', sans-serif;
+  color: var(--vinho);
+  font-size: 14px;
+}
+.hist-rank-nome small {
+  font-size: 10px;
+  color: var(--cinza-texto);
+  font-family: 'DM Mono', monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.hist-rank-metricas {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.hist-rank-metr {
+  text-align: center;
+  font-family: 'DM Mono', monospace;
+}
+.hist-rank-metr small {
+  display: block;
+  font-size: 9px;
+  text-transform: uppercase;
+  color: var(--cinza-texto);
+  letter-spacing: 1px;
+  margin-bottom: 2px;
+}
+.hist-rank-metr strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--vinho);
+}
+.hist-rank-metr .hist-rank-detalhe {
+  display: block;
+  font-size: 9px;
+  color: var(--cinza-texto);
+  margin-top: 1px;
+}
+
+.hist-rank-score {
+  font-family: 'DM Mono', monospace;
+  font-weight: 700;
+  font-size: 20px;
+  text-align: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  min-width: 56px;
+}
+.hist-rank-score-alto {
+  background: #fce8e6;
+  color: #b54b1b;
+}
+.hist-rank-score-medio {
+  background: #fff3d6;
+  color: #c97f00;
+}
+.hist-rank-score-baixo {
+  background: #f0f0f0;
+  color: var(--cinza-texto);
+}
+
+.hist-rank-seta {
+  font-size: 12px;
+  color: var(--cinza-texto);
+  text-align: center;
+}
+
+.hist-rank-item-detalhe {
+  padding: 14px 16px;
+  background: var(--cinza-bg);
+  border-top: 1px solid var(--cinza-borda);
+}
+
+.hist-rank-det-titulo {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--vinho);
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.hist-rank-det-tabela {
+  background: white;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--cinza-borda);
+}
+
+.hist-rank-det-cab,
+.hist-rank-det-linha {
+  display: grid;
+  grid-template-columns: 1.4fr 0.8fr 0.8fr 0.8fr 0.8fr 0.9fr 1fr;
+  gap: 6px;
+  padding: 8px 12px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  align-items: center;
+}
+
+.hist-rank-det-cab {
+  background: var(--cinza-bg);
+  font-weight: 700;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--cinza-texto);
+  border-bottom: 1px solid var(--cinza-borda);
+}
+
+.hist-rank-det-linha {
+  border-bottom: 1px solid #f5f5f5;
+}
+.hist-rank-det-linha:last-child {
+  border-bottom: none;
+}
+
+.hist-rank-det-linha > div:nth-child(n+2):nth-child(-n+6) {
+  text-align: right;
+}
+
+.hist-rank-det-status {
+  font-size: 9px !important;
+  font-weight: 700;
+  text-align: center;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.hist-rank-det-critico { background: rgba(181, 69, 27, 0.08); }
+.hist-rank-det-atencao { background: rgba(201, 127, 0, 0.06); }
+.hist-rank-det-leve    { background: rgba(255, 200, 0, 0.04); }
+.hist-rank-det-ok      { /* sem fundo */ }
+
+/* Mobile */
+@media (max-width: 800px) {
+  .hist-rank-item-resumo {
+    grid-template-columns: 40px 1fr 56px 20px;
+    gap: 8px;
+  }
+  .hist-rank-metricas {
+    display: none;  /* esconde métricas no mobile pra caber */
+  }
+  .hist-rank-cabecalho {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .hist-rank-det-cab,
+  .hist-rank-det-linha {
+    font-size: 10px;
+    padding: 6px 8px;
+  }
+}
