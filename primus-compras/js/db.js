@@ -1,360 +1,304 @@
 // ============================================================================
-// DB.JS — Operações no Firestore (com membros)
+// DB.JS — Camada de acesso ao Firestore
 // ============================================================================
 
-import {
-  doc,
-  setDoc,
-  getDoc,
-  getDocs,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  collection,
-  query,
-  orderBy,
-  limit,
-  onSnapshot,
-  serverTimestamp,
-  writeBatch
-} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
-
 import { db } from './firebase-init.js';
+import {
+  collection, doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
+  onSnapshot, query, orderBy, where, serverTimestamp, writeBatch, addDoc,
+  arrayUnion, limit
+} from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
+
 import { WORKSPACE_ID } from './firebase-config.js';
 
 // ============================================================================
-// HELPERS DE PATH
-// ============================================================================
-
-const wsPath = () => ['workspaces', WORKSPACE_ID];
-const categoriasCol = () => collection(db, ...wsPath(), 'categorias');
-const itensCol = () => collection(db, ...wsPath(), 'itens');
-const listaAtualCol = () => collection(db, ...wsPath(), 'lista_atual');
-const listaEmCriacaoCol = () => collection(db, ...wsPath(), 'lista_em_criacao');
-const historicoCol = () => collection(db, ...wsPath(), 'historico');
-const fornecedoresCol = () => collection(db, ...wsPath(), 'fornecedores');
-const usuariosCol = () => collection(db, ...wsPath(), 'usuarios');
-const authLookupCol = () => collection(db, ...wsPath(), 'auth_lookup');
-
-// ============================================================================
-// CONTEXTO DO USUÁRIO
+// CONTEXTO DE USUÁRIO
 // ============================================================================
 
 let _userCtx = null;
-export function setUserContext(ctx) { _userCtx = ctx; }
-export function getUserContext() { return _userCtx; }
 
-function carimboAuditoria() {
+export function setUserContext(ctx) {
+  _userCtx = ctx;
+}
+
+function getUserCtx() {
+  return _userCtx;
+}
+
+function auditFields(extras = {}) {
+  const ctx = getUserCtx();
   return {
     atualizadoEm: serverTimestamp(),
-    atualizadoPor: _userCtx?.uid || null,
-    atualizadoPorNome: _userCtx?.nome || 'desconhecido'
+    atualizadoPor: ctx?.uid || null,
+    atualizadoPorNome: ctx?.nome || null,
+    ...extras
   };
 }
 
 // ============================================================================
-// CONFIGURAÇÕES DO WORKSPACE
+// REFS
+// ============================================================================
+
+const ROOT = () => doc(db, 'workspaces', WORKSPACE_ID);
+const USUARIOS = () => collection(db, 'workspaces', WORKSPACE_ID, 'usuarios');
+const CATEGORIAS = () => collection(db, 'workspaces', WORKSPACE_ID, 'categorias');
+const ITENS = () => collection(db, 'workspaces', WORKSPACE_ID, 'itens');
+const LISTA_EM_CRIACAO = () => collection(db, 'workspaces', WORKSPACE_ID, 'lista_em_criacao');
+const LISTA_ATUAL = () => collection(db, 'workspaces', WORKSPACE_ID, 'lista_atual');
+const HISTORICO = () => collection(db, 'workspaces', WORKSPACE_ID, 'historico');
+const FORNECEDORES = () => collection(db, 'workspaces', WORKSPACE_ID, 'fornecedores');
+
+// ============================================================================
+// CONFIG
 // ============================================================================
 
 export async function getConfigMediaN() {
-  try {
-    const wsRef = doc(db, ...wsPath());
-    const snap = await getDoc(wsRef);
-    if (!snap.exists()) return 5;
-    const config = snap.data().config || {};
-    return config.mediaN || 5;
-  } catch {
-    return 5;
-  }
+  const snap = await getDoc(ROOT());
+  return snap.data()?.config?.mediaN || 5;
 }
 
 export async function setConfigMediaN(n) {
-  const wsRef = doc(db, ...wsPath());
-  await updateDoc(wsRef, { 'config.mediaN': n });
+  await updateDoc(ROOT(), { 'config.mediaN': n, ...auditFields() });
+}
+
+// ============================================================================
+// USUÁRIOS
+// ============================================================================
+
+export function observarUsuarios(callback) {
+  return onSnapshot(USUARIOS(), snap => {
+    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(lista);
+  });
+}
+
+export async function deletarUsuario(uid) {
+  await deleteDoc(doc(USUARIOS(), uid));
+  try {
+    await deleteDoc(doc(db, 'workspaces', WORKSPACE_ID, 'auth_lookup', uid));
+  } catch (e) {
+    console.error('Erro ao deletar auth_lookup:', e);
+  }
 }
 
 // ============================================================================
 // CATEGORIAS
 // ============================================================================
 
-export async function listarCategorias() {
-  const q = query(categoriasCol(), orderBy('ordem', 'asc'));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-}
-
 export function observarCategorias(callback) {
-  const q = query(categoriasCol(), orderBy('ordem', 'asc'));
-  return onSnapshot(q, (snap) => {
-    const cats = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    callback(cats);
+  const q = query(CATEGORIAS(), orderBy('ordem'));
+  return onSnapshot(q, snap => {
+    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(lista);
   });
 }
 
-export async function criarCategoria({ nome, cor, ordem }) {
-  const ref = await addDoc(categoriasCol(), {
-    nome,
-    cor: cor || '#7A1F38',
-    ordem: ordem ?? 999,
-    criadoEm: serverTimestamp(),
-    criadoPor: _userCtx?.uid || null,
-    ...carimboAuditoria()
-  });
-  return ref.id;
-}
-
-export async function atualizarCategoria(id, dados) {
-  const ref = doc(db, ...wsPath(), 'categorias', id);
-  await updateDoc(ref, { ...dados, ...carimboAuditoria() });
-}
-
-export async function deletarCategoria(id) {
-  const ref = doc(db, ...wsPath(), 'categorias', id);
-  await deleteDoc(ref);
-}
-
 // ============================================================================
-// ITENS (CATÁLOGO)
+// ITENS (catálogo)
 // ============================================================================
-
-export async function listarItens() {
-  const q = query(itensCol(), orderBy('ordem', 'asc'));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-}
 
 export function observarItens(callback) {
-  const q = query(itensCol(), orderBy('ordem', 'asc'));
-  return onSnapshot(q, (snap) => {
-    const itens = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    callback(itens);
+  return onSnapshot(ITENS(), snap => {
+    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(lista);
   });
 }
 
-export async function criarItem({ nome, tipo, categoriaId, fornecedorPreferido, ordem }) {
-  const ref = await addDoc(itensCol(), {
-    nome,
-    tipo: tipo || '',
-    categoriaId,
-    fornecedorPreferido: fornecedorPreferido || '',
-    ordem: ordem ?? 999,
-    ativo: true,
+export async function criarItem(dados) {
+  const ref = doc(ITENS());
+  await setDoc(ref, {
+    nome: dados.nome,
+    tipo: dados.tipo || '',
+    categoriaId: dados.categoriaId,
+    fornecedorPreferido: dados.fornecedorPreferido || '',
+    ordem: dados.ordem ?? 0,
     ultimoPreco: null,
-    ultimoPrecoData: null,
     precoAnterior: null,
     historicoPrecos: [],
-    criadoEm: serverTimestamp(),
-    criadoPor: _userCtx?.uid || null,
-    ...carimboAuditoria()
+    ...auditFields({ criadoEm: serverTimestamp() })
   });
   return ref.id;
 }
 
-export async function atualizarItem(id, dados) {
-  const ref = doc(db, ...wsPath(), 'itens', id);
-  await updateDoc(ref, { ...dados, ...carimboAuditoria() });
+export async function atualizarItem(itemId, dados) {
+  const ref = doc(ITENS(), itemId);
+  await updateDoc(ref, { ...dados, ...auditFields() });
 }
 
-export async function deletarItem(id) {
-  const ref = doc(db, ...wsPath(), 'itens', id);
-  await deleteDoc(ref);
-  try { await deleteDoc(doc(db, ...wsPath(), 'lista_atual', id)); } catch {}
-  try { await deleteDoc(doc(db, ...wsPath(), 'lista_em_criacao', id)); } catch {}
+export async function deletarItem(itemId) {
+  await deleteDoc(doc(ITENS(), itemId));
 }
 
-// ============================================================================
-// FORNECEDORES
-// ============================================================================
-
-export async function listarFornecedores() {
-  const q = query(fornecedoresCol(), orderBy('nome', 'asc'));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-}
-
-export function observarFornecedores(callback) {
-  const q = query(fornecedoresCol(), orderBy('nome', 'asc'));
-  return onSnapshot(q, (snap) => {
-    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    callback(lista);
-  });
-}
-
-export async function criarFornecedor({ nome, telefone, observacao }) {
-  if (!nome || !nome.trim()) {
-    throw new Error('Nome do fornecedor é obrigatório');
-  }
-  const ref = await addDoc(fornecedoresCol(), {
-    nome: nome.trim(),
-    telefone: (telefone || '').trim(),
-    observacao: (observacao || '').trim(),
-    criadoEm: serverTimestamp(),
-    criadoPor: _userCtx?.uid || null,
-    ...carimboAuditoria()
-  });
-  return ref.id;
-}
-
-export async function atualizarFornecedor(id, dados) {
-  const ref = doc(db, ...wsPath(), 'fornecedores', id);
-  await updateDoc(ref, { ...dados, ...carimboAuditoria() });
-}
-
-export async function deletarFornecedor(id) {
-  const ref = doc(db, ...wsPath(), 'fornecedores', id);
-  await deleteDoc(ref);
+export function calcularMediaPrecos(item, n) {
+  const hist = item.historicoPrecos || [];
+  if (!hist.length) return null;
+  const slice = hist.slice(-n);
+  const soma = slice.reduce((s, p) => s + (parseFloat(p.preco) || 0), 0);
+  return soma / slice.length;
 }
 
 // ============================================================================
-// USUÁRIOS / MEMBROS
-// ============================================================================
-
-export async function listarUsuarios() {
-  const q = query(usuariosCol(), orderBy('nome', 'asc'));
-  const snap = await getDocs(q);
-  return snap.docs.map(d => ({ id: d.id, ...d.data() }));
-}
-
-export function observarUsuarios(callback) {
-  const q = query(usuariosCol(), orderBy('nome', 'asc'));
-  return onSnapshot(q, (snap) => {
-    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    callback(lista);
-  });
-}
-
-/**
- * Remove um membro: deleta os 2 docs (usuario + auth_lookup).
- * NOTA: o doc no Firebase Auth fica órfão (não dá pra remover via SDK cliente).
- * Mas como a senha real depende do segredo no auth_lookup, a conta fica inutilizável.
- */
-export async function deletarUsuario(uid) {
-  const userRef = doc(db, ...wsPath(), 'usuarios', uid);
-  const lookupRef = doc(db, ...wsPath(), 'auth_lookup', uid);
-  const batch = writeBatch(db);
-  batch.delete(userRef);
-  batch.delete(lookupRef);
-  await batch.commit();
-}
-
-// ============================================================================
-// LISTA EM CRIAÇÃO
+// LISTA EM CRIAÇÃO (rascunho)
 // ============================================================================
 
 export function observarListaEmCriacao(callback) {
-  return onSnapshot(listaEmCriacaoCol(), (snap) => {
+  return onSnapshot(LISTA_EM_CRIACAO(), snap => {
     const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     callback(lista);
   });
 }
 
 export async function setItemListaEmCriacao(itemId, qtd) {
-  const ref = doc(db, ...wsPath(), 'lista_em_criacao', itemId);
+  const ref = doc(LISTA_EM_CRIACAO(), itemId);
   const qtdNum = parseFloat(qtd) || 0;
-
-  if (qtdNum === 0) {
-    try { await deleteDoc(ref); } catch {}
+  if (qtdNum <= 0) {
+    await deleteDoc(ref).catch(() => {});
     return;
   }
-
   await setDoc(ref, {
     itemId,
     qtd: qtdNum,
-    ...carimboAuditoria()
-  }, { merge: true });
+    ...auditFields()
+  });
 }
 
 export async function limparListaEmCriacao() {
-  const snap = await getDocs(listaEmCriacaoCol());
+  const snap = await getDocs(LISTA_EM_CRIACAO());
   const batch = writeBatch(db);
   snap.docs.forEach(d => batch.delete(d.ref));
   await batch.commit();
 }
 
-export async function salvarListaParaAtual() {
-  const atualSnap = await getDocs(listaAtualCol());
-  if (!atualSnap.empty) {
-    throw new Error('Já existe uma Lista Atual em andamento. Finalize-a primeiro.');
-  }
-
-  const criacaoSnap = await getDocs(listaEmCriacaoCol());
-  if (criacaoSnap.empty) {
-    throw new Error('Lista vazia. Adicione quantidades antes de salvar.');
-  }
-
-  const batch = writeBatch(db);
-  criacaoSnap.docs.forEach(d => {
-    const dados = d.data();
-    const novoRef = doc(db, ...wsPath(), 'lista_atual', d.id);
-    batch.set(novoRef, {
-      itemId: d.id,
-      qtd: dados.qtd || 0,
-      preco: 0,
-      comprado: false,
-      observacao: '',
-      ...carimboAuditoria()
-    });
-    batch.delete(d.ref);
-  });
-  await batch.commit();
-
-  return criacaoSnap.size;
-}
-
 // ============================================================================
-// LISTA ATUAL
+// LISTA ATUAL (em compra)
 // ============================================================================
 
 export function observarListaAtual(callback) {
-  return onSnapshot(listaAtualCol(), (snap) => {
+  return onSnapshot(LISTA_ATUAL(), snap => {
     const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     callback(lista);
   });
 }
 
-export async function atualizarPrecoListaAtual(itemId, preco) {
-  const ref = doc(db, ...wsPath(), 'lista_atual', itemId);
-  await setDoc(ref, {
-    preco: parseFloat(preco) || 0,
-    ...carimboAuditoria()
-  }, { merge: true });
+export async function salvarListaParaAtual() {
+  const snapAtual = await getDocs(LISTA_ATUAL());
+  if (snapAtual.size > 0) {
+    throw new Error('Já existe uma lista atual em andamento. Finalize-a primeiro.');
+  }
+
+  const snap = await getDocs(LISTA_EM_CRIACAO());
+  if (snap.size === 0) {
+    throw new Error('Lista vazia.');
+  }
+
+  const batch = writeBatch(db);
+  let count = 0;
+  snap.docs.forEach(d => {
+    const data = d.data();
+    const refAtual = doc(LISTA_ATUAL(), d.id);
+    batch.set(refAtual, {
+      itemId: d.id,
+      qtd: data.qtd,
+      preco: 0,
+      comprado: false,
+      ...auditFields({ criadoEm: serverTimestamp() })
+    });
+    batch.delete(d.ref);
+    count++;
+  });
+  await batch.commit();
+  return count;
 }
 
-export async function atualizarCompradoListaAtual(itemId, comprado) {
-  const ref = doc(db, ...wsPath(), 'lista_atual', itemId);
-  await setDoc(ref, {
-    comprado: !!comprado,
-    ...carimboAuditoria()
-  }, { merge: true });
+export async function atualizarPrecoListaAtual(itemId, preco) {
+  const ref = doc(LISTA_ATUAL(), itemId);
+  await updateDoc(ref, {
+    preco: parseFloat(preco) || 0,
+    ...auditFields()
+  });
 }
 
 export async function atualizarQtdListaAtual(itemId, qtd) {
-  const ref = doc(db, ...wsPath(), 'lista_atual', itemId);
-  const qtdNum = parseFloat(qtd) || 0;
-  if (qtdNum === 0) {
-    try { await deleteDoc(ref); } catch {}
-    return;
-  }
-  await setDoc(ref, {
-    qtd: qtdNum,
-    ...carimboAuditoria()
-  }, { merge: true });
+  const ref = doc(LISTA_ATUAL(), itemId);
+  await updateDoc(ref, {
+    qtd: parseFloat(qtd) || 0,
+    ...auditFields()
+  });
+}
+
+export async function atualizarCompradoListaAtual(itemId, comprado) {
+  const ref = doc(LISTA_ATUAL(), itemId);
+  await updateDoc(ref, {
+    comprado: !!comprado,
+    ...auditFields()
+  });
 }
 
 export async function removerItemListaAtual(itemId) {
-  const ref = doc(db, ...wsPath(), 'lista_atual', itemId);
-  try {
-    await deleteDoc(ref);
-  } catch (e) {
-    console.error('Erro ao remover item:', e);
-    throw e;
-  }
+  await deleteDoc(doc(LISTA_ATUAL(), itemId));
 }
 
-export async function limparListaAtual() {
-  const snap = await getDocs(listaAtualCol());
+// Adiciona item do catálogo à Lista Atual (com qtd inicial)
+export async function adicionarItemListaAtual(itemId, qtdInicial = 0) {
+  const ref = doc(LISTA_ATUAL(), itemId);
+  const existing = await getDoc(ref);
+  if (existing.exists()) {
+    throw new Error('Esse item já está na lista atual.');
+  }
+  await setDoc(ref, {
+    itemId,
+    qtd: parseFloat(qtdInicial) || 0,
+    preco: 0,
+    comprado: false,
+    ...auditFields({ criadoEm: serverTimestamp() })
+  });
+}
+
+// ============================================================================
+// FINALIZAR COMPRA
+// ============================================================================
+
+export async function finalizarCompra(itensEnriquecidos, total) {
+  const ctx = getUserCtx();
   const batch = writeBatch(db);
-  snap.docs.forEach(d => batch.delete(d.ref));
+
+  const refHist = doc(HISTORICO());
+  batch.set(refHist, {
+    data: serverTimestamp(),
+    total,
+    qtdItens: itensEnriquecidos.length,
+    finalizadoPor: ctx?.uid || null,
+    finalizadoPorNome: ctx?.nome || null,
+    itens: itensEnriquecidos
+  });
+
+  for (const it of itensEnriquecidos) {
+    const refItem = doc(ITENS(), it.itemId);
+    const snap = await getDoc(refItem);
+    if (!snap.exists()) continue;
+    const data = snap.data();
+    const historicoPrecos = data.historicoPrecos || [];
+
+    if (it.preco > 0) {
+      historicoPrecos.push({
+        preco: it.preco,
+        qtd: it.qtd,
+        data: new Date().toISOString()
+      });
+      while (historicoPrecos.length > 20) historicoPrecos.shift();
+
+      batch.update(refItem, {
+        precoAnterior: data.ultimoPreco || null,
+        ultimoPreco: it.preco,
+        historicoPrecos,
+        ...auditFields()
+      });
+    }
+
+    const refAtual = doc(LISTA_ATUAL(), it.itemId);
+    batch.delete(refAtual);
+  }
+
   await batch.commit();
 }
 
@@ -362,126 +306,92 @@ export async function limparListaAtual() {
 // HISTÓRICO
 // ============================================================================
 
-export function observarHistorico(callback, limite = 50) {
-  const q = query(historicoCol(), orderBy('data', 'desc'));
-  return onSnapshot(q, (snap) => {
-    const hist = snap.docs.slice(0, limite).map(d => ({ id: d.id, ...d.data() }));
-    callback(hist);
+export function observarHistorico(callback) {
+  const q = query(HISTORICO(), orderBy('data', 'desc'), limit(50));
+  return onSnapshot(q, snap => {
+    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(lista);
   });
 }
 
-export async function finalizarCompra(itensEnriquecidos, total) {
-  if (!itensEnriquecidos.length) {
-    throw new Error('Lista vazia');
-  }
+export async function deletarHistorico(histId) {
+  await deleteDoc(doc(HISTORICO(), histId));
+}
 
-  const histRef = await addDoc(historicoCol(), {
-    data: serverTimestamp(),
-    total,
-    qtdItens: itensEnriquecidos.length,
-    finalizadoPor: _userCtx?.uid || null,
-    finalizadoPorNome: _userCtx?.nome || 'desconhecido',
-    itens: itensEnriquecidos
+// ============================================================================
+// FORNECEDORES
+// ============================================================================
+
+export function observarFornecedores(callback) {
+  const q = query(FORNECEDORES(), orderBy('nome'));
+  return onSnapshot(q, snap => {
+    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    callback(lista);
   });
-
-  const batch = writeBatch(db);
-  for (const it of itensEnriquecidos) {
-    if (!it.itemId || !it.preco) continue;
-    const itemRef = doc(db, ...wsPath(), 'itens', it.itemId);
-    const atualSnap = await getDoc(itemRef);
-    if (!atualSnap.exists()) continue;
-    const atual = atualSnap.data();
-    const histPrecos = (atual.historicoPrecos || []).slice();
-    histPrecos.unshift({
-      preco: it.preco,
-      data: new Date().toISOString(),
-      qtd: it.qtd
-    });
-    while (histPrecos.length > 20) histPrecos.pop();
-
-    batch.update(itemRef, {
-      precoAnterior: atual.ultimoPreco || null,
-      ultimoPreco: it.preco,
-      ultimoPrecoData: serverTimestamp(),
-      historicoPrecos: histPrecos,
-      ...carimboAuditoria()
-    });
-  }
-  await batch.commit();
-
-  await limparListaAtual();
-
-  return histRef.id;
 }
 
-export async function deletarHistorico(id) {
-  const ref = doc(db, ...wsPath(), 'historico', id);
-  await deleteDoc(ref);
+export async function criarFornecedor(dados) {
+  const ref = doc(FORNECEDORES());
+  await setDoc(ref, {
+    nome: dados.nome,
+    telefone: dados.telefone || '',
+    observacao: dados.observacao || '',
+    ...auditFields({ criadoEm: serverTimestamp() })
+  });
+  return ref.id;
+}
+
+export async function atualizarFornecedor(fornId, dados) {
+  const ref = doc(FORNECEDORES(), fornId);
+  await updateDoc(ref, { ...dados, ...auditFields() });
+}
+
+export async function deletarFornecedor(fornId) {
+  await deleteDoc(doc(FORNECEDORES(), fornId));
 }
 
 // ============================================================================
-// HELPERS DE MÉDIA HISTÓRICA
-// ============================================================================
-
-export function calcularMediaPrecos(item, n = 5) {
-  const hist = item.historicoPrecos || [];
-  if (!hist.length) return null;
-  const ultimasN = hist.slice(0, n);
-  const soma = ultimasN.reduce((s, h) => s + (parseFloat(h.preco) || 0), 0);
-  return soma / ultimasN.length;
-}
-
-// ============================================================================
-// SEED INICIAL DO CATÁLOGO
+// SEED INICIAL
 // ============================================================================
 
 export async function seedCatalogoSeVazio(seedData) {
-  const catsExistentes = await getDocs(categoriasCol());
-  if (!catsExistentes.empty) {
-    return { importado: false, motivo: 'Catálogo já tem dados' };
+  const snapCats = await getDocs(CATEGORIAS());
+  if (snapCats.size > 0) {
+    return { importado: false };
   }
 
   const batch = writeBatch(db);
-  let ordemCat = 0;
-  let totalItens = 0;
+  let countCats = 0, countItens = 0;
 
-  for (const cat of seedData) {
-    const catRef = doc(categoriasCol());
-    batch.set(catRef, {
+  for (let i = 0; i < seedData.length; i++) {
+    const cat = seedData[i];
+    const refCat = doc(CATEGORIAS());
+    batch.set(refCat, {
       nome: cat.nome,
       cor: cat.cor,
-      ordem: ordemCat++,
-      criadoEm: serverTimestamp(),
-      criadoPor: _userCtx?.uid || null,
-      atualizadoEm: serverTimestamp(),
-      atualizadoPor: _userCtx?.uid || null,
-      atualizadoPorNome: _userCtx?.nome || 'seed'
+      ordem: i,
+      ...auditFields({ criadoEm: serverTimestamp() })
     });
+    countCats++;
 
-    let ordemItem = 0;
-    for (const it of cat.itens) {
-      const itemRef = doc(itensCol());
-      batch.set(itemRef, {
+    for (let j = 0; j < cat.itens.length; j++) {
+      const it = cat.itens[j];
+      const refItem = doc(ITENS());
+      batch.set(refItem, {
         nome: it.nome,
         tipo: it.tipo || '',
-        categoriaId: catRef.id,
+        categoriaId: refCat.id,
         fornecedorPreferido: '',
-        ordem: ordemItem++,
-        ativo: true,
+        ordem: j,
         ultimoPreco: null,
-        ultimoPrecoData: null,
         precoAnterior: null,
         historicoPrecos: [],
-        criadoEm: serverTimestamp(),
-        criadoPor: _userCtx?.uid || null,
-        atualizadoEm: serverTimestamp(),
-        atualizadoPor: _userCtx?.uid || null,
-        atualizadoPorNome: _userCtx?.nome || 'seed'
+        ...auditFields({ criadoEm: serverTimestamp() })
       });
-      totalItens++;
+      countItens++;
     }
   }
 
   await batch.commit();
-  return { importado: true, categorias: seedData.length, itens: totalItens };
+  return { importado: true, categorias: countCats, itens: countItens };
 }
