@@ -1,5 +1,5 @@
 // ============================================================================
-// APP.JS — Orquestrador principal (com botão de Reimprimir)
+// APP.JS — Orquestrador principal (com Adicionar Item à Lista Atual)
 // ============================================================================
 
 import './firebase-init.js';
@@ -36,6 +36,7 @@ import {
   atualizarCompradoListaAtual,
   atualizarQtdListaAtual,
   removerItemListaAtual,
+  adicionarItemListaAtual,
   finalizarCompra,
   deletarHistorico,
   seedCatalogoSeVazio,
@@ -62,6 +63,7 @@ let collapsedAtual = {};
 let searchCriar = '';
 let searchAtual = '';
 let searchFornecedores = '';
+let searchAddAtual = '';
 let currentTab = 'criar';
 let mediaN = 5;
 
@@ -276,6 +278,7 @@ function iniciarListeners() {
   unsubsRefs.push(observarItens((its) => {
     itens = its;
     renderTudo();
+    if ($('modal-add-atual').classList.contains('show')) renderResultadosAddAtual();
   }));
 
   unsubsRefs.push(observarListaEmCriacao((lista) => {
@@ -288,6 +291,7 @@ function iniciarListeners() {
     listaAtualMap = {};
     lista.forEach(i => { listaAtualMap[i.id] = i; });
     renderListaAtual();
+    if ($('modal-add-atual').classList.contains('show')) renderResultadosAddAtual();
   }));
 
   unsubsRefs.push(observarHistorico((hist) => {
@@ -553,6 +557,19 @@ function popularSelectCategoria() {
     opt.value = cat.id;
     opt.textContent = cat.nome;
     selEdit.appendChild(opt);
+  }
+
+  const selAddAtual = $('add-atual-cat');
+  if (selAddAtual) {
+    const valorAdd = selAddAtual.value;
+    selAddAtual.innerHTML = '';
+    for (const cat of categorias) {
+      const opt = document.createElement('option');
+      opt.value = cat.id;
+      opt.textContent = cat.nome;
+      selAddAtual.appendChild(opt);
+    }
+    if (valorAdd) selAddAtual.value = valorAdd;
   }
 }
 
@@ -1047,6 +1064,155 @@ async function removerMembro(uid) {
 }
 
 // ============================================================================
+// ADICIONAR ITEM À LISTA ATUAL (NOVO)
+// ============================================================================
+
+function abrirModalAddAtual() {
+  if (!temListaAtualAtiva()) {
+    showToast('⚠ Não há lista atual em andamento', 'error');
+    return;
+  }
+  $('search-add-atual').value = '';
+  searchAddAtual = '';
+  $('add-atual-novo-form').style.display = 'none';
+  $('add-atual-nome').value = '';
+  $('add-atual-tipo').value = '';
+  $('add-atual-error').classList.remove('show');
+  $('add-atual-error').textContent = '';
+  $('modal-add-atual').classList.add('show');
+  renderResultadosAddAtual();
+  setTimeout(() => $('search-add-atual').focus(), 100);
+}
+
+function fecharModalAddAtual() {
+  $('modal-add-atual').classList.remove('show');
+}
+
+function renderResultadosAddAtual() {
+  const el = $('add-atual-resultados');
+  if (!el) return;
+
+  // Itens do catálogo que NÃO estão na lista atual
+  const itensDisponiveis = itens.filter(i => !listaAtualMap[i.id]);
+
+  // Filtra por busca
+  const filtrados = itensDisponiveis.filter(i => {
+    if (!searchAddAtual) return true;
+    return matchesSearch(i, searchAddAtual);
+  });
+
+  if (!filtrados.length) {
+    if (searchAddAtual) {
+      el.innerHTML = `<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">
+        Nenhum item encontrado para "<strong>${escHtml(searchAddAtual)}</strong>"<br>
+        <span style="font-size:11px">Use o botão abaixo para criar um item novo.</span>
+      </div>`;
+    } else if (!itensDisponiveis.length) {
+      el.innerHTML = `<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">
+        Todos os itens do catálogo já estão na lista atual.<br>
+        <span style="font-size:11px">Use o botão abaixo para criar um item novo.</span>
+      </div>`;
+    } else {
+      el.innerHTML = `<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">
+        Digite no campo acima para buscar um item.
+      </div>`;
+    }
+    $('search-add-atual-clear').style.display = searchAddAtual ? 'block' : 'none';
+    return;
+  }
+
+  let html = '<table>';
+  html += `<thead><tr>
+    <th class="col-item">Item</th>
+    <th>Categoria</th>
+    <th class="col-tipo">Tipo</th>
+    <th style="text-align:right">Méd. ${mediaN}</th>
+    <th style="text-align:right">Última</th>
+    <th class="col-actions"></th>
+  </tr></thead><tbody>`;
+
+  // Limita a 30 resultados pra não pesar
+  const limited = filtrados.slice(0, 30);
+
+  for (const item of limited) {
+    const cat = categorias.find(c => c.id === item.categoriaId);
+    const media = calcularMediaPrecos(item, mediaN);
+    const ultimo = item.ultimoPreco;
+
+    html += `<tr>`;
+    html += `<td class="col-item"><strong>${escHtml(item.nome)}</strong></td>`;
+    html += `<td style="font-size:11px;color:${escHtml(cat?.cor || '#999')};font-weight:600">${escHtml(cat?.nome || '?')}</td>`;
+    html += `<td class="col-tipo">${escHtml(item.tipo || '—')}</td>`;
+    html += `<td style="text-align:right;font-size:12px">${media ? `<span style="color:var(--wine);font-weight:600">${fmtMoeda(media)}</span>` : `<span style="color:#bbb">—</span>`}</td>`;
+    html += `<td style="text-align:right;font-size:12px">${ultimo ? `<span style="color:var(--wine);font-weight:600">${fmtMoeda(ultimo)}</span>` : `<span style="color:#bbb">—</span>`}</td>`;
+    html += `<td class="col-actions"><button class="btn btn-sm btn-primary" data-action="add-to-atual" data-item-id="${item.id}">+ Add</button></td>`;
+    html += `</tr>`;
+  }
+
+  if (filtrados.length > 30) {
+    html += `<tr><td colspan="6" style="text-align:center;color:var(--muted);font-size:11px;padding:8px">+ ${filtrados.length - 30} resultados. Refine a busca para ver mais.</td></tr>`;
+  }
+
+  html += `</tbody></table>`;
+  el.innerHTML = html;
+  $('search-add-atual-clear').style.display = searchAddAtual ? 'block' : 'none';
+}
+
+async function adicionarItemDoCatalogoAtual(itemId) {
+  const item = itens.find(i => i.id === itemId);
+  if (!item) return;
+  try {
+    await adicionarItemListaAtual(itemId, 0);
+    showToast(`✓ "${item.nome}" adicionado à lista`, 'success');
+  } catch (e) {
+    showToast('⚠ ' + e.message, 'error');
+  }
+}
+
+async function criarItemENoAtual() {
+  const nome = $('add-atual-nome').value.trim();
+  const tipo = $('add-atual-tipo').value.trim();
+  const catId = $('add-atual-cat').value;
+  const err = $('add-atual-error');
+
+  if (!nome) {
+    err.textContent = 'Nome do produto é obrigatório';
+    err.classList.add('show');
+    return;
+  }
+  if (!catId) {
+    err.textContent = 'Selecione uma categoria';
+    err.classList.add('show');
+    return;
+  }
+
+  err.classList.remove('show');
+  const btn = $('btn-add-atual-criar');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+
+  try {
+    const itensCat = itens.filter(i => i.categoriaId === catId);
+    const proxOrdem = itensCat.length;
+
+    // Cria o item no catálogo
+    const novoId = await criarItem({ nome, tipo, categoriaId: catId, ordem: proxOrdem });
+
+    // Adiciona já à lista atual
+    await adicionarItemListaAtual(novoId, 0);
+
+    showToast(`✓ "${nome}" criado e adicionado à lista`, 'success');
+    fecharModalAddAtual();
+  } catch (e) {
+    err.textContent = 'Erro: ' + e.message;
+    err.classList.add('show');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '+ Cadastrar e adicionar à lista';
+  }
+}
+
+// ============================================================================
 // AÇÕES
 // ============================================================================
 
@@ -1196,7 +1362,7 @@ async function tratarSalvar(comPdf) {
 }
 
 // ============================================================================
-// REIMPRIMIR LISTA ATUAL
+// REIMPRIMIR
 // ============================================================================
 
 function tratarReimprimir() {
@@ -1208,19 +1374,16 @@ function tratarReimprimir() {
 }
 
 // ============================================================================
-// PDF (unificado: pode imprimir lista_em_criacao OU lista_atual)
+// PDF
 // ============================================================================
 
 function gerarPdfLista(origem = 'criacao') {
-  // origem: 'criacao' (lista_em_criacao) ou 'atual' (lista_atual)
-
   const hoje = new Date();
   const dd = String(hoje.getDate()).padStart(2, '0');
   const mm = String(hoje.getMonth() + 1).padStart(2, '0');
   const aaaa = hoje.getFullYear();
   const nomeArquivo = `Lista_Compras_${dd}-${mm}-${aaaa}`;
 
-  // Função que retorna a quantidade de um item conforme a origem
   const getQtdParaPdf = (itemId) => {
     if (origem === 'atual') {
       return parseFloat(listaAtualMap[itemId]?.qtd || 0);
@@ -1246,10 +1409,7 @@ function gerarPdfLista(origem = 'criacao') {
           margin-top: 8px;
           margin-bottom: 0;
         }
-        table {
-          width: 100%;
-          border-collapse: collapse;
-        }
+        table { width: 100%; border-collapse: collapse; }
         th {
           background: #faf6f3;
           font-size: 9px;
@@ -1259,22 +1419,14 @@ function gerarPdfLista(origem = 'criacao') {
           color: #888;
           font-weight: 700;
         }
-        td {
-          padding: 3px 6px;
-          border-bottom: 1px solid #eee;
-          font-size: 10px;
-        }
+        td { padding: 3px 6px; border-bottom: 1px solid #eee; font-size: 10px; }
         .col-item { text-align: left; width: 38%; }
         .col-tipo { text-align: right; width: 10%; }
         .col-media { text-align: right; width: 12%; color: #888; font-size: 9px; }
         .col-ultimo { text-align: right; width: 12%; color: #888; font-size: 9px; }
         .col-qtd { text-align: right; width: 10%; font-weight: 700; color: #7A1F38; }
         .col-pago { text-align: right; width: 18%; }
-        .preco-blank {
-          border-bottom: 1px solid #999;
-          display: inline-block;
-          width: 70px;
-        }
+        .preco-blank { border-bottom: 1px solid #999; display: inline-block; width: 70px; }
         .total {
           margin-top: 12px;
           padding: 8px 12px;
@@ -1344,9 +1496,7 @@ function gerarPdfLista(origem = 'criacao') {
       <strong>${totalItens} itens</strong> · Estimativa baseada em médias: <strong>${fmtMoeda(totalEstimado)}</strong>
     </div>
     <div class="footer">Peixaria Primus · Cuiabá/MT</div>
-    <script>
-      document.title = '${nomeArquivo}';
-    </script>
+    <script>document.title = '${nomeArquivo}';</script>
     </body></html>
   `;
 
@@ -1485,6 +1635,7 @@ function setupEventos() {
   $('btn-atual-recolher').addEventListener('click', () => expandirOuRecolherAtual(false));
   $('btn-atual-expandir').addEventListener('click', () => expandirOuRecolherAtual(true));
   $('btn-reimprimir').addEventListener('click', tratarReimprimir);
+  $('btn-add-item-atual').addEventListener('click', abrirModalAddAtual);
   $('btn-finalizar').addEventListener('click', tratarFinalizarCompra);
   $('search-atual').addEventListener('input', e => {
     searchAtual = e.target.value.trim();
@@ -1494,6 +1645,32 @@ function setupEventos() {
     $('search-atual').value = '';
     searchAtual = '';
     renderListaAtual();
+  });
+
+  // Modal Adicionar à Lista Atual
+  $('search-add-atual').addEventListener('input', e => {
+    searchAddAtual = e.target.value.trim();
+    renderResultadosAddAtual();
+  });
+  $('search-add-atual-clear').addEventListener('click', () => {
+    $('search-add-atual').value = '';
+    searchAddAtual = '';
+    renderResultadosAddAtual();
+    $('search-add-atual').focus();
+  });
+  $('btn-toggle-novo-item').addEventListener('click', () => {
+    const form = $('add-atual-novo-form');
+    const visible = form.style.display !== 'none';
+    form.style.display = visible ? 'none' : 'block';
+    if (!visible) {
+      // Se digitou na busca, pré-preenche o nome
+      if (searchAddAtual) $('add-atual-nome').value = searchAddAtual;
+      setTimeout(() => $('add-atual-nome').focus(), 100);
+    }
+  });
+  $('btn-add-atual-criar').addEventListener('click', criarItemENoAtual);
+  ['add-atual-nome', 'add-atual-tipo'].forEach(id => {
+    $(id).addEventListener('keydown', e => { if (e.key === 'Enter') criarItemENoAtual(); });
   });
 
   $('btn-novo-fornecedor').addEventListener('click', () => abrirModalFornecedor());
@@ -1549,6 +1726,9 @@ function setupEventos() {
   $('modal-membro').addEventListener('click', e => {
     if (e.target.id === 'modal-membro') fecharModalMembro();
   });
+  $('modal-add-atual').addEventListener('click', e => {
+    if (e.target.id === 'modal-add-atual') fecharModalAddAtual();
+  });
 
   $('list-criar').addEventListener('change', e => {
     const action = e.target.dataset.action;
@@ -1582,6 +1762,15 @@ function setupEventos() {
     if (action === 'toggle-cat-atual') toggleCatAtual(target.dataset.catId);
     else if (action === 'remover-da-atual') removerDaListaAtual(itemId);
     else if (action === 'editar-item') abrirModalEditar(itemId);
+  });
+
+  // Delegação - resultados do modal Adicionar à Lista Atual
+  $('add-atual-resultados').addEventListener('click', e => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+    if (target.dataset.action === 'add-to-atual') {
+      adicionarItemDoCatalogoAtual(target.dataset.itemId);
+    }
   });
 
   $('history-list').addEventListener('click', e => {
@@ -1622,6 +1811,7 @@ function setupEventos() {
       if ($('modal-editar').classList.contains('show')) { fecharModalEditar(); return; }
       if ($('modal-fornecedor').classList.contains('show')) { fecharModalFornecedor(); return; }
       if ($('modal-membro').classList.contains('show')) { fecharModalMembro(); return; }
+      if ($('modal-add-atual').classList.contains('show')) { fecharModalAddAtual(); return; }
     }
   });
 
