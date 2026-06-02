@@ -170,6 +170,7 @@
         <button class="btn btn-sm" id="btn-atual-recolher">⊟ Recolher</button>
         <button class="btn btn-sm" id="btn-atual-expandir">⊞ Expandir</button>
         <button class="btn" id="btn-reimprimir">📄 Reimprimir</button>
+        <button class="btn btn-gold" id="btn-add-item-atual">+ Adicionar Item</button>
         <button class="btn btn-primary" id="btn-finalizar">✓ Finalizar Compra</button>
       </div>
 
@@ -386,6 +387,58 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" id="btn-membro-cancelar">Cancelar</button>
       <button class="btn btn-primary" id="btn-membro-salvar">+ Criar Membro</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: ADICIONAR ITEM À LISTA ATUAL -->
+<div class="modal-bg" id="modal-add-atual">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <span class="modal-title">+ Adicionar Item à Lista Atual</span>
+      <button class="modal-close" data-close-modal="modal-add-atual">×</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Busca no catálogo -->
+      <div class="search-wrap" style="margin-bottom:12px">
+        <span class="search-icon">🔍</span>
+        <input type="text" class="search-input" id="search-add-atual" placeholder="Buscar item no catálogo..." autocomplete="off">
+        <button class="search-clear" id="search-add-atual-clear">×</button>
+      </div>
+
+      <!-- Resultados da busca -->
+      <div id="add-atual-resultados" style="max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;background:#fff"></div>
+
+      <!-- Toggle para criar item novo -->
+      <div style="margin-top:14px;text-align:center">
+        <button class="btn btn-sm" id="btn-toggle-novo-item">+ Não achou? Criar item novo</button>
+      </div>
+
+      <!-- Formulário inline de criar novo item -->
+      <div id="add-atual-novo-form" style="display:none;margin-top:12px;padding:14px;border:1.5px dashed var(--gold);border-radius:10px;background:var(--gold-soft)">
+        <div style="font-size:13px;font-weight:700;color:var(--wine);margin-bottom:10px">+ Cadastrar novo produto</div>
+
+        <div class="form-field">
+          <label>Nome do produto</label>
+          <input type="text" id="add-atual-nome" placeholder="Ex: Manga Tommy">
+        </div>
+
+        <div class="form-field">
+          <label>Tipo/Embalagem <span class="optional">(opcional)</span></label>
+          <input type="text" id="add-atual-tipo" placeholder="Ex: kg, fardo, und">
+        </div>
+
+        <div class="form-field">
+          <label>Categoria</label>
+          <select id="add-atual-cat"></select>
+        </div>
+
+        <div id="add-atual-error" class="form-error"></div>
+
+        <button class="btn btn-primary" id="btn-add-atual-criar" style="width:100%;margin-top:6px">+ Cadastrar e adicionar à lista</button>
+      </div>
+
     </div>
   </div>
 </div>
