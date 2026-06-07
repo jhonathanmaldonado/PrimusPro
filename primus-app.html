@@ -298,7 +298,7 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
         <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div></div>
     <div class="grid2"><div><div class="field-label">Tipo</div><select id="editTipo" class="form-select"><option value="fixo">Fixo (registrado)</option><option value="frequente">Frequente (vai sempre)</option></select></div><div><div class="field-label">Diária Padrão (R$)</div><input type="number" id="editDiaria" class="form-input" step="0.01"></div></div>
     <div class="grid2"><div><div class="field-label">Escala padrão Qua–Dom</div><select id="editEscalaFixa" class="form-select"><option value="nao">Manual (marcar na escala)</option><option value="sim">✅ Registrado — pré-marcar Qua a Dom</option></select></div><div></div></div>
-    <div><div class="field-label">Chave Pix</div><input type="text" id="editPix" class="form-input"></div>
+    <div><div class="field-label">Chave Pix</div><div style="display:flex;gap:6px;align-items:stretch"><input type="text" id="editPix" class="form-input" style="flex:1" placeholder="Chave PIX ou clique 'Dinheiro'"><button type="button" class="btn btn-secondary" onclick="document.getElementById('editPix').value='DINHEIRO'" style="background:#FEF3C7;border-color:#F59E0B;color:#78350F;white-space:nowrap;padding:6px 10px;font-size:12px">💵 Dinheiro</button></div></div>
       <div class="grid2">
         <div><div class="field-label">CPF <span style="color:var(--danger)">*</span></div><input type="text" id="editCpf" class="form-input" placeholder="000.000.000-00" maxlength="14" oninput="mascaraCpf(this)"></div>
         <div><div class="field-label">Telefone <span style="color:var(--danger)">*</span></div><input type="text" id="editTelefone" class="form-input" placeholder="(65) 9 9999-9999" maxlength="16" oninput="mascaraTel(this)"></div>
@@ -551,7 +551,7 @@ textarea:focus{outline:none;border-color:var(--accent);background:#fff;}textarea
           <div class="grid2"><div><div class="field-label">Cargo</div><select id="cadCargo" class="form-select"><option>Gerente</option><option>Garçom</option><option>Cumim</option><option>Cozinheiro</option>
         <option>Bar</option><option>Aux. Bar</option><option>Caixa</option><option>Recepcionista</option>
         <option>Monitora</option><option>Aux. Cozinha</option><option>Limpeza</option><option>Segurança</option></select></div><div><div class="field-label">Tipo</div><select id="cadTipo" class="form-select"><option value="fixo">Fixo (registrado)</option><option value="frequente">Frequente (vai sempre)</option></select></div><div><div class="field-label">Escala padrão Qua–Dom</div><select id="cadEscalaFixa" class="form-select"><option value="nao">Manual</option><option value="sim">✅ Pré-marcar Qua a Dom</option></select></div></div>
-          <div class="grid2"><div><div class="field-label">Diária Padrão (R$)</div><input type="number" id="cadDiaria" class="form-input" step="0.01"></div><div><div class="field-label">Chave Pix</div><input type="text" id="cadPix" class="form-input" placeholder="CPF, celular ou e-mail"></div></div>
+          <div class="grid2"><div><div class="field-label">Diária Padrão (R$)</div><input type="number" id="cadDiaria" class="form-input" step="0.01"></div><div><div class="field-label">Chave Pix</div><div style="display:flex;gap:6px;align-items:stretch"><input type="text" id="cadPix" class="form-input" style="flex:1" placeholder="CPF, celular ou e-mail"><button type="button" class="btn btn-secondary" onclick="document.getElementById('cadPix').value='DINHEIRO'" style="background:#FEF3C7;border-color:#F59E0B;color:#78350F;white-space:nowrap;padding:6px 10px;font-size:12px">💵 Dinheiro</button></div></div></div>
       <div class="grid2">
         <div><div class="field-label">CPF <span style="color:var(--danger)">*</span></div><input type="text" id="cadCpf" class="form-input" placeholder="000.000.000-00" maxlength="14" oninput="mascaraCpf(this)"></div>
         <div><div class="field-label">Telefone <span style="color:var(--danger)">*</span></div><input type="text" id="cadTelefone" class="form-input" placeholder="(65) 9 9999-9999" maxlength="16" oninput="mascaraTel(this)"></div>
@@ -1559,8 +1559,12 @@ async function loadFechamento(date) {
     $('monitQtd').disabled = bloqueado;
     $('monitValor').disabled = bloqueado;
     finMonitoraGorjeta = 0;
-    $('diariasList').innerHTML = finPresentes.map(f =>
-      `<div style="border-bottom:1.5px solid var(--border);padding:10px 0">
+    $('diariasList').innerHTML = finPresentes.map(f => {
+      // Mostra opção "Pagar em dinheiro hoje" só para fixos com PIX/Itaú no cadastro
+      // (frequentes e quem já é dinheiro não precisam — não faz sentido a opção)
+      const pixLower = (f.pix || '').toLowerCase();
+      const ehFixoPix = !pixLower.includes('dinheiro') && pixLower.trim() !== '';
+      return `<div style="border-bottom:1.5px solid var(--border);padding:10px 0">
         <div class="diaria-row" style="border:none;padding:0 0 6px">
           <div class="diaria-name">${f.nome}${f.atrasado?' <span class="tag-atrasado">⏰</span>':''}<small>${f.cargo}${f.auxCount>0?` +${f.auxCount} aux.`:''}</small></div>
           ${badge(f.cargo)}
@@ -1578,13 +1582,17 @@ async function loadFechamento(date) {
             </div>
           </div>
         </div>
-        <div style="display:flex;gap:6px;align-items:center">
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
           <input type="text" id="motivo-${f.id}" placeholder="Motivo do desconto (opcional)..."
-            style="flex:1;background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;color:var(--text);font-family:inherit"
+            style="flex:1;min-width:160px;background:var(--surface2);border:1.5px solid var(--border);border-radius:6px;padding:5px 10px;font-size:12px;color:var(--text);font-family:inherit"
             ${bloqueado?'disabled':''}>
+          ${ehFixoPix ? `<label style="display:flex;align-items:center;gap:5px;font-size:11px;background:#FEF3C7;border:1px solid #F59E0B;color:#78350F;padding:4px 8px;border-radius:6px;cursor:pointer;white-space:nowrap" title="Pagar este dia em dinheiro (ex: funcionário de férias)">
+            <input type="checkbox" id="dinheiro-${f.id}" style="margin:0" ${bloqueado?'disabled':''}>
+            💵 Pagar em dinheiro hoje
+          </label>` : ''}
         </div>
-      </div>`
-    ).join('');
+      </div>`;
+    }).join('');
     $('fechContent').style.display = 'block';
     $('fechEmpty').style.display   = 'none';
     $('fechPdfBtn').style.display  = 'block';
@@ -1607,6 +1615,8 @@ async function carregarDiariasSalvas(date) {
         if(elDesc && s.data().desconto) elDesc.value = s.data().desconto;
         const elMotivo = $(`motivo-${finPresentes[i].id}`);
         if(elMotivo && s.data().motivoDesconto) elMotivo.value = s.data().motivoDesconto;
+        const elDinheiro = $(`dinheiro-${finPresentes[i].id}`);
+        if(elDinheiro && s.data().pagoEmDinheiro) elDinheiro.checked = true;
         gt = s.data().baseGorjeta || gt;
       }
     });
@@ -1743,6 +1753,7 @@ async function salvarFechamento(fechar=false) {
       const c  = f.consumo||0;
       const dc = parseFloat($(`desconto-${f.id}`)?.value||0)||0;
       const motivo = $(`motivo-${f.id}`)?.value?.trim()||'';
+      const dinheiroHoje = $(`dinheiro-${f.id}`)?.checked || false;
       const l  = d+g-c-dc;
       td+=d; tc+=c; tl+=l;
       batch.set(db.collection('fechamento_funcionario').doc(`${finDate}_${f.id}`),{
@@ -1750,6 +1761,7 @@ async function salvarFechamento(fechar=false) {
         presente:true,atrasado:f.atrasado,consumo:c,diaria:d,gorjeta:g,
         gorjetaBase:gBase,gorjetaMonitora:gMon,gorjetaRecep:gRec,
         desconto:dc,motivoDesconto:motivo,
+        pagoEmDinheiro:dinheiroHoje,
         baseGorjeta:gt,percentualCargo:pctGorjeta(f.cargo),
         regrasGorjetaSnapshot:rSnapshot,totalLiquido:l,pix:f.pix||'',
         criadoPor:currentUser.uid,criadoEm:firebase.firestore.FieldValue.serverTimestamp(),versao:1
@@ -1875,14 +1887,16 @@ async function salvarAjusteRetroativo() {
       const c  = f.consumo||0;
       const dc = parseFloat($(`desconto-${f.id}`)?.value||0)||0;
       const motivoLinha = $(`motivo-${f.id}`)?.value?.trim()||'';
+      const dinheiroHoje = $(`dinheiro-${f.id}`)?.checked || false;
       const l  = d+g-c-dc;
       td+=d; tc+=c; tl+=l;
-      depoisPayload[f.id] = {diaria:d, desconto:dc, motivo:motivoLinha};
+      depoisPayload[f.id] = {diaria:d, desconto:dc, motivo:motivoLinha, pagoEmDinheiro:dinheiroHoje};
       batch.set(db.collection('fechamento_funcionario').doc(`${finDate}_${f.id}`),{
         data:finDate,funcId:f.id,nomeSnapshot:f.nome,cargoSnapshot:f.cargo,
         presente:true,atrasado:f.atrasado,consumo:c,diaria:d,gorjeta:g,
         gorjetaBase:gBase,gorjetaMonitora:gMon,gorjetaRecep:gRec,
         desconto:dc,motivoDesconto:motivoLinha,
+        pagoEmDinheiro:dinheiroHoje,
         baseGorjeta:gt,percentualCargo:pctGorjeta(f.cargo),
         regrasGorjetaSnapshot:rSnapshot,totalLiquido:l,pix:f.pix||'',
         atualizadoPor:currentUser.uid,
@@ -1989,7 +2003,8 @@ async function renderPagamentos() {
           pix,
           cpf: cad.cpf || r.cpf || '',
           telefone: cad.telefone || r.telefone || '',
-          isRegistrado, tipo: cad.tipo || 'fixo', dias:[], gorjeta:0, diarias:0, consumo:0, total:0
+          isRegistrado, tipo: cad.tipo || 'fixo', dias:[], gorjeta:0, diarias:0, consumo:0, total:0,
+          diasEmDinheiro:[], totalEmDinheiro:0
         };
       }
       totals[r.funcId].dias.push(r.data);
@@ -1997,6 +2012,10 @@ async function renderPagamentos() {
       totals[r.funcId].diarias  += r.diaria||0;
       totals[r.funcId].consumo  += r.consumo||0;
       totals[r.funcId].total    += r.totalLiquido||0;
+      if(r.pagoEmDinheiro) {
+        totals[r.funcId].diasEmDinheiro.push(r.data);
+        totals[r.funcId].totalEmDinheiro += r.totalLiquido||0;
+      }
     });
 
     const sorted = Object.values(totals).sort((a,b)=>b.total-a.total);
@@ -2007,10 +2026,15 @@ async function renderPagamentos() {
     const diaristas   = sorted.filter(t => !t.isRegistrado);
 
     const totalGeral      = sorted.reduce((a,t)=>a+t.total,0);
-    const totalRegistrado = registrados.reduce((a,t)=>a+t.total,0);
+    // Fixos vão pela folha — MENOS valores pagos em dinheiro pontualmente
+    const totalRegistradoDinheiro = registrados.reduce((a,t)=>a+(t.totalEmDinheiro||0),0);
+    const totalRegistrado = registrados.reduce((a,t)=>a+t.total,0) - totalRegistradoDinheiro;
     const totalDiarista   = diaristas.reduce((a,t)=>a+t.total,0);
     const totalPix        = diaristas.reduce((a,t)=>a+(t.pix&&t.pix.toUpperCase()!=='DINHEIRO'?t.total:0),0);
-    const totalDinheiro   = sorted.reduce((a,t)=>a+(t.pix.toUpperCase()==='DINHEIRO'?t.total:0),0);
+    // Dinheiro = diaristas com PIX=DINHEIRO + qualquer override pontual em fixos
+    const totalDinheiroNorm = sorted.reduce((a,t)=>a+(t.pix.toUpperCase()==='DINHEIRO'?t.total:0),0);
+    const totalDinheiroOverride = registrados.filter(t=>t.pix.toUpperCase()!=='DINHEIRO').reduce((a,t)=>a+(t.totalEmDinheiro||0),0);
+    const totalDinheiro   = totalDinheiroNorm + totalDinheiroOverride;
 
     const lbl = {semana:'Esta Semana',semana_ant:'Semana Anterior',mes:'Este Mês',custom:'Período Personalizado'}[$('pgtoTipo').value];
 
@@ -3442,7 +3466,9 @@ async function _agregarPagamentos(de, ate) {
       totals[r.funcId] = {
         nome: cad.nome || r.nomeSnapshot,
         cargo: cad.cargo || r.cargoSnapshot,
-        pix, isRegistrado, dias:[], gorjeta:0, diarias:0, consumo:0, total:0
+        pix, isRegistrado, dias:[], gorjeta:0, diarias:0, consumo:0, total:0,
+        // Override: dias em que esse funcionário fixo recebeu em dinheiro pontualmente
+        diasEmDinheiro:[], totalEmDinheiro:0
       };
     }
     totals[r.funcId].dias.push(r.data);
@@ -3450,6 +3476,11 @@ async function _agregarPagamentos(de, ate) {
     totals[r.funcId].diarias  += r.diaria||0;
     totals[r.funcId].consumo  += r.consumo||0;
     totals[r.funcId].total    += r.totalLiquido||0;
+    // Marca pagamento em dinheiro pontual (override do PIX cadastrado)
+    if(r.pagoEmDinheiro) {
+      totals[r.funcId].diasEmDinheiro.push(r.data);
+      totals[r.funcId].totalEmDinheiro += r.totalLiquido||0;
+    }
   });
   return Object.values(totals).sort((a,b) => b.total - a.total);
 }
@@ -3467,17 +3498,20 @@ function _tabelaPgto(titulo, lista, totalGrupo) {
     <table>
       <thead><tr><th class="check-cell">✓</th><th>Funcionário</th><th>Cargo</th><th>Pagamento</th><th class="r">Dias</th><th class="r">Diárias</th><th class="r">Gorjeta</th><th class="r">(-) Cons.</th><th class="r">Total</th></tr></thead>
       <tbody>
-        ${lista.map(t => `<tr>
+        ${lista.map(t => {
+          const temOverride = (t.totalEmDinheiro||0) > 0 && t.pix.toUpperCase() !== 'DINHEIRO';
+          return `<tr>
           <td class="check-cell"><span class="check-box"></span></td>
           <td><strong>${t.nome}</strong></td>
           <td>${t.cargo}</td>
-          <td style="font-size:10px">${_metodoPgto(t.pix)}</td>
+          <td style="font-size:10px">${_metodoPgto(t.pix)}${temOverride?`<div style="font-size:9px;color:#A05E1E;margin-top:2px">💵 ${fmt(t.totalEmDinheiro)} em dinheiro (${t.diasEmDinheiro.length} dia${t.diasEmDinheiro.length!==1?'s':''})</div>`:''}</td>
           <td class="r">${t.dias.length}</td>
           <td class="r">${fmt(t.diarias)}</td>
           <td class="r">${fmt(t.gorjeta)}</td>
           <td class="r neg">${t.consumo>0?'- '+fmt(t.consumo):'—'}</td>
           <td class="r pos">${fmt(t.total)}</td>
-        </tr>`).join('')}
+        </tr>`;
+        }).join('')}
         <tr class="total-row"><td colspan="8">Subtotal</td><td class="r">${fmt(totalGrupo)}</td></tr>
       </tbody>
     </table>`;
@@ -3496,15 +3530,22 @@ async function gerarPDFPagamentos(tipoForcado) {
     const registrados = sorted.filter(t => t.isRegistrado);
     const diaristas   = sorted.filter(t => !t.isRegistrado);
     const totalGeral      = sorted.reduce((a,t) => a + t.total, 0);
-    const totalRegistrado = registrados.reduce((a,t) => a + t.total, 0);
+    // Fixos vão pela folha — MENOS os valores que foram pagos em dinheiro pontualmente
+    const totalRegistradoDinheiro = registrados.reduce((a,t) => a + (t.totalEmDinheiro||0), 0);
+    const totalRegistrado = registrados.reduce((a,t) => a + t.total, 0) - totalRegistradoDinheiro;
     const totalDiarista   = diaristas.reduce((a,t) => a + t.total, 0);
-    // Pix x Dinheiro com contagem (apenas entre diaristas — fixos vão pela folha)
+    // Pix x Dinheiro com contagem
     const pixList      = diaristas.filter(t => t.pix && t.pix.toUpperCase() !== 'DINHEIRO');
-    const dinheiroList = sorted.filter(t => t.pix.toUpperCase() === 'DINHEIRO');
+    // Dinheiro = diaristas com PIX=DINHEIRO + qualquer override pontual em fixos
+    const dinheiroDiaristas = sorted.filter(t => t.pix.toUpperCase() === 'DINHEIRO');
     const totalPix      = pixList.reduce((a,t) => a + t.total, 0);
-    const totalDinheiro = dinheiroList.reduce((a,t) => a + t.total, 0);
+    const totalDinheiroNorm = dinheiroDiaristas.reduce((a,t) => a + t.total, 0);
+    // Soma os overrides dos registrados que NÃO são DINHEIRO fixo (evita dupla contagem)
+    const totalDinheiroOverride = registrados.filter(t => t.pix.toUpperCase() !== 'DINHEIRO').reduce((a,t) => a + (t.totalEmDinheiro||0), 0);
+    const totalDinheiro = totalDinheiroNorm + totalDinheiroOverride;
     const qtdPix      = pixList.length;
-    const qtdDinheiro = dinheiroList.length;
+    const qtdOverride = registrados.filter(t => (t.totalEmDinheiro||0) > 0 && t.pix.toUpperCase() !== 'DINHEIRO').length;
+    const qtdDinheiro = dinheiroDiaristas.length + qtdOverride;
     const lblPeriodo = {semana:'Pagamentos da Semana',semana_ant:'Pagamentos da Semana Anterior',mes:'Pagamentos do Mês',custom:'Pagamentos do Período'}[$('pgtoTipo').value] || 'Pagamentos';
     const subtitulo = `${de.split('-').reverse().join('/')} → ${ate.split('-').reverse().join('/')} · ${sorted.length} funcionário(s)`;
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
@@ -3512,7 +3553,7 @@ async function gerarPDFPagamentos(tipoForcado) {
       ${_pdfHeader(lblPeriodo, subtitulo)}
       <div class="resumo-box">
         <div><div class="lbl">Total Geral</div><div class="val accent">${fmt(totalGeral)}</div></div>
-        <div><div class="lbl">Fixos (folha)</div><div class="val">${fmt(totalRegistrado)}</div><div class="lbl" style="margin-top:4px">${registrados.length} func.</div></div>
+        <div><div class="lbl">Fixos (folha)</div><div class="val">${fmt(totalRegistrado)}</div><div class="lbl" style="margin-top:4px">${registrados.length} func.${totalRegistradoDinheiro>0?` <span style="color:#A05E1E">· ${fmt(totalRegistradoDinheiro)} em dinheiro</span>`:''}</div></div>
         <div><div class="lbl">Frequentes</div><div class="val">${fmt(totalDiarista)}</div><div class="lbl" style="margin-top:4px">${diaristas.length} func.</div></div>
         <div><div class="lbl">📱 Pix a transferir</div><div class="val success">${fmt(totalPix)}</div><div class="lbl" style="margin-top:4px">${qtdPix} transferência${qtdPix!==1?'s':''}</div></div>
         <div><div class="lbl">💵 Dinheiro</div><div class="val">${fmt(totalDinheiro)}</div><div class="lbl" style="margin-top:4px">${qtdDinheiro} pagamento${qtdDinheiro!==1?'s':''}</div></div>
@@ -3593,15 +3634,15 @@ async function gerarRelatorioMensalFixos() {
     const mesLabel = `${MESES_FMT[mes-1]}/${ano}`;
     // Gerar uma seção por funcionário
     let totalFolha = 0;
-    // Larguras compactas para layout 2x2 (cada célula ~ quarto da A4 retrato)
-    // Data narrowed; outras colunas com largura proporcional para acomodar valores
+    // Larguras compactas para layout 2x2 (cada célula = 95mm de largura)
+    // Total: 32+46+50+44+50+54 = 276px ≈ 73mm (deixa folga de 22mm para padding)
     const COLGROUP = `<colgroup>
-      <col style="width:38px">
-      <col style="width:42px">
-      <col style="width:46px">
-      <col style="width:42px">
+      <col style="width:32px">
       <col style="width:46px">
       <col style="width:50px">
+      <col style="width:44px">
+      <col style="width:50px">
+      <col style="width:54px">
     </colgroup>`;
     const TABLE_HEAD = `<thead><tr>
       <th>Data</th><th class="r">Diár.</th><th class="r">Gorj.</th><th class="r">Cons.</th><th class="r">Desc.</th><th class="r">Total</th>
@@ -3660,10 +3701,10 @@ async function gerarRelatorioMensalFixos() {
     for(let i = 0; i < secoesArr.length; i += 4) {
       quartetos.push(secoesArr.slice(i, i + 4));
     }
+    const POS = ['tl','tr','bl','br'];
     const secoes = quartetos.map((quart, idx) => {
       const isLast = idx === quartetos.length - 1;
-      // Garante 4 células (preenche com vazios se ímpar no final)
-      const celulas = [0,1,2,3].map(i => `<div class="quad-cel">${quart[i] || ''}</div>`).join('');
+      const celulas = [0,1,2,3].map(i => quart[i] ? `<div class="quad-cel ${POS[i]}">${quart[i]}</div>` : '').join('');
       return `<div class="pagina-quad${isLast ? ' last' : ''}">${celulas}</div>`;
     }).join('');
     const subtitulo = `${mesLabel} · ${fixos.length} fixo(s) · ${datasOrdenadas.length} dia(s)`;
@@ -3685,32 +3726,35 @@ async function gerarRelatorioMensalFixos() {
         .resumo-mini .val { font-weight:800; }
         .resumo-mini .val.accent { color:#C8782A; }
         .obs-mini { background:#FEF3C7; border-left:3px solid #F59E0B; padding:4px 8px; margin:4px 0 8px; font-size:8px; color:#78350F; }
-        /* Layout 2x2 — 4 funcionários por página (grid 2 cols × 2 rows) */
-        /* Altura fixa em mm garante que cada quadrante tenha o mesmo tamanho independente do conteúdo */
-        .pagina-quad { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:130mm 130mm; gap:5mm 6mm; page-break-after:always; }
+        /* Layout 2x2 — página A4 fixa com 4 funcionários posicionados absolutamente */
+        .pagina-quad { position:relative; width:194mm; height:277mm; page-break-after:always; page-break-inside:avoid; overflow:hidden; }
         .pagina-quad.last { page-break-after:auto; }
-        .quad-cel { min-width:0; overflow:hidden; }
-        .func-card { page-break-inside:avoid; height:100%; display:flex; flex-direction:column; }
-        .func-head { display:flex; justify-content:space-between; align-items:center; padding:3px 7px; background:#F7F4EF; border-left:2.5px solid #C8782A; gap:5px; flex-shrink:0; }
+        .quad-cel { position:absolute; width:95mm; height:135mm; overflow:hidden; }
+        .quad-cel.tl { top:0;     left:0; }
+        .quad-cel.tr { top:0;     right:0; }
+        .quad-cel.bl { bottom:0;  left:0; }
+        .quad-cel.br { bottom:0;  right:0; }
+        .func-card { height:100%; display:flex; flex-direction:column; }
+        .func-head { display:flex; justify-content:space-between; align-items:center; padding:4px 8px; background:#F7F4EF; border-left:3px solid #C8782A; gap:6px; flex-shrink:0; }
         .func-nome { min-width:0; flex:1; }
-        .func-nome .nome { font-size:10px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-        .func-nome .sub { font-size:7.5px; color:#8A837A; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .func-nome .nome { font-size:11px; font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .func-nome .sub { font-size:8px; color:#8A837A; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
         .func-total { text-align:right; flex-shrink:0; }
-        .func-total .lbl { font-size:6px; color:#8A837A; text-transform:uppercase; letter-spacing:.5px; }
-        .func-total .val { font-size:11px; font-weight:800; color:#065F46; line-height:1.1; }
-        .func-total .sub { font-size:7px; color:#8A837A; }
-        table.folha-table { width:100%; border-collapse:collapse; font-size:8px; table-layout:fixed; margin-top:2px; }
-        table.folha-table th { background:#FAF7F2; color:#4A4540; text-align:left; padding:2px 3px; border-bottom:1px solid #E2DDD5; font-weight:700; text-transform:uppercase; letter-spacing:.2px; font-size:7px; }
+        .func-total .lbl { font-size:6.5px; color:#8A837A; text-transform:uppercase; letter-spacing:.5px; }
+        .func-total .val { font-size:12px; font-weight:800; color:#065F46; line-height:1.1; }
+        .func-total .sub { font-size:7.5px; color:#8A837A; }
+        table.folha-table { width:100%; border-collapse:collapse; font-size:9px; table-layout:fixed; margin-top:3px; }
+        table.folha-table th { background:#FAF7F2; color:#4A4540; text-align:left; padding:2.5px 4px; border-bottom:1px solid #E2DDD5; font-weight:700; text-transform:uppercase; letter-spacing:.2px; font-size:7.5px; }
         table.folha-table th.r { text-align:right; }
-        table.folha-table td { padding:1.5px 3px; border-bottom:1px solid #F2EFE9; vertical-align:top; word-break:break-word; line-height:1.2; }
+        table.folha-table td { padding:2px 4px; border-bottom:1px solid #F2EFE9; vertical-align:top; word-break:break-word; line-height:1.2; }
         table.folha-table td.r { text-align:right; }
         table.folha-table td.pos { color:#065F46; font-weight:700; }
         table.folha-table td.neg { color:#C0392B; }
-        table.folha-table .motivo { font-size:6px; color:#C0392B; font-style:italic; line-height:1.1; margin-top:0.5px; }
+        table.folha-table .motivo { font-size:6.5px; color:#C0392B; font-style:italic; line-height:1.1; margin-top:0.5px; }
         .row-falta td { color:#C0392B; background:#FEF5F4; }
         .row-pend td { color:#A05E1E; background:#FEF9EB; }
-        .total-row td { font-weight:800; background:#F5E6D3; border-top:1.2px solid #C8782A; padding:2px 3px; font-size:8px; }
-        .sem-lanc { padding:4px 7px; color:#8A837A; font-size:8px; font-style:italic; background:#FAFAF8; }
+        .total-row td { font-weight:800; background:#F5E6D3; border-top:1.5px solid #C8782A; padding:2.5px 4px; font-size:9px; }
+        .sem-lanc { padding:5px 8px; color:#8A837A; font-size:9px; font-style:italic; background:#FAFAF8; }
         .footer-mini { margin-top:8px; padding-top:4px; border-top:1px solid #E2DDD5; display:flex; justify-content:space-between; font-size:6.5px; color:#8A837A; }
         @media print { @page { margin: 7mm 8mm; size: A4; } body { padding: 0; } }
       </style></head><body>
