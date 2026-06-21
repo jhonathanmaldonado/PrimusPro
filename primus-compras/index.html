@@ -8,6 +8,81 @@
 <link rel="icon" type="image/png" href="img/logo_compras.png">
 <link rel="apple-touch-icon" href="img/logo_compras.png">
 <link rel="stylesheet" href="css/styles.css">
+<style>
+/* Paleta de cores para categorias */
+.color-palette {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+.color-option {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 3px solid transparent;
+  transition: all 0.15s;
+  position: relative;
+}
+.color-option:hover {
+  transform: scale(1.08);
+}
+.color-option.selected {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 2px var(--gold);
+}
+.color-option.selected::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 18px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+/* Cards de categorias */
+.cats-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.cat-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.cat-card-color {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.cat-card-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.cat-card-name {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--ink);
+}
+.cat-card-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+</style>
 </head>
 <body>
 
@@ -143,6 +218,7 @@
 
       <div id="list-criar"></div>
 
+      <!-- Bloco: Adicionar novo produto -->
       <div class="add-section">
         <div class="add-section-title">+ Adicionar novo produto ao catálogo</div>
         <div class="add-panel">
@@ -159,6 +235,17 @@
             <select id="new-cat"></select>
           </div>
           <button class="btn btn-primary" id="btn-add-item">+ Adicionar</button>
+        </div>
+      </div>
+
+      <!-- Bloco: Gerenciar categorias -->
+      <div class="add-section" style="margin-top:14px;border-color:var(--wine-soft);background:var(--wine-soft)">
+        <div class="add-section-title" style="background:#f1d8de;border-bottom-color:#e0bcc5">🗂️ Gerenciar categorias</div>
+        <div style="padding:14px">
+          <p style="font-size:12px;color:var(--muted);margin-bottom:10px">
+            Crie, edite ou remova categorias do catálogo.
+          </p>
+          <button class="btn btn-primary" id="btn-gerenciar-cats" style="width:100%">⚙️ Abrir gerenciador de categorias</button>
         </div>
       </div>
     </div>
@@ -400,22 +487,18 @@
     </div>
     <div class="modal-body">
 
-      <!-- Busca no catálogo -->
       <div class="search-wrap" style="margin-bottom:12px">
         <span class="search-icon">🔍</span>
         <input type="text" class="search-input" id="search-add-atual" placeholder="Buscar item no catálogo..." autocomplete="off">
         <button class="search-clear" id="search-add-atual-clear">×</button>
       </div>
 
-      <!-- Resultados da busca -->
       <div id="add-atual-resultados" style="max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;background:#fff"></div>
 
-      <!-- Toggle para criar item novo -->
       <div style="margin-top:14px;text-align:center">
         <button class="btn btn-sm" id="btn-toggle-novo-item">+ Não achou? Criar item novo</button>
       </div>
 
-      <!-- Formulário inline de criar novo item -->
       <div id="add-atual-novo-form" style="display:none;margin-top:12px;padding:14px;border:1.5px dashed var(--gold);border-radius:10px;background:var(--gold-soft)">
         <div style="font-size:13px;font-weight:700;color:var(--wine);margin-bottom:10px">+ Cadastrar novo produto</div>
 
@@ -438,6 +521,60 @@
 
         <button class="btn btn-primary" id="btn-add-atual-criar" style="width:100%;margin-top:6px">+ Cadastrar e adicionar à lista</button>
       </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: GERENCIAR CATEGORIAS -->
+<div class="modal-bg" id="modal-categorias">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <span class="modal-title">🗂️ Gerenciar Categorias</span>
+      <button class="modal-close" data-close-modal="modal-categorias">×</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Formulário: criar nova categoria -->
+      <div style="padding:12px;border:1.5px dashed var(--gold);border-radius:10px;background:var(--gold-soft);margin-bottom:14px">
+        <div style="font-size:13px;font-weight:700;color:var(--wine);margin-bottom:10px" id="cat-form-titulo">+ Nova categoria</div>
+
+        <input type="hidden" id="cat-edit-id">
+
+        <div class="form-field">
+          <label>Nome da categoria</label>
+          <input type="text" id="cat-nome" placeholder="Ex: Hortifruti">
+        </div>
+
+        <div class="form-field">
+          <label>Cor</label>
+          <div class="color-palette" id="cat-color-palette">
+            <div class="color-option" data-cor="#7A1F38" style="background:#7A1F38" title="Vinho"></div>
+            <div class="color-option" data-cor="#4a7c3a" style="background:#4a7c3a" title="Verde"></div>
+            <div class="color-option" data-cor="#1e3a8a" style="background:#1e3a8a" title="Azul Marinho"></div>
+            <div class="color-option" data-cor="#d97706" style="background:#d97706" title="Laranja"></div>
+            <div class="color-option" data-cor="#78350f" style="background:#78350f" title="Marrom"></div>
+            <div class="color-option" data-cor="#be185d" style="background:#be185d" title="Rosa"></div>
+            <div class="color-option" data-cor="#6b21a8" style="background:#6b21a8" title="Roxo"></div>
+            <div class="color-option" data-cor="#0284c7" style="background:#0284c7" title="Azul Claro"></div>
+            <div class="color-option" data-cor="#a16207" style="background:#a16207" title="Dourado"></div>
+            <div class="color-option" data-cor="#475569" style="background:#475569" title="Cinza"></div>
+          </div>
+        </div>
+
+        <div id="cat-error" class="form-error"></div>
+
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button class="btn btn-ghost" id="btn-cat-cancelar" style="display:none">Cancelar</button>
+          <button class="btn btn-primary" id="btn-cat-salvar" style="flex:1">+ Criar categoria</button>
+        </div>
+      </div>
+
+      <!-- Lista de categorias existentes -->
+      <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">
+        Categorias cadastradas
+      </div>
+      <div class="cats-list" id="cats-list"></div>
 
     </div>
   </div>
