@@ -1,5 +1,5 @@
 // ============================================================================
-// DB.JS — Camada de acesso ao Firestore
+// DB.JS — Camada de acesso ao Firestore (com CRUD de categorias)
 // ============================================================================
 
 import { db } from './firebase-init.js';
@@ -82,7 +82,7 @@ export async function deletarUsuario(uid) {
 }
 
 // ============================================================================
-// CATEGORIAS
+// CATEGORIAS (CRUD)
 // ============================================================================
 
 export function observarCategorias(callback) {
@@ -91,6 +91,32 @@ export function observarCategorias(callback) {
     const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     callback(lista);
   });
+}
+
+export async function criarCategoria(dados) {
+  const ref = doc(CATEGORIAS());
+  await setDoc(ref, {
+    nome: dados.nome,
+    cor: dados.cor || '#7A1F38',
+    ordem: dados.ordem ?? 0,
+    ...auditFields({ criadoEm: serverTimestamp() })
+  });
+  return ref.id;
+}
+
+export async function atualizarCategoria(catId, dados) {
+  const ref = doc(CATEGORIAS(), catId);
+  await updateDoc(ref, { ...dados, ...auditFields() });
+}
+
+export async function deletarCategoria(catId) {
+  // Verifica se tem itens vinculados
+  const q = query(ITENS(), where('categoriaId', '==', catId));
+  const snap = await getDocs(q);
+  if (snap.size > 0) {
+    throw new Error(`Esta categoria tem ${snap.size} item(ns) vinculado(s). Mova ou remova os itens antes de excluir.`);
+  }
+  await deleteDoc(doc(CATEGORIAS(), catId));
 }
 
 // ============================================================================
@@ -238,7 +264,6 @@ export async function removerItemListaAtual(itemId) {
   await deleteDoc(doc(LISTA_ATUAL(), itemId));
 }
 
-// Adiciona item do catálogo à Lista Atual (com qtd inicial)
 export async function adicionarItemListaAtual(itemId, qtdInicial = 0) {
   const ref = doc(LISTA_ATUAL(), itemId);
   const existing = await getDoc(ref);
