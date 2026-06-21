@@ -1,5 +1,5 @@
 // ============================================================================
-// APP.JS — Orquestrador principal (com Adicionar Item à Lista Atual)
+// APP.JS — Orquestrador principal (com gerenciamento de categorias)
 // ============================================================================
 
 import './firebase-init.js';
@@ -22,6 +22,9 @@ import {
   observarHistorico,
   observarFornecedores,
   observarUsuarios,
+  criarCategoria,
+  atualizarCategoria,
+  deletarCategoria,
   criarItem,
   atualizarItem,
   deletarItem,
@@ -66,6 +69,10 @@ let searchFornecedores = '';
 let searchAddAtual = '';
 let currentTab = 'criar';
 let mediaN = 5;
+
+// Categoria modal
+let catEditandoId = null;
+let catCorSelecionada = '#7A1F38';
 
 let unsubsRefs = [];
 
@@ -273,12 +280,14 @@ function iniciarListeners() {
     categorias = cats;
     popularSelectCategoria();
     renderTudo();
+    if ($('modal-categorias').classList.contains('show')) renderListaCategoriasModal();
   }));
 
   unsubsRefs.push(observarItens((its) => {
     itens = its;
     renderTudo();
     if ($('modal-add-atual').classList.contains('show')) renderResultadosAddAtual();
+    if ($('modal-categorias').classList.contains('show')) renderListaCategoriasModal();
   }));
 
   unsubsRefs.push(observarListaEmCriacao((lista) => {
@@ -589,6 +598,154 @@ function popularSelectFornecedor() {
   sel.appendChild(optNovo);
 
   if (valorAtual) sel.value = valorAtual;
+}
+
+// ============================================================================
+// GERENCIAR CATEGORIAS (modal)
+// ============================================================================
+
+function abrirModalCategorias() {
+  resetarFormularioCategoria();
+  $('modal-categorias').classList.add('show');
+  renderListaCategoriasModal();
+  setTimeout(() => $('cat-nome').focus(), 100);
+}
+
+function fecharModalCategorias() {
+  $('modal-categorias').classList.remove('show');
+  catEditandoId = null;
+}
+
+function resetarFormularioCategoria() {
+  catEditandoId = null;
+  catCorSelecionada = '#7A1F38';
+  $('cat-edit-id').value = '';
+  $('cat-nome').value = '';
+  $('cat-form-titulo').textContent = '+ Nova categoria';
+  $('btn-cat-salvar').textContent = '+ Criar categoria';
+  $('btn-cat-cancelar').style.display = 'none';
+  $('cat-error').classList.remove('show');
+  $('cat-error').textContent = '';
+  atualizarCoresSelecionada();
+}
+
+function atualizarCoresSelecionada() {
+  const opts = document.querySelectorAll('#cat-color-palette .color-option');
+  opts.forEach(o => {
+    o.classList.toggle('selected', o.dataset.cor === catCorSelecionada);
+  });
+}
+
+function renderListaCategoriasModal() {
+  const el = $('cats-list');
+  if (!categorias.length) {
+    el.innerHTML = '<div style="padding:14px;text-align:center;color:var(--muted);font-size:12px">Nenhuma categoria cadastrada.</div>';
+    return;
+  }
+  let html = '';
+  for (const cat of categorias) {
+    const qtdItens = itens.filter(i => i.categoriaId === cat.id).length;
+    html += `<div class="cat-card">`;
+    html += `<div class="cat-card-color" style="background:${escHtml(cat.cor)}"></div>`;
+    html += `<div class="cat-card-info">`;
+    html += `<div class="cat-card-name">${escHtml(cat.nome)}</div>`;
+    html += `<div class="cat-card-meta">${qtdItens} item(ns)</div>`;
+    html += `</div>`;
+    html += `<span class="item-actions">`;
+    html += `<button class="icon-btn edit" data-action="editar-cat" data-cat-id="${cat.id}" title="Editar">✏️</button>`;
+    html += `<button class="icon-btn danger" data-action="remover-cat" data-cat-id="${cat.id}" title="Remover">×</button>`;
+    html += `</span>`;
+    html += `</div>`;
+  }
+  el.innerHTML = html;
+}
+
+function editarCategoria(catId) {
+  const cat = categorias.find(c => c.id === catId);
+  if (!cat) return;
+
+  catEditandoId = catId;
+  catCorSelecionada = cat.cor || '#7A1F38';
+  $('cat-edit-id').value = catId;
+  $('cat-nome').value = cat.nome;
+  $('cat-form-titulo').textContent = '✏️ Editar categoria';
+  $('btn-cat-salvar').textContent = '💾 Salvar alterações';
+  $('btn-cat-cancelar').style.display = 'inline-block';
+  $('cat-error').classList.remove('show');
+  atualizarCoresSelecionada();
+  $('cat-nome').focus();
+}
+
+async function salvarCategoria() {
+  const nome = $('cat-nome').value.trim();
+  const err = $('cat-error');
+
+  if (!nome) {
+    err.textContent = 'Nome da categoria é obrigatório';
+    err.classList.add('show');
+    return;
+  }
+
+  // Verificar nome duplicado
+  const dup = categorias.find(c =>
+    c.nome.toLowerCase() === nome.toLowerCase() && c.id !== catEditandoId
+  );
+  if (dup) {
+    err.textContent = 'Já existe uma categoria com esse nome';
+    err.classList.add('show');
+    return;
+  }
+
+  err.classList.remove('show');
+  const btn = $('btn-cat-salvar');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+
+  try {
+    if (catEditandoId) {
+      await atualizarCategoria(catEditandoId, {
+        nome,
+        cor: catCorSelecionada
+      });
+      showToast(`✓ "${nome}" atualizada`, 'success');
+    } else {
+      const proxOrdem = categorias.length;
+      await criarCategoria({
+        nome,
+        cor: catCorSelecionada,
+        ordem: proxOrdem
+      });
+      showToast(`✓ "${nome}" criada`, 'success');
+    }
+    resetarFormularioCategoria();
+  } catch (e) {
+    err.textContent = 'Erro: ' + e.message;
+    err.classList.add('show');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function removerCategoria(catId) {
+  const cat = categorias.find(c => c.id === catId);
+  if (!cat) return;
+
+  const itensCat = itens.filter(i => i.categoriaId === catId);
+  if (itensCat.length > 0) {
+    if (!confirm(`Esta categoria tem ${itensCat.length} item(ns) vinculado(s).\n\nPara remover, primeiro mova ou exclua os itens dela.\n\nDeseja ver os itens dessa categoria na aba "Criar Lista"?`)) return;
+    fecharModalCategorias();
+    showToast(`⚠ Categoria "${cat.nome}" tem ${itensCat.length} item(ns) vinculado(s)`, 'error');
+    return;
+  }
+
+  if (!confirm(`Remover a categoria "${cat.nome}"?`)) return;
+
+  try {
+    await deletarCategoria(catId);
+    showToast(`✓ "${cat.nome}" removida`, 'success');
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
+  }
 }
 
 // ============================================================================
@@ -1064,7 +1221,7 @@ async function removerMembro(uid) {
 }
 
 // ============================================================================
-// ADICIONAR ITEM À LISTA ATUAL (NOVO)
+// ADICIONAR ITEM À LISTA ATUAL
 // ============================================================================
 
 function abrirModalAddAtual() {
@@ -1092,10 +1249,8 @@ function renderResultadosAddAtual() {
   const el = $('add-atual-resultados');
   if (!el) return;
 
-  // Itens do catálogo que NÃO estão na lista atual
   const itensDisponiveis = itens.filter(i => !listaAtualMap[i.id]);
 
-  // Filtra por busca
   const filtrados = itensDisponiveis.filter(i => {
     if (!searchAddAtual) return true;
     return matchesSearch(i, searchAddAtual);
@@ -1131,7 +1286,6 @@ function renderResultadosAddAtual() {
     <th class="col-actions"></th>
   </tr></thead><tbody>`;
 
-  // Limita a 30 resultados pra não pesar
   const limited = filtrados.slice(0, 30);
 
   for (const item of limited) {
@@ -1195,10 +1349,7 @@ async function criarItemENoAtual() {
     const itensCat = itens.filter(i => i.categoriaId === catId);
     const proxOrdem = itensCat.length;
 
-    // Cria o item no catálogo
     const novoId = await criarItem({ nome, tipo, categoriaId: catId, ordem: proxOrdem });
-
-    // Adiciona já à lista atual
     await adicionarItemListaAtual(novoId, 0);
 
     showToast(`✓ "${nome}" criado e adicionado à lista`, 'success');
@@ -1401,24 +1552,9 @@ function gerarPdfLista(origem = 'criacao') {
         body { font-family: Arial, sans-serif; font-size: 10px; color: #222; }
         h1 { color: #7A1F38; font-size: 16px; margin-bottom: 2px; border-bottom: 2px solid #E9A93A; padding-bottom: 4px; }
         .subtitle { font-size: 9px; color: #888; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
-        h2 {
-          color: #fff;
-          background: #7A1F38;
-          padding: 4px 8px;
-          font-size: 11px;
-          margin-top: 8px;
-          margin-bottom: 0;
-        }
+        h2 { color: #fff; background: #7A1F38; padding: 4px 8px; font-size: 11px; margin-top: 8px; margin-bottom: 0; }
         table { width: 100%; border-collapse: collapse; }
-        th {
-          background: #faf6f3;
-          font-size: 9px;
-          text-transform: uppercase;
-          padding: 3px 6px;
-          border-bottom: 1px solid #ddd;
-          color: #888;
-          font-weight: 700;
-        }
+        th { background: #faf6f3; font-size: 9px; text-transform: uppercase; padding: 3px 6px; border-bottom: 1px solid #ddd; color: #888; font-weight: 700; }
         td { padding: 3px 6px; border-bottom: 1px solid #eee; font-size: 10px; }
         .col-item { text-align: left; width: 38%; }
         .col-tipo { text-align: right; width: 10%; }
@@ -1427,22 +1563,9 @@ function gerarPdfLista(origem = 'criacao') {
         .col-qtd { text-align: right; width: 10%; font-weight: 700; color: #7A1F38; }
         .col-pago { text-align: right; width: 18%; }
         .preco-blank { border-bottom: 1px solid #999; display: inline-block; width: 70px; }
-        .total {
-          margin-top: 12px;
-          padding: 8px 12px;
-          background: #fdf4e0;
-          border-left: 3px solid #E9A93A;
-          font-size: 11px;
-        }
+        .total { margin-top: 12px; padding: 8px 12px; background: #fdf4e0; border-left: 3px solid #E9A93A; font-size: 11px; }
         .total strong { color: #c98e1f; }
-        .footer {
-          margin-top: 14px;
-          font-size: 8px;
-          color: #888;
-          text-align: center;
-          border-top: 1px solid #ddd;
-          padding-top: 6px;
-        }
+        .footer { margin-top: 14px; font-size: 8px; color: #888; text-align: center; border-top: 1px solid #ddd; padding-top: 6px; }
       </style>
     </head>
     <body>
@@ -1663,7 +1786,6 @@ function setupEventos() {
     const visible = form.style.display !== 'none';
     form.style.display = visible ? 'none' : 'block';
     if (!visible) {
-      // Se digitou na busca, pré-preenche o nome
       if (searchAddAtual) $('add-atual-nome').value = searchAddAtual;
       setTimeout(() => $('add-atual-nome').focus(), 100);
     }
@@ -1671,6 +1793,24 @@ function setupEventos() {
   $('btn-add-atual-criar').addEventListener('click', criarItemENoAtual);
   ['add-atual-nome', 'add-atual-tipo'].forEach(id => {
     $(id).addEventListener('keydown', e => { if (e.key === 'Enter') criarItemENoAtual(); });
+  });
+
+  // Gerenciar Categorias
+  $('btn-gerenciar-cats').addEventListener('click', abrirModalCategorias);
+  $('btn-cat-salvar').addEventListener('click', salvarCategoria);
+  $('btn-cat-cancelar').addEventListener('click', resetarFormularioCategoria);
+  $('cat-nome').addEventListener('keydown', e => { if (e.key === 'Enter') salvarCategoria(); });
+  document.querySelectorAll('#cat-color-palette .color-option').forEach(opt => {
+    opt.addEventListener('click', () => {
+      catCorSelecionada = opt.dataset.cor;
+      atualizarCoresSelecionada();
+    });
+  });
+  $('cats-list').addEventListener('click', e => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+    if (target.dataset.action === 'editar-cat') editarCategoria(target.dataset.catId);
+    else if (target.dataset.action === 'remover-cat') removerCategoria(target.dataset.catId);
   });
 
   $('btn-novo-fornecedor').addEventListener('click', () => abrirModalFornecedor());
@@ -1714,21 +1854,12 @@ function setupEventos() {
       $(b.dataset.closeModal).classList.remove('show');
     });
   });
-  $('modal-salvar').addEventListener('click', e => {
-    if (e.target.id === 'modal-salvar') fecharModalSalvar();
-  });
-  $('modal-editar').addEventListener('click', e => {
-    if (e.target.id === 'modal-editar') fecharModalEditar();
-  });
-  $('modal-fornecedor').addEventListener('click', e => {
-    if (e.target.id === 'modal-fornecedor') fecharModalFornecedor();
-  });
-  $('modal-membro').addEventListener('click', e => {
-    if (e.target.id === 'modal-membro') fecharModalMembro();
-  });
-  $('modal-add-atual').addEventListener('click', e => {
-    if (e.target.id === 'modal-add-atual') fecharModalAddAtual();
-  });
+  $('modal-salvar').addEventListener('click', e => { if (e.target.id === 'modal-salvar') fecharModalSalvar(); });
+  $('modal-editar').addEventListener('click', e => { if (e.target.id === 'modal-editar') fecharModalEditar(); });
+  $('modal-fornecedor').addEventListener('click', e => { if (e.target.id === 'modal-fornecedor') fecharModalFornecedor(); });
+  $('modal-membro').addEventListener('click', e => { if (e.target.id === 'modal-membro') fecharModalMembro(); });
+  $('modal-add-atual').addEventListener('click', e => { if (e.target.id === 'modal-add-atual') fecharModalAddAtual(); });
+  $('modal-categorias').addEventListener('click', e => { if (e.target.id === 'modal-categorias') fecharModalCategorias(); });
 
   $('list-criar').addEventListener('change', e => {
     const action = e.target.dataset.action;
@@ -1764,7 +1895,6 @@ function setupEventos() {
     else if (action === 'editar-item') abrirModalEditar(itemId);
   });
 
-  // Delegação - resultados do modal Adicionar à Lista Atual
   $('add-atual-resultados').addEventListener('click', e => {
     const target = e.target.closest('[data-action]');
     if (!target) return;
@@ -1812,6 +1942,7 @@ function setupEventos() {
       if ($('modal-fornecedor').classList.contains('show')) { fecharModalFornecedor(); return; }
       if ($('modal-membro').classList.contains('show')) { fecharModalMembro(); return; }
       if ($('modal-add-atual').classList.contains('show')) { fecharModalAddAtual(); return; }
+      if ($('modal-categorias').classList.contains('show')) { fecharModalCategorias(); return; }
     }
   });
 
