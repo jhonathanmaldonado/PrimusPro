@@ -1,5 +1,6 @@
 // ============================================================================
-// DB.JS — Camada de acesso ao Firestore (com CRUD de categorias)
+// DB.JS — Camada de acesso ao Firestore
+// Fase 1 Precificação: CRUD de insumos + gatilho de atualização de preço
 // ============================================================================
 
 import { db } from './firebase-init.js';
@@ -47,9 +48,10 @@ const LISTA_EM_CRIACAO = () => collection(db, 'workspaces', WORKSPACE_ID, 'lista
 const LISTA_ATUAL = () => collection(db, 'workspaces', WORKSPACE_ID, 'lista_atual');
 const HISTORICO = () => collection(db, 'workspaces', WORKSPACE_ID, 'historico');
 const FORNECEDORES = () => collection(db, 'workspaces', WORKSPACE_ID, 'fornecedores');
+const INSUMOS = () => collection(db, 'workspaces', WORKSPACE_ID, 'insumos');
 
 // ============================================================================
-// CONFIG
+// CONFIG (incluindo precificação)
 // ============================================================================
 
 export async function getConfigMediaN() {
@@ -61,13 +63,31 @@ export async function setConfigMediaN(n) {
   await updateDoc(ROOT(), { 'config.mediaN': n, ...auditFields() });
 }
 
+export async function getConfigPrecificacao() {
+  const snap = await getDoc(ROOT());
+  const c = snap.data()?.config?.precificacao || {};
+  return {
+    metodo: c.metodo || 'cmv_alvo', // cmv_alvo | markup | margem
+    cmvAlvo: c.cmvAlvo ?? 0.30,
+    markupFator: c.markupFator ?? 3.0,
+    margemAlvo: c.margemAlvo ?? 0.70
+  };
+}
+
+export async function setConfigPrecificacao(precif) {
+  await updateDoc(ROOT(), {
+    'config.precificacao': precif,
+    ...auditFields()
+  });
+}
+
 // ============================================================================
 // USUÁRIOS
 // ============================================================================
 
 export function observarUsuarios(callback) {
   return onSnapshot(USUARIOS(), snap => {
-    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const lista = snap.docs.map(d => ({ ...d.data(), id: d.id }));
     callback(lista);
   });
 }
@@ -88,7 +108,7 @@ export async function deletarUsuario(uid) {
 export function observarCategorias(callback) {
   const q = query(CATEGORIAS(), orderBy('ordem'));
   return onSnapshot(q, snap => {
-    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const lista = snap.docs.map(d => ({ ...d.data(), id: d.id }));
     callback(lista);
   });
 }
@@ -110,7 +130,6 @@ export async function atualizarCategoria(catId, dados) {
 }
 
 export async function deletarCategoria(catId) {
-  // Verifica se tem itens vinculados
   const q = query(ITENS(), where('categoriaId', '==', catId));
   const snap = await getDocs(q);
   if (snap.size > 0) {
@@ -125,7 +144,7 @@ export async function deletarCategoria(catId) {
 
 export function observarItens(callback) {
   return onSnapshot(ITENS(), snap => {
-    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const lista = snap.docs.map(d => ({ ...d.data(), id: d.id }));
     callback(lista);
   });
 }
@@ -137,6 +156,7 @@ export async function criarItem(dados) {
     tipo: dados.tipo || '',
     categoriaId: dados.categoriaId,
     fornecedorPreferido: dados.fornecedorPreferido || '',
+    insumoId: dados.insumoId || null,
     ordem: dados.ordem ?? 0,
     ultimoPreco: null,
     precoAnterior: null,
@@ -164,12 +184,73 @@ export function calcularMediaPrecos(item, n) {
 }
 
 // ============================================================================
+// INSUMOS (CRUD + gatilho de atualização de preço)
+// ============================================================================
+
+export function observarInsumos(callback) {
+  const q = query(INSUMOS(), orderBy('nome'));
+  return onSnapshot(q, snap => {
+    const lista = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+    callback(lista);
+  });
+}
+
+export async function criarInsumo(dados) {
+  const ref = doc(INSUMOS());
+  await setDoc(ref, {
+    nome: dados.nome,
+    unidade: dados.unidade || 'KG',          // KG | LITRO | UND
+    fatorCorrecao: dados.fatorCorrecao ?? 1.0,
+    categoria: dados.categoria || '',
+    fornecedor: dados.fornecedor || '',
+    precoPorUnidade: dados.precoPorUnidade ?? null,
+    dataUltimaCompra: dados.dataUltimaCompra ?? null,
+    ehPrePreparo: !!dados.ehPrePreparo,
+    ...auditFields({ criadoEm: serverTimestamp() })
+  });
+  return ref.id;
+}
+
+export async function atualizarInsumo(insumoId, dados) {
+  const ref = doc(INSUMOS(), insumoId);
+  await updateDoc(ref, { ...dados, ...auditFields() });
+}
+
+export async function deletarInsumo(insumoId) {
+  // Verifica se tem itens vinculados
+  const q = query(ITENS(), where('insumoId', '==', insumoId));
+  const snap = await getDocs(q);
+  if (snap.size > 0) {
+    throw new Error(`Este insumo tem ${snap.size} item(ns) de compra vinculado(s). Desvincule os itens antes de excluir.`);
+  }
+  await deleteDoc(doc(INSUMOS(), insumoId));
+}
+
+// Atualiza preço do insumo a partir de uma compra finalizada
+// (preço por unidade já normalizado, ou seja, preço unitário pago)
+export async function atualizarPrecoInsumo(insumoId, precoPorUnidade) {
+  if (!insumoId) return;
+  const preco = parseFloat(precoPorUnidade) || 0;
+  if (preco <= 0) return;
+
+  const ref = doc(INSUMOS(), insumoId);
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return;
+
+  await updateDoc(ref, {
+    precoPorUnidade: preco,
+    dataUltimaCompra: serverTimestamp(),
+    ...auditFields()
+  });
+}
+
+// ============================================================================
 // LISTA EM CRIAÇÃO (rascunho)
 // ============================================================================
 
 export function observarListaEmCriacao(callback) {
   return onSnapshot(LISTA_EM_CRIACAO(), snap => {
-    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const lista = snap.docs.map(d => ({ ...d.data(), id: d.id }));
     callback(lista);
   });
 }
@@ -201,7 +282,7 @@ export async function limparListaEmCriacao() {
 
 export function observarListaAtual(callback) {
   return onSnapshot(LISTA_ATUAL(), snap => {
-    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const lista = snap.docs.map(d => ({ ...d.data(), id: d.id }));
     callback(lista);
   });
 }
@@ -280,7 +361,7 @@ export async function adicionarItemListaAtual(itemId, qtdInicial = 0) {
 }
 
 // ============================================================================
-// FINALIZAR COMPRA
+// FINALIZAR COMPRA (com gatilho de atualização de insumos)
 // ============================================================================
 
 export async function finalizarCompra(itensEnriquecidos, total) {
@@ -296,6 +377,9 @@ export async function finalizarCompra(itensEnriquecidos, total) {
     finalizadoPorNome: ctx?.nome || null,
     itens: itensEnriquecidos
   });
+
+  // Para coletar insumos a atualizar fora do batch (cada um precisa de getDoc)
+  const insumosParaAtualizar = [];
 
   for (const it of itensEnriquecidos) {
     const refItem = doc(ITENS(), it.itemId);
@@ -318,6 +402,14 @@ export async function finalizarCompra(itensEnriquecidos, total) {
         historicoPrecos,
         ...auditFields()
       });
+
+      // Se o item está vinculado a um insumo, marcar pra atualizar depois
+      if (data.insumoId) {
+        insumosParaAtualizar.push({
+          insumoId: data.insumoId,
+          precoPorUnidade: it.preco
+        });
+      }
     }
 
     const refAtual = doc(LISTA_ATUAL(), it.itemId);
@@ -325,6 +417,18 @@ export async function finalizarCompra(itensEnriquecidos, total) {
   }
 
   await batch.commit();
+
+  // Após o batch principal, atualizar os insumos vinculados (gatilho)
+  // Roda em paralelo para ser rápido
+  if (insumosParaAtualizar.length > 0) {
+    await Promise.all(
+      insumosParaAtualizar.map(({ insumoId, precoPorUnidade }) =>
+        atualizarPrecoInsumo(insumoId, precoPorUnidade).catch(e =>
+          console.error(`Erro ao atualizar insumo ${insumoId}:`, e)
+        )
+      )
+    );
+  }
 }
 
 // ============================================================================
@@ -334,7 +438,7 @@ export async function finalizarCompra(itensEnriquecidos, total) {
 export function observarHistorico(callback) {
   const q = query(HISTORICO(), orderBy('data', 'desc'), limit(50));
   return onSnapshot(q, snap => {
-    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const lista = snap.docs.map(d => ({ ...d.data(), id: d.id }));
     callback(lista);
   });
 }
@@ -350,7 +454,7 @@ export async function deletarHistorico(histId) {
 export function observarFornecedores(callback) {
   const q = query(FORNECEDORES(), orderBy('nome'));
   return onSnapshot(q, snap => {
-    const lista = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const lista = snap.docs.map(d => ({ ...d.data(), id: d.id }));
     callback(lista);
   });
 }
@@ -407,6 +511,7 @@ export async function seedCatalogoSeVazio(seedData) {
         tipo: it.tipo || '',
         categoriaId: refCat.id,
         fornecedorPreferido: '',
+        insumoId: null,
         ordem: j,
         ultimoPreco: null,
         precoAnterior: null,

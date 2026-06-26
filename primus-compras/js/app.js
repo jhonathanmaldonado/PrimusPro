@@ -1,5 +1,6 @@
 // ============================================================================
-// APP.JS — Orquestrador principal (com gerenciamento de categorias)
+// APP.JS — Orquestrador principal
+// Fase 1 Precificação: aba Cardápio + CRUD de insumos + vínculo item->insumo
 // ============================================================================
 
 import './firebase-init.js';
@@ -17,6 +18,7 @@ import {
   setUserContext,
   observarCategorias,
   observarItens,
+  observarInsumos,
   observarListaEmCriacao,
   observarListaAtual,
   observarHistorico,
@@ -28,6 +30,9 @@ import {
   criarItem,
   atualizarItem,
   deletarItem,
+  criarInsumo,
+  atualizarInsumo,
+  deletarInsumo,
   criarFornecedor,
   atualizarFornecedor,
   deletarFornecedor,
@@ -45,7 +50,9 @@ import {
   seedCatalogoSeVazio,
   calcularMediaPrecos,
   getConfigMediaN,
-  setConfigMediaN
+  setConfigMediaN,
+  getConfigPrecificacao,
+  setConfigPrecificacao
 } from './db.js';
 
 // ============================================================================
@@ -54,6 +61,7 @@ import {
 
 let categorias = [];
 let itens = [];
+let insumos = [];
 let fornecedores = [];
 let usuarios = [];
 let listaEmCriacaoMap = {};
@@ -67,12 +75,20 @@ let searchCriar = '';
 let searchAtual = '';
 let searchFornecedores = '';
 let searchAddAtual = '';
+let searchInsumos = '';
 let currentTab = 'criar';
+let currentSubTabCardapio = 'insumos';
 let mediaN = 5;
 
 // Categoria modal
 let catEditandoId = null;
 let catCorSelecionada = '#7A1F38';
+
+// Insumo modal
+let insumoEditandoId = null;
+
+// Config precificação
+let configPrecificacao = { metodo: 'cmv_alvo', cmvAlvo: 0.30, markupFator: 3.0, margemAlvo: 0.70 };
 
 let unsubsRefs = [];
 
@@ -242,6 +258,13 @@ async function onLogado({ user, perfil }) {
     console.error('Erro carregando config média:', e);
   }
 
+  try {
+    configPrecificacao = await getConfigPrecificacao();
+    aplicarConfigPrecificacaoUI();
+  } catch (e) {
+    console.error('Erro carregando config precificação:', e);
+  }
+
   if (perfil.role === 'dono') {
     await ofertaSeedSeVazio();
   }
@@ -279,6 +302,7 @@ function iniciarListeners() {
   unsubsRefs.push(observarCategorias((cats) => {
     categorias = cats;
     popularSelectCategoria();
+    popularDatalistCategoriasInsumo();
     renderTudo();
     if ($('modal-categorias').classList.contains('show')) renderListaCategoriasModal();
   }));
@@ -288,6 +312,12 @@ function iniciarListeners() {
     renderTudo();
     if ($('modal-add-atual').classList.contains('show')) renderResultadosAddAtual();
     if ($('modal-categorias').classList.contains('show')) renderListaCategoriasModal();
+  }));
+
+  unsubsRefs.push(observarInsumos((ins) => {
+    insumos = ins;
+    popularSelectInsumo();
+    if (currentTab === 'cardapio' && currentSubTabCardapio === 'insumos') renderInsumos();
   }));
 
   unsubsRefs.push(observarListaEmCriacao((lista) => {
@@ -395,7 +425,7 @@ function renderListaCriar() {
       const ultimo = item.ultimoPreco;
 
       html += `<tr data-item-id="${item.id}">`;
-      html += `<td class="col-item">${escHtml(item.nome)}</td>`;
+      html += `<td class="col-item">${escHtml(item.nome)}${item.insumoId ? ' <span style="font-size:9px;background:var(--gold);color:var(--wine);padding:1px 4px;border-radius:4px;font-weight:700" title="Vinculado a um insumo">🔗</span>' : ''}</td>`;
       html += `<td class="col-tipo">${escHtml(item.tipo || '')}</td>`;
       html += `<td class="col-media">${media ? `<span class="has-value">${fmtMoeda(media)}</span>` : `<span class="no-value">—</span>`}</td>`;
       html += `<td class="col-ultimo">${ultimo ? `<span class="has-value">${fmtMoeda(ultimo)}</span>` : `<span class="no-value">—</span>`}</td>`;
@@ -509,7 +539,7 @@ function renderListaAtual() {
 
       html += `<tr class="item-row${doneCls}" data-item-id="${item.id}">`;
       html += `<td class="col-check"><input type="checkbox" class="check" ${comprado ? 'checked' : ''} data-action="toggle-comprado" data-item-id="${item.id}"></td>`;
-      html += `<td class="col-item">${escHtml(item.nome)}</td>`;
+      html += `<td class="col-item">${escHtml(item.nome)}${item.insumoId ? ' <span style="font-size:9px;background:var(--gold);color:var(--wine);padding:1px 4px;border-radius:4px;font-weight:700" title="Vinculado a um insumo">🔗</span>' : ''}</td>`;
       html += `<td class="col-tipo">${escHtml(item.tipo || '')}</td>`;
       html += `<td class="col-media">${media ? `<span class="has-value">${fmtMoeda(media)}</span>` : `<span class="no-value">—</span>`}</td>`;
       html += `<td class="col-ultimo">${ultimo ? `<span class="has-value">${fmtMoeda(ultimo)}</span>` : `<span class="no-value">—</span>`}</td>`;
@@ -582,6 +612,17 @@ function popularSelectCategoria() {
   }
 }
 
+function popularDatalistCategoriasInsumo() {
+  const dl = $('datalist-cat-insumo');
+  if (!dl) return;
+  dl.innerHTML = '';
+  for (const cat of categorias) {
+    const opt = document.createElement('option');
+    opt.value = cat.nome;
+    dl.appendChild(opt);
+  }
+}
+
 function popularSelectFornecedor() {
   const sel = $('edit-fornecedor-select');
   const valorAtual = sel.value;
@@ -597,6 +638,21 @@ function popularSelectFornecedor() {
   optNovo.textContent = '+ Novo fornecedor...';
   sel.appendChild(optNovo);
 
+  if (valorAtual) sel.value = valorAtual;
+}
+
+function popularSelectInsumo() {
+  const sel = $('edit-insumo-select');
+  if (!sel) return;
+  const valorAtual = sel.value;
+  sel.innerHTML = `<option value="">— Não vinculado —</option>`;
+  const insumosOrdenados = [...insumos].sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+  for (const ins of insumosOrdenados) {
+    const opt = document.createElement('option');
+    opt.value = ins.id;
+    opt.textContent = `${ins.nome} (${ins.unidade || 'KG'})`;
+    sel.appendChild(opt);
+  }
   if (valorAtual) sel.value = valorAtual;
 }
 
@@ -686,7 +742,6 @@ async function salvarCategoria() {
     return;
   }
 
-  // Verificar nome duplicado
   const dup = categorias.find(c =>
     c.nome.toLowerCase() === nome.toLowerCase() && c.id !== catEditandoId
   );
@@ -703,18 +758,11 @@ async function salvarCategoria() {
 
   try {
     if (catEditandoId) {
-      await atualizarCategoria(catEditandoId, {
-        nome,
-        cor: catCorSelecionada
-      });
+      await atualizarCategoria(catEditandoId, { nome, cor: catCorSelecionada });
       showToast(`✓ "${nome}" atualizada`, 'success');
     } else {
       const proxOrdem = categorias.length;
-      await criarCategoria({
-        nome,
-        cor: catCorSelecionada,
-        ordem: proxOrdem
-      });
+      await criarCategoria({ nome, cor: catCorSelecionada, ordem: proxOrdem });
       showToast(`✓ "${nome}" criada`, 'success');
     }
     resetarFormularioCategoria();
@@ -745,6 +793,306 @@ async function removerCategoria(catId) {
     showToast(`✓ "${cat.nome}" removida`, 'success');
   } catch (e) {
     showToast('⚠ Erro: ' + e.message, 'error');
+  }
+}
+
+// ============================================================================
+// ABA CARDÁPIO - SUB-NAVEGAÇÃO
+// ============================================================================
+
+function switchSubTabCardapio(sub) {
+  currentSubTabCardapio = sub;
+  document.querySelectorAll('.sub-nav-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.subtab === sub);
+  });
+  $('subtab-insumos').style.display = sub === 'insumos' ? 'block' : 'none';
+  $('subtab-fichas').style.display = sub === 'fichas' ? 'block' : 'none';
+  $('subtab-precificacao').style.display = sub === 'precificacao' ? 'block' : 'none';
+  $('subtab-config').style.display = sub === 'config' ? 'block' : 'none';
+
+  if (sub === 'insumos') renderInsumos();
+  if (sub === 'config') aplicarConfigPrecificacaoUI();
+}
+
+// ============================================================================
+// INSUMOS - render + modal
+// ============================================================================
+
+function renderInsumos() {
+  const el = $('list-insumos');
+  $('stat-insumos-total').textContent = insumos.length;
+  const comPreco = insumos.filter(i => i.precoPorUnidade != null && i.precoPorUnidade > 0).length;
+  $('stat-insumos-com-preco').textContent = comPreco;
+
+  const filtrados = insumos.filter(i => {
+    if (!searchInsumos) return true;
+    const t = searchInsumos.toLowerCase();
+    return (i.nome || '').toLowerCase().includes(t)
+        || (i.categoria || '').toLowerCase().includes(t)
+        || (i.fornecedor || '').toLowerCase().includes(t);
+  });
+
+  if (!insumos.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">📦</div>
+      <div class="empty-state-text">Nenhum insumo cadastrado.<br>Clique em <strong>"+ Novo Insumo"</strong> para começar.</div>
+    </div>`;
+    return;
+  }
+
+  if (!filtrados.length) {
+    el.innerHTML = `<div class="empty-msg">Nenhum insumo encontrado para "<strong>${escHtml(searchInsumos)}</strong>"</div>`;
+    $('search-insumos-clear').style.display = 'block';
+    return;
+  }
+
+  let html = '';
+  for (const ins of filtrados) {
+    const unidade = (ins.unidade || 'KG').toLowerCase();
+    const badge = `<span class="insumo-badge ${unidade}">${escHtml(ins.unidade || 'KG')}</span>`;
+    const badgePP = ins.ehPrePreparo ? `<span class="insumo-badge pp">PRÉ-PREPARO</span>` : '';
+    const fc = ins.fatorCorrecao ?? 1.0;
+    const fcTxt = fc !== 1 ? ` · FC ${fc.toFixed(2)}` : '';
+    const itensVinculados = itens.filter(it => it.insumoId === ins.id).length;
+    const vinculadosTxt = itensVinculados > 0 ? ` · 🔗 ${itensVinculados} item(ns)` : '';
+    const categoria = ins.categoria ? ` · ${escHtml(ins.categoria)}` : '';
+
+    html += `<div class="insumo-card">`;
+    html += `<div class="insumo-card-info">`;
+    html += `<div class="insumo-card-nome">${escHtml(ins.nome)} ${badge} ${badgePP}</div>`;
+    html += `<div class="insumo-card-meta">${categoria}${fcTxt}${vinculadosTxt}</div>`;
+    html += `</div>`;
+    html += `<div class="insumo-card-preco">`;
+    if (ins.precoPorUnidade && ins.precoPorUnidade > 0) {
+      html += `${fmtMoeda(ins.precoPorUnidade)}<br><span style="font-weight:400;font-size:10px;color:var(--muted)">por ${escHtml(ins.unidade || 'KG')}</span>`;
+    } else {
+      html += `<span class="insumo-card-preco-sem">sem preço</span>`;
+    }
+    html += `</div>`;
+    html += `<span class="item-actions">`;
+    html += `<button class="icon-btn edit" data-action="editar-insumo" data-insumo-id="${ins.id}" title="Editar">✏️</button>`;
+    html += `<button class="icon-btn danger" data-action="remover-insumo" data-insumo-id="${ins.id}" title="Remover">×</button>`;
+    html += `</span>`;
+    html += `</div>`;
+  }
+
+  el.innerHTML = html;
+  $('search-insumos-clear').style.display = searchInsumos ? 'block' : 'none';
+}
+
+function abrirModalInsumo(insumoId = null) {
+  insumoEditandoId = insumoId;
+
+  if (insumoId) {
+    const ins = insumos.find(i => i.id === insumoId);
+    if (!ins) {
+      showToast('⚠ Insumo não encontrado', 'error');
+      return;
+    }
+    $('modal-insumo-title').textContent = '✏️ Editar Insumo';
+    $('insumo-id').value = insumoId;
+    $('insumo-nome').value = ins.nome || '';
+    $('insumo-unidade').value = ins.unidade || 'KG';
+    $('insumo-fc').value = (ins.fatorCorrecao ?? 1.0).toFixed(2);
+    $('insumo-categoria').value = ins.categoria || '';
+    $('insumo-fornecedor').value = ins.fornecedor || '';
+
+    // Mostrar informação do preço atual
+    if (ins.precoPorUnidade && ins.precoPorUnidade > 0) {
+      $('insumo-info-preco').style.display = 'block';
+      $('insumo-info-preco-valor').textContent = `${fmtMoeda(ins.precoPorUnidade)} por ${ins.unidade || 'KG'}`;
+      if (ins.dataUltimaCompra) {
+        const d = ins.dataUltimaCompra.toDate ? ins.dataUltimaCompra.toDate() : new Date(ins.dataUltimaCompra);
+        $('insumo-info-preco-data').textContent = `Atualizado em ${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+      } else {
+        $('insumo-info-preco-data').textContent = '';
+      }
+    } else {
+      $('insumo-info-preco').style.display = 'none';
+    }
+  } else {
+    $('modal-insumo-title').textContent = '📦 Novo Insumo';
+    $('insumo-id').value = '';
+    $('insumo-nome').value = '';
+    $('insumo-unidade').value = 'KG';
+    $('insumo-fc').value = '1.00';
+    $('insumo-categoria').value = '';
+    $('insumo-fornecedor').value = '';
+    $('insumo-info-preco').style.display = 'none';
+  }
+
+  $('insumo-error').classList.remove('show');
+  $('insumo-error').textContent = '';
+  $('modal-insumo').classList.add('show');
+  setTimeout(() => $('insumo-nome').focus(), 100);
+}
+
+function fecharModalInsumo() {
+  $('modal-insumo').classList.remove('show');
+  insumoEditandoId = null;
+}
+
+async function salvarInsumo() {
+  const nome = $('insumo-nome').value.trim();
+  const unidade = $('insumo-unidade').value;
+  const fcStr = $('insumo-fc').value;
+  const categoria = $('insumo-categoria').value.trim();
+  const fornecedor = $('insumo-fornecedor').value.trim();
+
+  const fc = parseFloat(fcStr);
+  const err = $('insumo-error');
+
+  if (!nome) {
+    err.textContent = 'Nome do insumo é obrigatório';
+    err.classList.add('show');
+    return;
+  }
+  if (!['KG', 'LITRO', 'UND'].includes(unidade)) {
+    err.textContent = 'Unidade inválida';
+    err.classList.add('show');
+    return;
+  }
+  if (isNaN(fc) || fc <= 0 || fc > 1) {
+    err.textContent = 'Fator de Correção deve ser entre 0,01 e 1,00';
+    err.classList.add('show');
+    return;
+  }
+
+  // Verifica duplicado
+  const dup = insumos.find(i =>
+    i.nome.toLowerCase() === nome.toLowerCase() && i.id !== insumoEditandoId
+  );
+  if (dup) {
+    err.textContent = 'Já existe um insumo com esse nome';
+    err.classList.add('show');
+    return;
+  }
+
+  err.classList.remove('show');
+  const btn = $('btn-insumo-salvar');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+
+  try {
+    if (insumoEditandoId) {
+      await atualizarInsumo(insumoEditandoId, {
+        nome,
+        unidade,
+        fatorCorrecao: fc,
+        categoria,
+        fornecedor
+      });
+      showToast(`✓ "${nome}" atualizado`, 'success');
+    } else {
+      await criarInsumo({
+        nome,
+        unidade,
+        fatorCorrecao: fc,
+        categoria,
+        fornecedor
+      });
+      showToast(`✓ Insumo "${nome}" criado`, 'success');
+    }
+    fecharModalInsumo();
+  } catch (e) {
+    err.textContent = 'Erro: ' + e.message;
+    err.classList.add('show');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💾 Salvar';
+  }
+}
+
+async function removerInsumo(insumoId) {
+  const ins = insumos.find(i => i.id === insumoId);
+  if (!ins) return;
+
+  const itensVinculados = itens.filter(it => it.insumoId === insumoId);
+  if (itensVinculados.length > 0) {
+    if (!confirm(`Este insumo está vinculado a ${itensVinculados.length} item(ns) de compra.\n\nAo remover, esses itens ficarão sem vínculo (mas continuam no catálogo).\n\nContinuar?`)) return;
+  } else {
+    if (!confirm(`Remover o insumo "${ins.nome}"?`)) return;
+  }
+
+  try {
+    // Desvincula itens primeiro
+    for (const it of itensVinculados) {
+      await atualizarItem(it.id, { insumoId: null });
+    }
+    await deletarInsumo(insumoId);
+    showToast(`✓ "${ins.nome}" removido`, 'success');
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
+  }
+}
+
+// ============================================================================
+// CONFIGURAÇÕES DE PRECIFICAÇÃO
+// ============================================================================
+
+function aplicarConfigPrecificacaoUI() {
+  const sel = $('config-metodo-precificacao');
+  if (!sel) return;
+
+  sel.value = configPrecificacao.metodo || 'cmv_alvo';
+  $('config-cmv-alvo').value = Math.round((configPrecificacao.cmvAlvo ?? 0.30) * 100);
+  $('config-markup-fator').value = (configPrecificacao.markupFator ?? 3.0).toFixed(1);
+  $('config-margem-alvo').value = Math.round((configPrecificacao.margemAlvo ?? 0.70) * 100);
+
+  atualizarVisibilidadeCamposMetodo();
+}
+
+function atualizarVisibilidadeCamposMetodo() {
+  const metodo = $('config-metodo-precificacao').value;
+  $('config-campo-cmv').style.display = metodo === 'cmv_alvo' ? 'block' : 'none';
+  $('config-campo-markup').style.display = metodo === 'markup' ? 'block' : 'none';
+  $('config-campo-margem').style.display = metodo === 'margem' ? 'block' : 'none';
+}
+
+async function salvarConfigPrecificacao() {
+  const metodo = $('config-metodo-precificacao').value;
+  const cmvAlvoPct = parseFloat($('config-cmv-alvo').value);
+  const markupFator = parseFloat($('config-markup-fator').value);
+  const margemAlvoPct = parseFloat($('config-margem-alvo').value);
+  const err = $('config-error');
+
+  if (metodo === 'cmv_alvo' && (isNaN(cmvAlvoPct) || cmvAlvoPct < 1 || cmvAlvoPct > 99)) {
+    err.textContent = 'CMV alvo deve ser entre 1 e 99 (%)';
+    err.classList.add('show');
+    return;
+  }
+  if (metodo === 'markup' && (isNaN(markupFator) || markupFator <= 0)) {
+    err.textContent = 'Markup fator deve ser maior que zero';
+    err.classList.add('show');
+    return;
+  }
+  if (metodo === 'margem' && (isNaN(margemAlvoPct) || margemAlvoPct < 1 || margemAlvoPct > 99)) {
+    err.textContent = 'Margem alvo deve ser entre 1 e 99 (%)';
+    err.classList.add('show');
+    return;
+  }
+
+  err.classList.remove('show');
+  const btn = $('btn-config-salvar');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+
+  try {
+    const novaConfig = {
+      metodo,
+      cmvAlvo: cmvAlvoPct / 100,
+      markupFator,
+      margemAlvo: margemAlvoPct / 100
+    };
+    await setConfigPrecificacao(novaConfig);
+    configPrecificacao = novaConfig;
+    showToast('✓ Configurações salvas', 'success');
+  } catch (e) {
+    err.textContent = 'Erro: ' + e.message;
+    err.classList.add('show');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💾 Salvar configurações';
   }
 }
 
@@ -938,6 +1286,8 @@ function abrirModalEditar(itemId) {
   $('edit-ordem').value = item.ordem ?? 0;
 
   popularSelectFornecedor();
+  popularSelectInsumo();
+
   const fornAtual = item.fornecedorPreferido || '';
   const sel = $('edit-fornecedor-select');
   const inputLivre = $('edit-fornecedor-livre');
@@ -952,6 +1302,9 @@ function abrirModalEditar(itemId) {
   } else {
     sel.value = fornAtual;
   }
+
+  // Insumo vínculo
+  $('edit-insumo-select').value = item.insumoId || '';
 
   $('edit-error').classList.remove('show');
   $('edit-error').textContent = '';
@@ -973,6 +1326,7 @@ async function salvarEdicaoItem() {
   const categoriaId = $('edit-categoria').value;
   const ordemStr = $('edit-ordem').value;
   const ordem = ordemStr === '' ? 0 : parseInt(ordemStr, 10);
+  const insumoId = $('edit-insumo-select').value || null;
 
   const sel = $('edit-fornecedor-select');
   const inputLivre = $('edit-fornecedor-livre');
@@ -1020,6 +1374,7 @@ async function salvarEdicaoItem() {
       tipo,
       categoriaId,
       fornecedorPreferido: fornecedor,
+      insumoId,
       ordem
     });
     showToast(`✓ "${nome}" atualizado`, 'success');
@@ -1653,7 +2008,8 @@ async function tratarFinalizarCompra() {
       categoriaCor: cat?.cor || '#7A1F38',
       qtd, preco, subtotal: sub,
       comprado: !!estado.comprado,
-      fornecedor: item.fornecedorPreferido || ''
+      fornecedor: item.fornecedorPreferido || '',
+      insumoId: item.insumoId || null
     });
     total += sub;
   }
@@ -1695,9 +2051,13 @@ function switchTab(tab) {
   $('tab-atual').style.display = tab === 'atual' ? 'block' : 'none';
   $('tab-historico').style.display = tab === 'historico' ? 'block' : 'none';
   $('tab-fornecedores').style.display = tab === 'fornecedores' ? 'block' : 'none';
+  $('tab-cardapio').style.display = tab === 'cardapio' ? 'block' : 'none';
   $('tab-equipe').style.display = tab === 'equipe' ? 'block' : 'none';
   if (tab === 'historico') renderHistorico();
   if (tab === 'fornecedores') renderFornecedores();
+  if (tab === 'cardapio') {
+    switchSubTabCardapio(currentSubTabCardapio || 'insumos');
+  }
   if (tab === 'equipe') renderEquipe();
 }
 
@@ -1724,6 +2084,11 @@ function setupEventos() {
 
   document.querySelectorAll('.tab').forEach(t => {
     t.addEventListener('click', () => switchTab(t.dataset.tab));
+  });
+
+  // Sub-navegação do Cardápio
+  document.querySelectorAll('.sub-nav-btn').forEach(b => {
+    b.addEventListener('click', () => switchSubTabCardapio(b.dataset.subtab));
   });
 
   $('btn-criar-recolher').addEventListener('click', () => expandirOuRecolherCriar(false));
@@ -1769,6 +2134,33 @@ function setupEventos() {
     searchAtual = '';
     renderListaAtual();
   });
+
+  // Insumos
+  $('btn-novo-insumo').addEventListener('click', () => abrirModalInsumo());
+  $('search-insumos').addEventListener('input', e => {
+    searchInsumos = e.target.value.trim();
+    renderInsumos();
+  });
+  $('search-insumos-clear').addEventListener('click', () => {
+    $('search-insumos').value = '';
+    searchInsumos = '';
+    renderInsumos();
+  });
+  $('btn-insumo-salvar').addEventListener('click', salvarInsumo);
+  $('btn-insumo-cancelar').addEventListener('click', fecharModalInsumo);
+  ['insumo-nome', 'insumo-fc', 'insumo-categoria', 'insumo-fornecedor'].forEach(id => {
+    $(id).addEventListener('keydown', e => { if (e.key === 'Enter') salvarInsumo(); });
+  });
+  $('list-insumos').addEventListener('click', e => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+    if (target.dataset.action === 'editar-insumo') abrirModalInsumo(target.dataset.insumoId);
+    else if (target.dataset.action === 'remover-insumo') removerInsumo(target.dataset.insumoId);
+  });
+
+  // Configurações de precificação
+  $('config-metodo-precificacao').addEventListener('change', atualizarVisibilidadeCamposMetodo);
+  $('btn-config-salvar').addEventListener('click', salvarConfigPrecificacao);
 
   // Modal Adicionar à Lista Atual
   $('search-add-atual').addEventListener('input', e => {
@@ -1860,6 +2252,7 @@ function setupEventos() {
   $('modal-membro').addEventListener('click', e => { if (e.target.id === 'modal-membro') fecharModalMembro(); });
   $('modal-add-atual').addEventListener('click', e => { if (e.target.id === 'modal-add-atual') fecharModalAddAtual(); });
   $('modal-categorias').addEventListener('click', e => { if (e.target.id === 'modal-categorias') fecharModalCategorias(); });
+  $('modal-insumo').addEventListener('click', e => { if (e.target.id === 'modal-insumo') fecharModalInsumo(); });
 
   $('list-criar').addEventListener('change', e => {
     const action = e.target.dataset.action;
@@ -1943,6 +2336,7 @@ function setupEventos() {
       if ($('modal-membro').classList.contains('show')) { fecharModalMembro(); return; }
       if ($('modal-add-atual').classList.contains('show')) { fecharModalAddAtual(); return; }
       if ($('modal-categorias').classList.contains('show')) { fecharModalCategorias(); return; }
+      if ($('modal-insumo').classList.contains('show')) { fecharModalInsumo(); return; }
     }
   });
 

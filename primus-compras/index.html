@@ -82,6 +82,109 @@
   font-size: 11px;
   color: var(--muted);
 }
+
+/* Sub-navegação da aba Cardápio */
+.sub-nav {
+  display: flex;
+  gap: 0;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.sub-nav-btn {
+  padding: 8px 14px;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.sub-nav-btn:hover { color: var(--wine); }
+.sub-nav-btn.active {
+  color: var(--wine);
+  border-bottom-color: var(--gold);
+}
+
+/* Placeholder de "em breve" */
+.coming-soon {
+  padding: 60px 20px;
+  text-align: center;
+  color: var(--muted);
+  background: #fafaf9;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+}
+.coming-soon-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+  opacity: 0.5;
+}
+.coming-soon-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--wine);
+  margin-bottom: 6px;
+}
+.coming-soon-text {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Cards de insumo */
+.insumo-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.insumo-card-info {
+  flex: 1;
+  min-width: 0;
+}
+.insumo-card-nome {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+.insumo-card-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+.insumo-card-preco {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--wine);
+  text-align: right;
+  min-width: 90px;
+}
+.insumo-card-preco-sem {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--muted);
+}
+.insumo-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  margin-left: 4px;
+  letter-spacing: 0.3px;
+}
+.insumo-badge.kg { background: #e0f2fe; color: #0369a1; }
+.insumo-badge.litro { background: #ddd6fe; color: #5b21b6; }
+.insumo-badge.und { background: #fef3c7; color: #92400e; }
+.insumo-badge.pp { background: var(--gold); color: var(--wine); }
 </style>
 </head>
 <body>
@@ -178,6 +281,7 @@
       <button class="tab" data-tab="atual">🛒 Lista Atual</button>
       <button class="tab" data-tab="historico">📚 Histórico</button>
       <button class="tab" data-tab="fornecedores">🚚 Fornecedores</button>
+      <button class="tab" data-tab="cardapio">🍽️ Cardápio</button>
       <button class="tab" data-tab="equipe" id="tab-btn-equipe" style="display:none">👥 Equipe</button>
     </div>
 
@@ -316,6 +420,125 @@
       <div id="list-fornecedores"></div>
     </div>
 
+    <!-- ========== ABA: CARDÁPIO (Fase 1 Precificação) ========== -->
+    <div id="tab-cardapio" style="display:none">
+
+      <!-- Sub-navegação -->
+      <div class="sub-nav">
+        <button class="sub-nav-btn active" data-subtab="insumos">📦 Insumos</button>
+        <button class="sub-nav-btn" data-subtab="fichas">📋 Fichas Técnicas</button>
+        <button class="sub-nav-btn" data-subtab="precificacao">💰 Precificação</button>
+        <button class="sub-nav-btn" data-subtab="config">⚙️ Configurações</button>
+      </div>
+
+      <!-- Sub-aba: Insumos -->
+      <div id="subtab-insumos">
+        <div class="toolbar">
+          <span class="toolbar-title">Insumos do restaurante</span>
+          <button class="btn btn-primary" id="btn-novo-insumo">+ Novo Insumo</button>
+        </div>
+
+        <div class="summary">
+          <div class="stat">
+            <div class="stat-label">Total cadastrados</div>
+            <div class="stat-value" id="stat-insumos-total">0</div>
+          </div>
+          <div class="stat gold">
+            <div class="stat-label">Com preço definido</div>
+            <div class="stat-value" id="stat-insumos-com-preco">0</div>
+          </div>
+        </div>
+
+        <div style="background:var(--gold-soft);border:1px solid #f0d590;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--wine-dark);line-height:1.5">
+          ℹ️ <strong>Como funciona:</strong> Insumos são os ingredientes do restaurante (Batata, Alho, etc).
+          Quando você vincula um item de compra a um insumo (no modal de editar item), o preço do insumo se atualiza automaticamente a cada nova compra finalizada.
+        </div>
+
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" class="search-input" id="search-insumos" placeholder="Buscar insumo...">
+          <button class="search-clear" id="search-insumos-clear">×</button>
+        </div>
+
+        <div id="list-insumos"></div>
+      </div>
+
+      <!-- Sub-aba: Fichas (placeholder) -->
+      <div id="subtab-fichas" style="display:none">
+        <div class="coming-soon">
+          <div class="coming-soon-icon">📋</div>
+          <div class="coming-soon-title">Fichas Técnicas — Em breve</div>
+          <div class="coming-soon-text">
+            Na próxima fase você vai poder cadastrar cada prato do cardápio<br>
+            com seus ingredientes (insumos + pesos) e o sistema calcula<br>
+            o custo automaticamente.
+          </div>
+        </div>
+      </div>
+
+      <!-- Sub-aba: Precificação (placeholder) -->
+      <div id="subtab-precificacao" style="display:none">
+        <div class="coming-soon">
+          <div class="coming-soon-icon">💰</div>
+          <div class="coming-soon-title">Precificação — Em breve</div>
+          <div class="coming-soon-text">
+            Aqui você verá todos os pratos com:<br>
+            custo, CMV atual, preço sugerido e alertas de margem.
+          </div>
+        </div>
+      </div>
+
+      <!-- Sub-aba: Configurações -->
+      <div id="subtab-config" style="display:none">
+        <div class="toolbar">
+          <span class="toolbar-title">Configurações de precificação</span>
+        </div>
+
+        <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:18px;margin-bottom:14px">
+          <div style="font-weight:700;color:var(--wine);margin-bottom:14px;font-size:14px">Método de cálculo</div>
+
+          <div class="form-field">
+            <label>Método de sugestão de preço</label>
+            <select id="config-metodo-precificacao">
+              <option value="cmv_alvo">CMV alvo (controla food cost)</option>
+              <option value="markup">Markup (custo × fator)</option>
+              <option value="margem">Margem alvo (lucro sobre venda)</option>
+            </select>
+          </div>
+
+          <!-- Campos específicos do método -->
+          <div class="form-field" id="config-campo-cmv">
+            <label>CMV alvo global (%) <span class="optional">ex: 30 = custo máx. 30% do preço</span></label>
+            <input type="number" inputmode="decimal" id="config-cmv-alvo" min="1" max="99" step="1" placeholder="30">
+          </div>
+
+          <div class="form-field" id="config-campo-markup" style="display:none">
+            <label>Markup fator <span class="optional">ex: 3 = preço será 3× o custo</span></label>
+            <input type="number" inputmode="decimal" id="config-markup-fator" min="0.1" step="0.1" placeholder="3.0">
+          </div>
+
+          <div class="form-field" id="config-campo-margem" style="display:none">
+            <label>Margem alvo (%) <span class="optional">ex: 70 = 70% de margem sobre venda</span></label>
+            <input type="number" inputmode="decimal" id="config-margem-alvo" min="1" max="99" step="1" placeholder="70">
+          </div>
+
+          <div id="config-error" class="form-error"></div>
+
+          <button class="btn btn-primary" id="btn-config-salvar" style="margin-top:6px">💾 Salvar configurações</button>
+        </div>
+
+        <div style="background:var(--gold-soft);border:1px solid #f0d590;border-radius:8px;padding:12px 16px;font-size:12px;color:var(--wine-dark);line-height:1.5">
+          ℹ️ <strong>Sobre os métodos:</strong>
+          <ul style="margin:6px 0 0 18px;padding:0">
+            <li><strong>CMV alvo:</strong> mais usado em restaurantes. Define o teto de custo (ex: 30%).</li>
+            <li><strong>Markup:</strong> multiplicador fixo do custo (ex: custo × 3).</li>
+            <li><strong>Margem alvo:</strong> define o lucro desejado sobre o preço de venda.</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+
     <!-- ========== ABA: EQUIPE ========== -->
     <div id="tab-equipe" style="display:none">
       <div class="toolbar">
@@ -391,6 +614,17 @@
         <input type="text" id="edit-fornecedor-livre" placeholder="Digite o nome do novo fornecedor" style="margin-top:8px;display:none">
         <div style="font-size:11px;color:var(--muted);margin-top:4px">
           Selecione um fornecedor cadastrado ou escolha "+ Novo fornecedor..." para digitar.
+        </div>
+      </div>
+
+      <!-- Vínculo com insumo (NOVO - Fase 1) -->
+      <div class="form-field">
+        <label>Vincular a um insumo <span class="optional">(opcional - para precificação)</span></label>
+        <select id="edit-insumo-select">
+          <option value="">— Não vinculado —</option>
+        </select>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">
+          Vincular faz o preço deste item atualizar o insumo correspondente nas fichas técnicas.
         </div>
       </div>
 
@@ -535,7 +769,6 @@
     </div>
     <div class="modal-body">
 
-      <!-- Formulário: criar nova categoria -->
       <div style="padding:12px;border:1.5px dashed var(--gold);border-radius:10px;background:var(--gold-soft);margin-bottom:14px">
         <div style="font-size:13px;font-weight:700;color:var(--wine);margin-bottom:10px" id="cat-form-titulo">+ Nova categoria</div>
 
@@ -570,12 +803,71 @@
         </div>
       </div>
 
-      <!-- Lista de categorias existentes -->
       <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:6px">
         Categorias cadastradas
       </div>
       <div class="cats-list" id="cats-list"></div>
 
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: INSUMO (Novo/Editar - Fase 1 Precificação) -->
+<div class="modal-bg" id="modal-insumo">
+  <div class="modal" style="max-width:480px">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-insumo-title">📦 Novo Insumo</span>
+      <button class="modal-close" data-close-modal="modal-insumo">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="insumo-id">
+
+      <div class="form-field">
+        <label>Nome do insumo</label>
+        <input type="text" id="insumo-nome" placeholder="Ex: Batata monaliza lavada">
+      </div>
+
+      <div class="form-field">
+        <label>Unidade de medida</label>
+        <select id="insumo-unidade">
+          <option value="KG">KG (quilograma)</option>
+          <option value="LITRO">LITRO</option>
+          <option value="UND">UND (unidade)</option>
+        </select>
+      </div>
+
+      <div class="form-field">
+        <label>Fator de Correção (FC) <span class="optional">peso líquido ÷ bruto</span></label>
+        <input type="number" inputmode="decimal" id="insumo-fc" min="0.01" max="1" step="0.01" value="1.00" placeholder="1.00">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">
+          Ex: batata com casca tem FC ≈ 0,80 (perde 20% ao descascar). Sem perda = 1.00.
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label>Categoria <span class="optional">(opcional)</span></label>
+        <input type="text" id="insumo-categoria" list="datalist-cat-insumo" placeholder="Ex: FLV, Proteína, Frios">
+        <datalist id="datalist-cat-insumo"></datalist>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">
+          Sugestões aparecem com base nas categorias já cadastradas no app.
+        </div>
+      </div>
+
+      <div class="form-field">
+        <label>Fornecedor habitual <span class="optional">(opcional)</span></label>
+        <input type="text" id="insumo-fornecedor" placeholder="Ex: CEASA Cuiabá">
+      </div>
+
+      <div id="insumo-error" class="form-error"></div>
+
+      <div id="insumo-info-preco" style="display:none;margin-top:8px;padding:10px;background:var(--gold-soft);border-radius:6px;font-size:12px">
+        <strong>Preço atual:</strong> <span id="insumo-info-preco-valor"></span><br>
+        <span style="color:var(--muted);font-size:11px" id="insumo-info-preco-data"></span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btn-insumo-cancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btn-insumo-salvar">💾 Salvar</button>
     </div>
   </div>
 </div>
