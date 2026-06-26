@@ -157,6 +157,7 @@ export async function criarItem(dados) {
     categoriaId: dados.categoriaId,
     fornecedorPreferido: dados.fornecedorPreferido || '',
     insumoId: dados.insumoId || null,
+    fatorConversao: dados.fatorConversao ?? 1,
     ordem: dados.ordem ?? 0,
     ultimoPreco: null,
     precoAnterior: null,
@@ -405,9 +406,13 @@ export async function finalizarCompra(itensEnriquecidos, total) {
 
       // Se o item está vinculado a um insumo, marcar pra atualizar depois
       if (data.insumoId) {
+        // Aplica fator de conversão: preço pago dividido pelo fator
+        // Ex: comprou saco 20kg por R$ 90 → preço por kg = R$ 90 / 20 = R$ 4,50
+        const fator = parseFloat(data.fatorConversao) || 1;
+        const precoConvertido = it.preco / fator;
         insumosParaAtualizar.push({
           insumoId: data.insumoId,
-          precoPorUnidade: it.preco
+          precoPorUnidade: precoConvertido
         });
       }
     }
@@ -512,6 +517,7 @@ export async function seedCatalogoSeVazio(seedData) {
         categoriaId: refCat.id,
         fornecedorPreferido: '',
         insumoId: null,
+        fatorConversao: 1,
         ordem: j,
         ultimoPreco: null,
         precoAnterior: null,

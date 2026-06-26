@@ -1306,6 +1306,10 @@ function abrirModalEditar(itemId) {
   // Insumo vínculo
   $('edit-insumo-select').value = item.insumoId || '';
 
+  // Fator de conversão (carrega do item ou usa 1)
+  $('edit-fator-conversao').value = item.fatorConversao ?? 1;
+  atualizarVisibilidadeCampoFator();
+
   $('edit-error').classList.remove('show');
   $('edit-error').textContent = '';
 
@@ -1318,6 +1322,78 @@ function fecharModalEditar() {
   itemEditandoId = null;
 }
 
+// Mostra/esconde o campo de Fator de Conversão conforme tem vínculo de insumo
+function atualizarVisibilidadeCampoFator() {
+  const insumoId = $('edit-insumo-select').value;
+  const campo = $('campo-fator-conversao');
+
+  if (!insumoId) {
+    campo.style.display = 'none';
+    return;
+  }
+
+  // Tem vínculo: mostra
+  campo.style.display = 'block';
+
+  // Atualiza label de unidade com a unidade do insumo selecionado
+  const ins = insumos.find(i => i.id === insumoId);
+  const unidade = ins?.unidade || 'KG';
+  $('fator-unidade-label').textContent = unidade;
+  $('fator-unidade-suffix').textContent = unidade;
+
+  // Texto de exemplo conforme a unidade
+  let exemplo = '';
+  if (unidade === 'KG') {
+    exemplo = 'Ex: se 1 saco contém 20 kg do insumo, digite <strong>20</strong>. Se for o mesmo (kg = kg), digite <strong>1</strong>.';
+  } else if (unidade === 'LITRO') {
+    exemplo = 'Ex: se 1 galão contém 5 L do insumo, digite <strong>5</strong>. Se for o mesmo (L = L), digite <strong>1</strong>.';
+  } else {
+    exemplo = 'Ex: se 1 cartela contém 30 unidades, digite <strong>30</strong>. Se for o mesmo (und = und), digite <strong>1</strong>.';
+  }
+  $('fator-exemplo').innerHTML = exemplo;
+}
+
+// Tenta extrair um número do nome do item (auto-sugestão do fator)
+function detectarFatorPeloNome(nomeItem) {
+  if (!nomeItem) return null;
+  // Procura padrões tipo: "20kg", "20 kg", "5L", "5 L", "30un", "30 und"
+  const padroes = [
+    /(\d+(?:[.,]\d+)?)\s*kg/i,
+    /(\d+(?:[.,]\d+)?)\s*l(?:itro)?s?\b/i,
+    /(\d+(?:[.,]\d+)?)\s*(?:und|un|unid|unidades)/i,
+    /\b(\d+(?:[.,]\d+)?)\b/  // último recurso: qualquer número
+  ];
+
+  for (const p of padroes) {
+    const m = nomeItem.match(p);
+    if (m && m[1]) {
+      const valor = parseFloat(m[1].replace(',', '.'));
+      if (!isNaN(valor) && valor > 0) return valor;
+    }
+  }
+  return null;
+}
+
+// Quando o usuário troca o insumo selecionado, sugere o fator se ainda for o default
+function aoMudarInsumoSelecionado() {
+  atualizarVisibilidadeCampoFator();
+
+  const insumoId = $('edit-insumo-select').value;
+  if (!insumoId) return;
+
+  // Se o fator atual é 1 (default), tenta detectar pelo nome do item
+  const fatorAtual = parseFloat($('edit-fator-conversao').value);
+  if (fatorAtual === 1 || isNaN(fatorAtual)) {
+    const nomeItem = $('edit-nome').value;
+    const tipoItem = $('edit-tipo').value;
+    // Procura tanto no nome quanto no tipo
+    const detectado = detectarFatorPeloNome(nomeItem + ' ' + tipoItem);
+    if (detectado && detectado !== 1) {
+      $('edit-fator-conversao').value = detectado;
+    }
+  }
+}
+
 async function salvarEdicaoItem() {
   if (!itemEditandoId) return;
 
@@ -1327,6 +1403,13 @@ async function salvarEdicaoItem() {
   const ordemStr = $('edit-ordem').value;
   const ordem = ordemStr === '' ? 0 : parseInt(ordemStr, 10);
   const insumoId = $('edit-insumo-select').value || null;
+
+  // Fator de conversão: só aplica se tem vínculo, senão = 1
+  let fatorConversao = 1;
+  if (insumoId) {
+    const fatorStr = $('edit-fator-conversao').value;
+    fatorConversao = parseFloat(fatorStr);
+  }
 
   const sel = $('edit-fornecedor-select');
   const inputLivre = $('edit-fornecedor-livre');
@@ -1354,6 +1437,11 @@ async function salvarEdicaoItem() {
     err.classList.add('show');
     return;
   }
+  if (insumoId && (isNaN(fatorConversao) || fatorConversao <= 0)) {
+    err.textContent = 'Fator de conversão deve ser maior que zero';
+    err.classList.add('show');
+    return;
+  }
 
   err.classList.remove('show');
   const btn = $('btn-edit-salvar');
@@ -1375,6 +1463,7 @@ async function salvarEdicaoItem() {
       categoriaId,
       fornecedorPreferido: fornecedor,
       insumoId,
+      fatorConversao,
       ordem
     });
     showToast(`✓ "${nome}" atualizado`, 'success');
@@ -2240,6 +2329,9 @@ function setupEventos() {
       inputLivre.value = '';
     }
   });
+
+  // Vínculo de insumo: mostra/esconde campo de fator + auto-detecta
+  $('edit-insumo-select').addEventListener('change', aoMudarInsumoSelecionado);
 
   document.querySelectorAll('[data-close-modal]').forEach(b => {
     b.addEventListener('click', () => {

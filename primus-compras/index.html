@@ -628,6 +628,22 @@
         </div>
       </div>
 
+      <!-- Fator de Conversão (aparece só quando vínculo selecionado) -->
+      <div class="form-field" id="campo-fator-conversao" style="display:none;padding:12px;background:var(--gold-soft);border:1.5px dashed var(--gold);border-radius:10px">
+        <label style="color:var(--wine);font-weight:700">🔁 Fator de conversão</label>
+        <div style="font-size:12px;color:var(--wine-dark);margin-bottom:8px;line-height:1.5">
+          Quantas <strong id="fator-unidade-label">unidades</strong> do insumo equivalem a <strong>1 unidade deste item de compra</strong>?
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:13px;color:var(--muted)">1 item =</span>
+          <input type="number" inputmode="decimal" id="edit-fator-conversao" min="0.01" step="0.01" placeholder="1" style="flex:1;max-width:120px">
+          <span style="font-size:13px;color:var(--muted)" id="fator-unidade-suffix">KG</span>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.4" id="fator-exemplo">
+          Ex: se 1 saco contém 20 kg do insumo, digite <strong>20</strong>. Se for o mesmo (kg = kg), digite <strong>1</strong>.
+        </div>
+      </div>
+
       <div class="form-field">
         <label>Posição na categoria <span class="optional">(menor = primeiro)</span></label>
         <input type="number" inputmode="numeric" id="edit-ordem" min="0" step="1" placeholder="0">
