@@ -335,6 +335,7 @@ function iniciarListeners() {
     insumos = ins;
     popularSelectInsumo();
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'insumos') renderInsumos();
+    if (currentTab === 'cardapio' && currentSubTabCardapio === 'relatorio') renderRelatorioFichas();
     // Se modal de ficha está aberto, recalcular (preço do insumo pode ter mudado)
     if ($('modal-ficha').classList.contains('show')) {
       renderIngredientesModal();
@@ -345,6 +346,7 @@ function iniciarListeners() {
   unsubsRefs.push(observarFichas((fs) => {
     fichas = fs;
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'fichas') renderFichas();
+    if (currentTab === 'cardapio' && currentSubTabCardapio === 'relatorio') renderRelatorioFichas();
   }));
 
   unsubsRefs.push(observarListaEmCriacao((lista) => {
@@ -834,11 +836,13 @@ function switchSubTabCardapio(sub) {
   });
   $('subtab-insumos').style.display = sub === 'insumos' ? 'block' : 'none';
   $('subtab-fichas').style.display = sub === 'fichas' ? 'block' : 'none';
+  $('subtab-relatorio').style.display = sub === 'relatorio' ? 'block' : 'none';
   $('subtab-precificacao').style.display = sub === 'precificacao' ? 'block' : 'none';
   $('subtab-config').style.display = sub === 'config' ? 'block' : 'none';
 
   if (sub === 'insumos') renderInsumos();
   if (sub === 'fichas') renderFichas();
+  if (sub === 'relatorio') renderRelatorioFichas();
   if (sub === 'config') aplicarConfigPrecificacaoUI();
 }
 
@@ -1272,6 +1276,128 @@ async function removerFicha(fichaId) {
   } catch (e) {
     showToast('⚠ Erro: ' + e.message, 'error');
   }
+}
+
+// ============================================================================
+// RELATÓRIO DE FICHAS TÉCNICAS (Ideia 2)
+// ============================================================================
+
+function renderRelatorioFichas() {
+  const el = $('relatorio-tabela');
+
+  // Resumo
+  $('rel-total').textContent = fichas.length;
+  const pratos = fichas.filter(f => !f.ehPrePreparo).length;
+  $('rel-pratos').textContent = pratos;
+
+  // CMV médio (só conta fichas com preço de venda)
+  const fichasComPreco = fichas.filter(f => (f.precoVenda || 0) > 0);
+  if (fichasComPreco.length === 0) {
+    $('rel-cmv-medio').textContent = '—';
+  } else {
+    let somaCMV = 0;
+    let count = 0;
+    for (const f of fichasComPreco) {
+      const cmv = calcularCMV(f, insumos);
+      if (cmv !== null && cmv > 0) {
+        somaCMV += cmv;
+        count++;
+      }
+    }
+    if (count === 0) {
+      $('rel-cmv-medio').textContent = '—';
+    } else {
+      const cmvMedio = (somaCMV / count) * 100;
+      $('rel-cmv-medio').textContent = cmvMedio.toFixed(1) + '%';
+    }
+  }
+
+  // Data no rodapé de impressão
+  const agora = new Date();
+  $('print-data').textContent = `${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+
+  // Sem fichas?
+  if (!fichas.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">📊</div>
+      <div class="empty-state-text">Nenhuma ficha técnica cadastrada ainda.<br>Crie fichas em <strong>Cardápio → Fichas Técnicas</strong> e o relatório aparecerá aqui.</div>
+    </div>`;
+    return;
+  }
+
+  // Ordenar: pratos primeiro (por CMV decrescente — quem tem mais problema vai no topo), depois pré-preparos
+  const ordenadas = [...fichas].sort((a, b) => {
+    if (!!a.ehPrePreparo !== !!b.ehPrePreparo) {
+      return a.ehPrePreparo ? 1 : -1;  // pratos primeiro
+    }
+    const cmvA = calcularCMV(a, insumos) ?? -1;
+    const cmvB = calcularCMV(b, insumos) ?? -1;
+    return cmvB - cmvA;  // maior CMV no topo
+  });
+
+  let html = '<table class="tabela-relatorio">';
+  html += '<thead><tr>';
+  html += '<th>Ficha</th>';
+  html += '<th class="num">Rende</th>';
+  html += '<th class="num">Ing.</th>';
+  html += '<th class="num">Custo Receita</th>';
+  html += '<th class="num">Custo / Porção</th>';
+  html += '<th class="num">Preço Venda</th>';
+  html += '<th class="num">CMV</th>';
+  html += '<th class="num">CMV Alvo</th>';
+  html += '<th class="num">Preço Sugerido</th>';
+  html += '</tr></thead><tbody>';
+
+  for (const ficha of ordenadas) {
+    const custoReceita = calcularCustoReceita(ficha, insumos);
+    const custoPorcao = calcularCustoPorPorcao(ficha, insumos);
+    const cmv = calcularCMV(ficha, insumos);
+    const cmvAlvo = obterCMVAlvoEfetivo(ficha, configPrecificacao);
+    const precoSugerido = calcularPrecoSugerido(ficha, insumos, configPrecificacao);
+    const nIng = (ficha.ingredientes || []).length;
+    const unidadeAbrev = ficha.unidadeRendimento === 'PORCOES' ? 'porç.' : (ficha.unidadeRendimento || 'KG').toLowerCase();
+
+    // Cor do CMV
+    let corCMV = '#888780';
+    let textoCMV = '—';
+    if (cmv !== null) {
+      const pct = cmv * 100;
+      textoCMV = pct.toFixed(1) + '%';
+      const ratio = cmv / cmvAlvo;
+      if (ratio < 0.80) corCMV = '#173404';      // verde
+      else if (ratio < 1.0) corCMV = '#854F0B';   // amarelo
+      else if (ratio < 1.2) corCMV = '#633806';   // âmbar
+      else corCMV = '#791F1F';                    // vermelho
+    }
+
+    const tagPP = ficha.ehPrePreparo ? '<span class="pp-tag">PP</span>' : '';
+
+    html += `<tr>`;
+    html += `<td><strong>${escHtml(ficha.nome)}</strong>${tagPP}</td>`;
+    html += `<td class="num">${ficha.rendimento || 1} ${escHtml(unidadeAbrev)}</td>`;
+    html += `<td class="num">${nIng}</td>`;
+    html += `<td class="num">${fmtMoeda(custoReceita)}</td>`;
+    html += `<td class="num">${fmtMoeda(custoPorcao)}</td>`;
+    html += `<td class="num">${(ficha.precoVenda || 0) > 0 ? fmtMoeda(ficha.precoVenda) : '—'}</td>`;
+    html += `<td class="num cmv-cell" style="color:${corCMV}">${textoCMV}</td>`;
+    html += `<td class="num">${Math.round(cmvAlvo * 100)}%</td>`;
+    html += `<td class="num">${precoSugerido > 0 ? fmtMoeda(precoSugerido) : '—'}</td>`;
+    html += `</tr>`;
+  }
+
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function imprimirRelatorio() {
+  if (!fichas.length) {
+    showToast('⚠ Cadastre fichas técnicas antes de imprimir', 'error');
+    return;
+  }
+  // Re-renderiza pra garantir dados atualizados (e atualiza a data)
+  renderRelatorioFichas();
+  // Espera 100ms pro DOM atualizar e chama print
+  setTimeout(() => window.print(), 100);
 }
 
 // ============================================================================
@@ -2854,6 +2980,9 @@ function setupEventos() {
   $('btn-ficha-salvar').addEventListener('click', salvarFicha);
   $('btn-ficha-cancelar').addEventListener('click', fecharModalFicha);
   $('btn-add-ingrediente').addEventListener('click', adicionarIngrediente);
+
+  // Relatório de fichas (Ideia 2)
+  $('btn-imprimir-relatorio').addEventListener('click', imprimirRelatorio);
 
   // Modal de ficha - inputs principais (atualizam painel ao vivo)
   ['ficha-rendimento', 'ficha-unidade-rendimento', 'ficha-preco-venda', 'ficha-cmv-custom'].forEach(id => {

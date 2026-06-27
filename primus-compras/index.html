@@ -377,6 +377,103 @@
   cursor: pointer;
   font-weight: 600;
 }
+
+/* ====== RELATÓRIO DE FICHAS ====== */
+.print-only { display: none; }
+
+.tabela-relatorio {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.tabela-relatorio thead {
+  background: var(--wine);
+  color: #fff;
+}
+.tabela-relatorio th {
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  border-bottom: 1px solid var(--wine-dark);
+}
+.tabela-relatorio th.num,
+.tabela-relatorio td.num {
+  text-align: right;
+}
+.tabela-relatorio td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.tabela-relatorio tbody tr:nth-child(even) {
+  background: #faf8f5;
+}
+.tabela-relatorio tbody tr:hover {
+  background: var(--gold-soft);
+}
+.tabela-relatorio .pp-tag {
+  display: inline-block;
+  background: var(--gold);
+  color: var(--wine);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  margin-left: 4px;
+}
+.tabela-relatorio .cmv-cell {
+  font-weight: 700;
+}
+
+/* === ESTILOS PARA IMPRESSÃO === */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #relatorio-conteudo, #relatorio-conteudo * {
+    visibility: visible;
+  }
+  #relatorio-conteudo {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+  }
+  .no-print { display: none !important; }
+  .print-only { display: block !important; }
+
+  .tabela-relatorio {
+    font-size: 10px;
+    border: 1px solid #333;
+    border-radius: 0;
+  }
+  .tabela-relatorio thead {
+    background: #7A1F38 !important;
+    color: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .tabela-relatorio tbody tr:nth-child(even) {
+    background: #f5f5f5 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .tabela-relatorio td, .tabela-relatorio th {
+    padding: 4px 6px;
+  }
+  @page {
+    size: A4 landscape;
+    margin: 1.5cm;
+  }
+}
 </style>
 </head>
 <body>
@@ -619,6 +716,7 @@
       <div class="sub-nav">
         <button class="sub-nav-btn active" data-subtab="insumos">📦 Insumos</button>
         <button class="sub-nav-btn" data-subtab="fichas">📋 Fichas Técnicas</button>
+        <button class="sub-nav-btn" data-subtab="relatorio">📊 Relatório</button>
         <button class="sub-nav-btn" data-subtab="precificacao">💰 Precificação</button>
         <button class="sub-nav-btn" data-subtab="config">⚙️ Configurações</button>
       </div>
@@ -696,6 +794,43 @@
         </div>
 
         <div id="list-fichas"></div>
+      </div>
+
+      <!-- Sub-aba: Relatório de Fichas Técnicas (Ideia 2) -->
+      <div id="subtab-relatorio" style="display:none">
+        <div class="toolbar no-print">
+          <span class="toolbar-title">📊 Relatório de Fichas Técnicas</span>
+          <button class="btn btn-primary" id="btn-imprimir-relatorio">📄 Imprimir / Salvar PDF</button>
+        </div>
+
+        <div class="summary no-print" id="relatorio-summary">
+          <div class="stat">
+            <div class="stat-label">Total fichas</div>
+            <div class="stat-value" id="rel-total">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Pratos</div>
+            <div class="stat-value" id="rel-pratos">0</div>
+          </div>
+          <div class="stat gold">
+            <div class="stat-label">CMV médio</div>
+            <div class="stat-value" id="rel-cmv-medio">—</div>
+          </div>
+        </div>
+
+        <div id="relatorio-conteudo">
+          <!-- Cabeçalho que só aparece na impressão -->
+          <div class="print-only" id="print-header">
+            <h1 style="margin:0 0 4px 0;font-size:18px;color:var(--wine)">Primus Peixaria</h1>
+            <h2 style="margin:0 0 12px 0;font-size:14px;color:var(--muted);font-weight:400">Relatório de Fichas Técnicas</h2>
+          </div>
+
+          <div id="relatorio-tabela"></div>
+
+          <div class="print-only" id="print-footer" style="margin-top:16px;font-size:10px;color:var(--muted);text-align:center">
+            Gerado em <span id="print-data"></span>
+          </div>
+        </div>
       </div>
 
       <!-- Sub-aba: Precificação (placeholder) -->
