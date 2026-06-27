@@ -86,6 +86,10 @@ service cloud.firestore {
       match /insumos/{insumoId} {
         allow read, write: if isMember(wid);
       }
+
+      match /fichas/{fichaId} {
+        allow read, write: if isMember(wid);
+      }
     }
   }
 }

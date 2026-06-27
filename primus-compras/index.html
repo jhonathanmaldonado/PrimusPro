@@ -185,6 +185,198 @@
 .insumo-badge.litro { background: #ddd6fe; color: #5b21b6; }
 .insumo-badge.und { background: #fef3c7; color: #92400e; }
 .insumo-badge.pp { background: var(--gold); color: var(--wine); }
+
+/* ====== FICHAS TÉCNICAS ====== */
+.ficha-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.ficha-card-info { flex: 1; min-width: 0; }
+.ficha-card-nome {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--ink);
+  margin-bottom: 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.ficha-card-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+.ficha-card-stats {
+  display: flex;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 11px;
+}
+.ficha-card-stat {
+  color: var(--muted);
+}
+.ficha-card-stat strong {
+  color: var(--wine);
+  font-weight: 700;
+}
+.ficha-card-cmv {
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+  min-width: 60px;
+}
+
+/* ====== MODAL FICHA - INGREDIENTES ====== */
+.ingredientes-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ingrediente-card {
+  background: #fafaf9;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.ingrediente-card.invalido {
+  border-color: #fca5a5;
+  background: #fef2f2;
+}
+.ingrediente-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.ingrediente-nome {
+  flex: 1;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--wine);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ingrediente-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.ingrediente-row .field {
+  flex: 1;
+  min-width: 100px;
+}
+.ingrediente-row label {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 2px;
+}
+.ingrediente-row input,
+.ingrediente-row select {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  font-family: inherit;
+}
+.ingrediente-info-calc {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #fff;
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.ingrediente-info-calc strong {
+  color: var(--wine);
+}
+
+/* ====== PAINEL DE PRECIFICAÇÃO ====== */
+.precif-painel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+  padding: 12px;
+  background: var(--wine-soft);
+  border: 1px solid #e0bcc5;
+  border-radius: 10px;
+}
+.precif-box {
+  background: #fff;
+  border-radius: 8px;
+  padding: 10px;
+  text-align: center;
+}
+.precif-box-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 4px;
+}
+.precif-box-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--wine);
+}
+.precif-box-sub {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.precif-gauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.precif-gauge svg {
+  width: 100%;
+  max-width: 140px;
+  height: auto;
+}
+
+/* Toggle (pré-preparo) */
+.toggle-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 10px;
+  background: var(--gold-soft);
+  border: 1.5px dashed var(--gold);
+  border-radius: 8px;
+}
+.toggle-line input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+.toggle-line label {
+  flex: 1;
+  font-size: 13px;
+  color: var(--wine-dark);
+  cursor: pointer;
+  font-weight: 600;
+}
 </style>
 </head>
 <body>
@@ -463,17 +655,47 @@
         <div id="list-insumos"></div>
       </div>
 
-      <!-- Sub-aba: Fichas (placeholder) -->
+      <!-- Sub-aba: Fichas Técnicas -->
       <div id="subtab-fichas" style="display:none">
-        <div class="coming-soon">
-          <div class="coming-soon-icon">📋</div>
-          <div class="coming-soon-title">Fichas Técnicas — Em breve</div>
-          <div class="coming-soon-text">
-            Na próxima fase você vai poder cadastrar cada prato do cardápio<br>
-            com seus ingredientes (insumos + pesos) e o sistema calcula<br>
-            o custo automaticamente.
+        <div class="toolbar">
+          <span class="toolbar-title">Fichas Técnicas</span>
+          <div class="config-media">
+            <label>Filtro:</label>
+            <select id="filtro-fichas">
+              <option value="todas">Todas</option>
+              <option value="pratos">Só pratos</option>
+              <option value="pp">Só pré-preparos</option>
+            </select>
+          </div>
+          <button class="btn btn-primary" id="btn-nova-ficha">+ Nova Ficha</button>
+        </div>
+
+        <div class="summary">
+          <div class="stat">
+            <div class="stat-label">Total cadastradas</div>
+            <div class="stat-value" id="stat-fichas-total">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Pratos</div>
+            <div class="stat-value" id="stat-fichas-pratos">0</div>
+          </div>
+          <div class="stat gold">
+            <div class="stat-label">Pré-preparos</div>
+            <div class="stat-value" id="stat-fichas-pp">0</div>
           </div>
         </div>
+
+        <div style="background:var(--gold-soft);border:1px solid #f0d590;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--wine-dark);line-height:1.5">
+          ℹ️ <strong>Como funciona:</strong> cadastre cada prato/pré-preparo com seus ingredientes (insumos + pesos). O sistema calcula o custo automaticamente. Pré-preparos podem ser usados como insumos em outras fichas (na próxima fase).
+        </div>
+
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" class="search-input" id="search-fichas" placeholder="Buscar ficha...">
+          <button class="search-clear" id="search-fichas-clear">×</button>
+        </div>
+
+        <div id="list-fichas"></div>
       </div>
 
       <!-- Sub-aba: Precificação (placeholder) -->
@@ -884,6 +1106,129 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" id="btn-insumo-cancelar">Cancelar</button>
       <button class="btn btn-primary" id="btn-insumo-salvar">💾 Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: FICHA TÉCNICA (Sub-fase 2A) -->
+<div class="modal-bg" id="modal-ficha">
+  <div class="modal" style="max-width:680px">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-ficha-title">📋 Nova Ficha Técnica</span>
+      <button class="modal-close" data-close-modal="modal-ficha">×</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="ficha-id">
+
+      <!-- Dados básicos -->
+      <div class="form-field">
+        <label>Nome da ficha</label>
+        <input type="text" id="ficha-nome" placeholder="Ex: Bolinho de peixe">
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div class="form-field" style="flex:1;min-width:120px">
+          <label>Rendimento</label>
+          <input type="number" inputmode="decimal" id="ficha-rendimento" min="0.01" step="0.01" placeholder="1.0">
+        </div>
+        <div class="form-field" style="flex:1;min-width:120px">
+          <label>Unidade rendimento</label>
+          <select id="ficha-unidade-rendimento">
+            <option value="KG">KG (quilograma)</option>
+            <option value="LITRO">LITRO</option>
+            <option value="UND">UND (unidade)</option>
+            <option value="PORCOES">PORÇÕES</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <div class="form-field" style="flex:1;min-width:120px">
+          <label>Preço de venda <span class="optional">(R$)</span></label>
+          <input type="number" inputmode="decimal" id="ficha-preco-venda" min="0" step="0.01" placeholder="0.00">
+        </div>
+        <div class="form-field" style="flex:1;min-width:120px">
+          <label>CMV alvo <span class="optional">(%, vazio = usa global)</span></label>
+          <input type="number" inputmode="decimal" id="ficha-cmv-custom" min="1" max="99" step="1" placeholder="30">
+        </div>
+      </div>
+
+      <!-- Toggle pré-preparo -->
+      <div class="toggle-line">
+        <input type="checkbox" id="ficha-eh-pp">
+        <label for="ficha-eh-pp">📦 Esta ficha é um pré-preparo (vai virar insumo de outras fichas - próxima fase)</label>
+      </div>
+
+      <!-- INGREDIENTES -->
+      <div class="form-field" style="margin-top:14px">
+        <label style="display:flex;justify-content:space-between;align-items:center">
+          <span>Ingredientes</span>
+          <button type="button" class="btn btn-sm btn-primary" id="btn-add-ingrediente">+ Adicionar ingrediente</button>
+        </label>
+        <div id="ingredientes-container" class="ingredientes-container">
+          <div style="padding:16px;text-align:center;color:var(--muted);font-size:12px;background:#fafaf9;border-radius:8px">
+            Nenhum ingrediente adicionado.<br>
+            <span style="font-size:11px">Clique em "+ Adicionar ingrediente" para começar.</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- PAINEL DE PRECIFICAÇÃO -->
+      <div class="precif-painel" id="precif-painel">
+        <div class="precif-box">
+          <div class="precif-box-label">Custo da Receita</div>
+          <div class="precif-box-value" id="painel-custo-receita">R$ 0,00</div>
+        </div>
+        <div class="precif-box">
+          <div class="precif-box-label">Custo por <span id="painel-unidade-porcao">porção</span></div>
+          <div class="precif-box-value" id="painel-custo-porcao">R$ 0,00</div>
+        </div>
+        <div class="precif-box precif-gauge">
+          <div class="precif-box-label">CMV</div>
+          <svg id="painel-gauge-svg" viewBox="0 0 160 100">
+            <path d="M 20 80 A 60 60 0 0 1 140 80" fill="none" stroke="#F1EFE8" stroke-width="14" stroke-linecap="round"/>
+            <path id="painel-gauge-arc" d="" fill="none" stroke="#888780" stroke-width="14" stroke-linecap="round"/>
+            <line id="painel-gauge-needle" x1="80" y1="80" x2="80" y2="80" stroke="#444441" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="80" cy="80" r="6" fill="#444441"/>
+          </svg>
+          <div class="precif-box-value" id="painel-cmv-valor" style="font-size:14px">—</div>
+          <div class="precif-box-sub" id="painel-cmv-alvo">Alvo: —</div>
+        </div>
+        <div class="precif-box">
+          <div class="precif-box-label">Preço sugerido</div>
+          <div class="precif-box-value" id="painel-preco-sugerido">R$ 0,00</div>
+          <div class="precif-box-sub" id="painel-metodo">via CMV alvo</div>
+        </div>
+      </div>
+
+      <!-- Modo de preparo (opcional) -->
+      <div style="margin-top:14px">
+        <details>
+          <summary style="cursor:pointer;font-size:13px;color:var(--muted);padding:6px 0">
+            ⚙️ Informações adicionais (opcional)
+          </summary>
+          <div style="padding-top:10px">
+            <div class="form-field">
+              <label>Tempo de preparo <span class="optional">(opcional)</span></label>
+              <input type="text" id="ficha-tempo-preparo" placeholder="Ex: 45 min">
+            </div>
+            <div class="form-field">
+              <label>Modo de preparo <span class="optional">(opcional)</span></label>
+              <textarea id="ficha-modo-preparo" rows="4" placeholder="Descreva o passo a passo..." style="width:100%;padding:8px;font-family:inherit;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff;resize:vertical"></textarea>
+            </div>
+            <div class="form-field">
+              <label>Observações <span class="optional">(opcional)</span></label>
+              <input type="text" id="ficha-observacoes" placeholder="Ex: utensílios, dicas">
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div id="ficha-error" class="form-error"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" id="btn-ficha-cancelar">Cancelar</button>
+      <button class="btn btn-primary" id="btn-ficha-salvar">💾 Salvar Ficha</button>
     </div>
   </div>
 </div>

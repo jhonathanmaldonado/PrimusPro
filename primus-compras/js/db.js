@@ -49,6 +49,7 @@ const LISTA_ATUAL = () => collection(db, 'workspaces', WORKSPACE_ID, 'lista_atua
 const HISTORICO = () => collection(db, 'workspaces', WORKSPACE_ID, 'historico');
 const FORNECEDORES = () => collection(db, 'workspaces', WORKSPACE_ID, 'fornecedores');
 const INSUMOS = () => collection(db, 'workspaces', WORKSPACE_ID, 'insumos');
+const FICHAS = () => collection(db, 'workspaces', WORKSPACE_ID, 'fichas');
 
 // ============================================================================
 // CONFIG (incluindo precificação)
@@ -482,6 +483,148 @@ export async function atualizarFornecedor(fornId, dados) {
 
 export async function deletarFornecedor(fornId) {
   await deleteDoc(doc(FORNECEDORES(), fornId));
+}
+
+// ============================================================================
+// FICHAS TÉCNICAS (CRUD)
+// ============================================================================
+
+export function observarFichas(callback) {
+  const q = query(FICHAS(), orderBy('nome'));
+  return onSnapshot(q, snap => {
+    const lista = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+    callback(lista);
+  });
+}
+
+export async function criarFicha(dados) {
+  const ref = doc(FICHAS());
+  await setDoc(ref, {
+    nome: dados.nome,
+    rendimento: parseFloat(dados.rendimento) || 1,
+    unidadeRendimento: dados.unidadeRendimento || 'KG',  // KG | LITRO | UND | PORÇÕES
+    precoVenda: parseFloat(dados.precoVenda) || 0,
+    cmvAlvoCustom: dados.cmvAlvoCustom ?? null,  // se null, usa global
+    ehPrePreparo: !!dados.ehPrePreparo,
+    ingredientes: dados.ingredientes || [],  // [{ insumoId, pesoLiquido }]
+    tempoPreparo: dados.tempoPreparo || '',
+    modoPreparo: dados.modoPreparo || '',
+    observacoes: dados.observacoes || '',
+    ...auditFields({ criadoEm: serverTimestamp() })
+  });
+  return ref.id;
+}
+
+export async function atualizarFicha(fichaId, dados) {
+  const ref = doc(FICHAS(), fichaId);
+  const payload = { ...dados };
+  // Normaliza campos numéricos
+  if ('rendimento' in payload) payload.rendimento = parseFloat(payload.rendimento) || 1;
+  if ('precoVenda' in payload) payload.precoVenda = parseFloat(payload.precoVenda) || 0;
+  await updateDoc(ref, { ...payload, ...auditFields() });
+}
+
+export async function deletarFicha(fichaId) {
+  await deleteDoc(doc(FICHAS(), fichaId));
+}
+
+// ============================================================================
+// CÁLCULOS DETERMINÍSTICOS DE FICHA TÉCNICA
+// ============================================================================
+// Tudo é puro: dado uma ficha + insumos, calcula custos.
+// Sem dependências externas, fácil de auditar.
+
+// Custo de um único ingrediente
+// Ingrediente: { insumoId, pesoLiquido }
+// Retorna: { custoIngrediente, precoUnitario, pesoBruto, fc, unidade, encontrado }
+export function calcularCustoIngrediente(ingrediente, insumos) {
+  const insumo = insumos.find(i => i.id === ingrediente.insumoId);
+  if (!insumo) {
+    return {
+      encontrado: false,
+      custoIngrediente: 0,
+      precoUnitario: 0,
+      pesoBruto: 0,
+      fc: 1,
+      unidade: '?'
+    };
+  }
+
+  const pesoLiquido = parseFloat(ingrediente.pesoLiquido) || 0;
+  const fc = parseFloat(insumo.fatorCorrecao) || 1;
+  const precoUnitario = parseFloat(insumo.precoPorUnidade) || 0;
+  const pesoBruto = fc > 0 ? pesoLiquido / fc : pesoLiquido;
+  const custoIngrediente = pesoBruto * precoUnitario;
+
+  return {
+    encontrado: true,
+    custoIngrediente,
+    precoUnitario,
+    pesoBruto,
+    fc,
+    unidade: insumo.unidade || 'KG',
+    insumoNome: insumo.nome
+  };
+}
+
+// Custo total da receita
+// ficha: { ingredientes: [...] }
+// Retorna o somatório dos custos dos ingredientes
+export function calcularCustoReceita(ficha, insumos) {
+  if (!ficha || !ficha.ingredientes) return 0;
+  let total = 0;
+  for (const ing of ficha.ingredientes) {
+    const calc = calcularCustoIngrediente(ing, insumos);
+    total += calc.custoIngrediente;
+  }
+  return total;
+}
+
+// Custo por porção/unidade do rendimento
+export function calcularCustoPorPorcao(ficha, insumos) {
+  const custoReceita = calcularCustoReceita(ficha, insumos);
+  const rendimento = parseFloat(ficha?.rendimento) || 1;
+  if (rendimento <= 0) return custoReceita;
+  return custoReceita / rendimento;
+}
+
+// CMV (Custo da Mercadoria Vendida) — fração entre 0 e 1+
+// CMV = custo por porção ÷ preço de venda
+export function calcularCMV(ficha, insumos) {
+  const custoPorcao = calcularCustoPorPorcao(ficha, insumos);
+  const precoVenda = parseFloat(ficha?.precoVenda) || 0;
+  if (precoVenda <= 0) return null;
+  return custoPorcao / precoVenda;
+}
+
+// Preço sugerido baseado no método configurado
+// configPrecif: { metodo, cmvAlvo, markupFator, margemAlvo }
+// cmvAlvoCustom: sobrescreve o cmvAlvo global se preenchido
+export function calcularPrecoSugerido(ficha, insumos, configPrecif) {
+  const custoPorcao = calcularCustoPorPorcao(ficha, insumos);
+  if (custoPorcao <= 0) return 0;
+
+  const metodo = configPrecif?.metodo || 'cmv_alvo';
+
+  if (metodo === 'cmv_alvo') {
+    const alvoUsado = ficha?.cmvAlvoCustom ?? configPrecif?.cmvAlvo ?? 0.30;
+    if (alvoUsado <= 0) return 0;
+    return custoPorcao / alvoUsado;
+  } else if (metodo === 'markup') {
+    const fator = configPrecif?.markupFator ?? 3.0;
+    return custoPorcao * fator;
+  } else if (metodo === 'margem') {
+    const margem = configPrecif?.margemAlvo ?? 0.70;
+    if (margem >= 1) return 0;
+    return custoPorcao / (1 - margem);
+  }
+
+  return 0;
+}
+
+// Retorna o CMV alvo efetivo desta ficha (custom ou global)
+export function obterCMVAlvoEfetivo(ficha, configPrecif) {
+  return ficha?.cmvAlvoCustom ?? configPrecif?.cmvAlvo ?? 0.30;
 }
 
 // ============================================================================

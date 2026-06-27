@@ -24,6 +24,7 @@ import {
   observarHistorico,
   observarFornecedores,
   observarUsuarios,
+  observarFichas,
   criarCategoria,
   atualizarCategoria,
   deletarCategoria,
@@ -36,6 +37,9 @@ import {
   criarFornecedor,
   atualizarFornecedor,
   deletarFornecedor,
+  criarFicha,
+  atualizarFicha,
+  deletarFicha,
   deletarUsuario,
   setItemListaEmCriacao,
   limparListaEmCriacao,
@@ -52,7 +56,13 @@ import {
   getConfigMediaN,
   setConfigMediaN,
   getConfigPrecificacao,
-  setConfigPrecificacao
+  setConfigPrecificacao,
+  calcularCustoIngrediente,
+  calcularCustoReceita,
+  calcularCustoPorPorcao,
+  calcularCMV,
+  calcularPrecoSugerido,
+  obterCMVAlvoEfetivo
 } from './db.js';
 
 // ============================================================================
@@ -62,6 +72,7 @@ import {
 let categorias = [];
 let itens = [];
 let insumos = [];
+let fichas = [];
 let fornecedores = [];
 let usuarios = [];
 let listaEmCriacaoMap = {};
@@ -76,6 +87,8 @@ let searchAtual = '';
 let searchFornecedores = '';
 let searchAddAtual = '';
 let searchInsumos = '';
+let searchFichas = '';
+let filtroFichas = 'todas';  // todas | pratos | pp
 let currentTab = 'criar';
 let currentSubTabCardapio = 'insumos';
 let mediaN = 5;
@@ -86,6 +99,10 @@ let catCorSelecionada = '#7A1F38';
 
 // Insumo modal
 let insumoEditandoId = null;
+
+// Ficha modal (Sub-fase 2A)
+let fichaEditandoId = null;
+let fichaEmEdicao = null;  // ficha sendo editada/criada (em memória, antes de salvar)
 
 // Config precificação
 let configPrecificacao = { metodo: 'cmv_alvo', cmvAlvo: 0.30, markupFator: 3.0, margemAlvo: 0.70 };
@@ -318,6 +335,16 @@ function iniciarListeners() {
     insumos = ins;
     popularSelectInsumo();
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'insumos') renderInsumos();
+    // Se modal de ficha está aberto, recalcular (preço do insumo pode ter mudado)
+    if ($('modal-ficha').classList.contains('show')) {
+      renderIngredientesModal();
+      atualizarPainelPrecificacao();
+    }
+  }));
+
+  unsubsRefs.push(observarFichas((fs) => {
+    fichas = fs;
+    if (currentTab === 'cardapio' && currentSubTabCardapio === 'fichas') renderFichas();
   }));
 
   unsubsRefs.push(observarListaEmCriacao((lista) => {
@@ -811,7 +838,438 @@ function switchSubTabCardapio(sub) {
   $('subtab-config').style.display = sub === 'config' ? 'block' : 'none';
 
   if (sub === 'insumos') renderInsumos();
+  if (sub === 'fichas') renderFichas();
   if (sub === 'config') aplicarConfigPrecificacaoUI();
+}
+
+// ============================================================================
+// FICHAS TÉCNICAS - render + modal completo (Sub-fase 2A)
+// ============================================================================
+
+function renderFichas() {
+  const el = $('list-fichas');
+  $('stat-fichas-total').textContent = fichas.length;
+  const pratos = fichas.filter(f => !f.ehPrePreparo).length;
+  const pp = fichas.filter(f => f.ehPrePreparo).length;
+  $('stat-fichas-pratos').textContent = pratos;
+  $('stat-fichas-pp').textContent = pp;
+
+  let filtradas = fichas;
+  if (filtroFichas === 'pratos') filtradas = filtradas.filter(f => !f.ehPrePreparo);
+  if (filtroFichas === 'pp') filtradas = filtradas.filter(f => f.ehPrePreparo);
+
+  if (searchFichas) {
+    const t = searchFichas.toLowerCase();
+    filtradas = filtradas.filter(f => (f.nome || '').toLowerCase().includes(t));
+  }
+
+  if (!fichas.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">📋</div>
+      <div class="empty-state-text">Nenhuma ficha técnica cadastrada.<br>Clique em <strong>"+ Nova Ficha"</strong> para começar.</div>
+    </div>`;
+    return;
+  }
+
+  if (!filtradas.length) {
+    el.innerHTML = `<div class="empty-msg">Nenhuma ficha encontrada${searchFichas ? ' para "<strong>' + escHtml(searchFichas) + '</strong>"' : ''}</div>`;
+    $('search-fichas-clear').style.display = searchFichas ? 'block' : 'none';
+    return;
+  }
+
+  let html = '';
+  for (const ficha of filtradas) {
+    const custoReceita = calcularCustoReceita(ficha, insumos);
+    const custoPorcao = calcularCustoPorPorcao(ficha, insumos);
+    const cmv = calcularCMV(ficha, insumos);
+    const cmvAlvo = obterCMVAlvoEfetivo(ficha, configPrecificacao);
+    const precoSugerido = calcularPrecoSugerido(ficha, insumos, configPrecificacao);
+
+    const badgePP = ficha.ehPrePreparo ? `<span class="insumo-badge pp">PRÉ-PREPARO</span>` : '';
+    const nIngredientes = (ficha.ingredientes || []).length;
+
+    // Cor do CMV
+    let corCMV = 'var(--muted)';
+    let textoCMV = '—';
+    if (cmv !== null) {
+      const pct = cmv * 100;
+      textoCMV = pct.toFixed(1) + '%';
+      const ratio = cmv / cmvAlvo;
+      if (ratio < 0.80) corCMV = '#173404';      // verde
+      else if (ratio < 1.0) corCMV = '#854F0B';   // amarelo
+      else if (ratio < 1.2) corCMV = '#633806';   // âmbar
+      else corCMV = '#791F1F';                    // vermelho
+    }
+
+    html += `<div class="ficha-card">`;
+    html += `<div class="ficha-card-info">`;
+    html += `<div class="ficha-card-nome">${escHtml(ficha.nome)} ${badgePP}</div>`;
+    html += `<div class="ficha-card-meta">Rende ${ficha.rendimento} ${escHtml(ficha.unidadeRendimento || 'KG')} · ${nIngredientes} ingrediente(s)</div>`;
+    html += `<div class="ficha-card-stats">`;
+    html += `<span class="ficha-card-stat">Receita: <strong>${fmtMoeda(custoReceita)}</strong></span>`;
+    html += `<span class="ficha-card-stat">Porção: <strong>${fmtMoeda(custoPorcao)}</strong></span>`;
+    if (precoSugerido > 0) {
+      html += `<span class="ficha-card-stat">Sugerido: <strong>${fmtMoeda(precoSugerido)}</strong></span>`;
+    }
+    html += `</div>`;
+    html += `</div>`;
+    html += `<div class="ficha-card-cmv" style="color:${corCMV}">CMV<br>${textoCMV}</div>`;
+    html += `<span class="item-actions">`;
+    html += `<button class="icon-btn edit" data-action="editar-ficha" data-ficha-id="${ficha.id}" title="Editar">✏️</button>`;
+    html += `<button class="icon-btn danger" data-action="remover-ficha" data-ficha-id="${ficha.id}" title="Remover">×</button>`;
+    html += `</span>`;
+    html += `</div>`;
+  }
+
+  el.innerHTML = html;
+  $('search-fichas-clear').style.display = searchFichas ? 'block' : 'none';
+}
+
+// --- MODAL: abre/edita/cria ---
+
+function abrirModalFicha(fichaId = null) {
+  fichaEditandoId = fichaId;
+
+  if (fichaId) {
+    const f = fichas.find(x => x.id === fichaId);
+    if (!f) {
+      showToast('⚠ Ficha não encontrada', 'error');
+      return;
+    }
+    $('modal-ficha-title').textContent = '✏️ Editar Ficha Técnica';
+    fichaEmEdicao = {
+      nome: f.nome || '',
+      rendimento: f.rendimento ?? 1,
+      unidadeRendimento: f.unidadeRendimento || 'KG',
+      precoVenda: f.precoVenda ?? 0,
+      cmvAlvoCustom: f.cmvAlvoCustom ?? null,
+      ehPrePreparo: !!f.ehPrePreparo,
+      ingredientes: JSON.parse(JSON.stringify(f.ingredientes || [])),
+      tempoPreparo: f.tempoPreparo || '',
+      modoPreparo: f.modoPreparo || '',
+      observacoes: f.observacoes || ''
+    };
+    $('ficha-id').value = fichaId;
+  } else {
+    $('modal-ficha-title').textContent = '📋 Nova Ficha Técnica';
+    fichaEmEdicao = {
+      nome: '',
+      rendimento: 1,
+      unidadeRendimento: 'KG',
+      precoVenda: 0,
+      cmvAlvoCustom: null,
+      ehPrePreparo: false,
+      ingredientes: [],
+      tempoPreparo: '',
+      modoPreparo: '',
+      observacoes: ''
+    };
+    $('ficha-id').value = '';
+  }
+
+  // Popular UI com dados
+  $('ficha-nome').value = fichaEmEdicao.nome;
+  $('ficha-rendimento').value = fichaEmEdicao.rendimento;
+  $('ficha-unidade-rendimento').value = fichaEmEdicao.unidadeRendimento;
+  $('ficha-preco-venda').value = fichaEmEdicao.precoVenda || '';
+  $('ficha-cmv-custom').value = fichaEmEdicao.cmvAlvoCustom != null ? Math.round(fichaEmEdicao.cmvAlvoCustom * 100) : '';
+  $('ficha-eh-pp').checked = fichaEmEdicao.ehPrePreparo;
+  $('ficha-tempo-preparo').value = fichaEmEdicao.tempoPreparo;
+  $('ficha-modo-preparo').value = fichaEmEdicao.modoPreparo;
+  $('ficha-observacoes').value = fichaEmEdicao.observacoes;
+  $('ficha-error').classList.remove('show');
+  $('ficha-error').textContent = '';
+
+  renderIngredientesModal();
+  atualizarPainelPrecificacao();
+
+  $('modal-ficha').classList.add('show');
+  setTimeout(() => $('ficha-nome').focus(), 100);
+}
+
+function fecharModalFicha() {
+  $('modal-ficha').classList.remove('show');
+  fichaEditandoId = null;
+  fichaEmEdicao = null;
+}
+
+// --- RENDER de ingredientes (cards) ---
+
+function renderIngredientesModal() {
+  const el = $('ingredientes-container');
+  if (!fichaEmEdicao) return;
+
+  const ings = fichaEmEdicao.ingredientes || [];
+
+  if (!ings.length) {
+    el.innerHTML = `<div style="padding:16px;text-align:center;color:var(--muted);font-size:12px;background:#fafaf9;border-radius:8px">
+      Nenhum ingrediente adicionado.<br>
+      <span style="font-size:11px">Clique em "+ Adicionar ingrediente" para começar.</span>
+    </div>`;
+    return;
+  }
+
+  let html = '';
+  for (let i = 0; i < ings.length; i++) {
+    const ing = ings[i];
+    const calc = calcularCustoIngrediente(ing, insumos);
+    const invalidoCls = !calc.encontrado ? ' invalido' : '';
+    const semPreco = calc.encontrado && calc.precoUnitario <= 0;
+
+    html += `<div class="ingrediente-card${invalidoCls}" data-idx="${i}">`;
+    html += `<div class="ingrediente-header">`;
+    html += `<span class="ingrediente-nome">${calc.encontrado ? '✓ ' + escHtml(calc.insumoNome) : '⚠ Insumo não selecionado'}</span>`;
+    html += `<button class="icon-btn danger" data-action="remover-ing" data-idx="${i}" title="Remover ingrediente">×</button>`;
+    html += `</div>`;
+
+    html += `<div class="ingrediente-row">`;
+    // Select insumo
+    html += `<div class="field" style="flex:2;min-width:160px"><label>Insumo</label>`;
+    html += `<select data-action="update-ing-insumo" data-idx="${i}">`;
+    html += `<option value="">— Selecione —</option>`;
+    const insumosOrdenados = [...insumos].sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+    for (const ins of insumosOrdenados) {
+      const sel = ing.insumoId === ins.id ? ' selected' : '';
+      html += `<option value="${ins.id}"${sel}>${escHtml(ins.nome)} (${escHtml(ins.unidade || 'KG')})</option>`;
+    }
+    html += `</select></div>`;
+
+    // Peso líquido
+    html += `<div class="field" style="max-width:140px"><label>Peso líquido</label>`;
+    html += `<input type="number" inputmode="decimal" min="0" step="0.001" value="${ing.pesoLiquido || ''}" placeholder="0" data-action="update-ing-peso" data-idx="${i}">`;
+    html += `</div>`;
+    html += `</div>`;
+
+    if (calc.encontrado) {
+      html += `<div class="ingrediente-info-calc">`;
+      html += `<span>FC: <strong>${calc.fc.toFixed(2)}</strong></span>`;
+      html += `<span>Peso bruto: <strong>${calc.pesoBruto.toFixed(3)} ${escHtml(calc.unidade)}</strong></span>`;
+      html += `<span>Preço unit.: <strong>${semPreco ? '⚠ sem preço' : fmtMoeda(calc.precoUnitario) + '/' + escHtml(calc.unidade)}</strong></span>`;
+      html += `<span>Custo: <strong>${fmtMoeda(calc.custoIngrediente)}</strong></span>`;
+      html += `</div>`;
+    }
+
+    html += `</div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+function adicionarIngrediente() {
+  if (!fichaEmEdicao) return;
+  fichaEmEdicao.ingredientes.push({ insumoId: '', pesoLiquido: 0 });
+  renderIngredientesModal();
+  atualizarPainelPrecificacao();
+}
+
+function removerIngrediente(idx) {
+  if (!fichaEmEdicao) return;
+  fichaEmEdicao.ingredientes.splice(idx, 1);
+  renderIngredientesModal();
+  atualizarPainelPrecificacao();
+}
+
+function atualizarIngredienteInsumo(idx, insumoId) {
+  if (!fichaEmEdicao || !fichaEmEdicao.ingredientes[idx]) return;
+  fichaEmEdicao.ingredientes[idx].insumoId = insumoId;
+  renderIngredientesModal();
+  atualizarPainelPrecificacao();
+}
+
+function atualizarIngredientePeso(idx, peso) {
+  if (!fichaEmEdicao || !fichaEmEdicao.ingredientes[idx]) return;
+  fichaEmEdicao.ingredientes[idx].pesoLiquido = parseFloat(peso) || 0;
+  // Não re-renderiza tudo (preserva foco), só recalcula
+  const card = document.querySelector(`.ingrediente-card[data-idx="${idx}"]`);
+  if (card) {
+    const calc = calcularCustoIngrediente(fichaEmEdicao.ingredientes[idx], insumos);
+    const infoEl = card.querySelector('.ingrediente-info-calc');
+    if (infoEl && calc.encontrado) {
+      const semPreco = calc.precoUnitario <= 0;
+      infoEl.innerHTML = `
+        <span>FC: <strong>${calc.fc.toFixed(2)}</strong></span>
+        <span>Peso bruto: <strong>${calc.pesoBruto.toFixed(3)} ${escHtml(calc.unidade)}</strong></span>
+        <span>Preço unit.: <strong>${semPreco ? '⚠ sem preço' : fmtMoeda(calc.precoUnitario) + '/' + escHtml(calc.unidade)}</strong></span>
+        <span>Custo: <strong>${fmtMoeda(calc.custoIngrediente)}</strong></span>
+      `;
+    }
+  }
+  atualizarPainelPrecificacao();
+}
+
+// --- PAINEL DE PRECIFICAÇÃO (3 caixinhas + gauge) ---
+
+function atualizarPainelPrecificacao() {
+  if (!fichaEmEdicao) return;
+
+  const custoReceita = calcularCustoReceita(fichaEmEdicao, insumos);
+  const custoPorcao = calcularCustoPorPorcao(fichaEmEdicao, insumos);
+  const cmv = calcularCMV(fichaEmEdicao, insumos);
+  const cmvAlvo = obterCMVAlvoEfetivo(fichaEmEdicao, configPrecificacao);
+  const precoSugerido = calcularPrecoSugerido(fichaEmEdicao, insumos, configPrecificacao);
+
+  $('painel-custo-receita').textContent = fmtMoeda(custoReceita);
+  $('painel-custo-porcao').textContent = fmtMoeda(custoPorcao);
+
+  const unidadeLabel = fichaEmEdicao.unidadeRendimento === 'PORCOES' ? 'porção' : (fichaEmEdicao.unidadeRendimento || 'kg').toLowerCase();
+  $('painel-unidade-porcao').textContent = unidadeLabel;
+
+  $('painel-preco-sugerido').textContent = fmtMoeda(precoSugerido);
+
+  // Método label
+  const metodoLabels = {
+    cmv_alvo: 'via CMV alvo',
+    markup: 'via Markup',
+    margem: 'via Margem'
+  };
+  $('painel-metodo').textContent = metodoLabels[configPrecificacao.metodo] || 'via CMV alvo';
+
+  // Gauge CMV
+  desenharGaugeCMV(cmv, cmvAlvo);
+}
+
+function desenharGaugeCMV(cmv, cmvAlvo) {
+  const arc = $('painel-gauge-arc');
+  const needle = $('painel-gauge-needle');
+  const valor = $('painel-cmv-valor');
+  const alvoEl = $('painel-cmv-alvo');
+
+  alvoEl.textContent = 'Alvo: ' + Math.round(cmvAlvo * 100) + '%';
+
+  if (cmv === null || cmv <= 0) {
+    arc.setAttribute('d', '');
+    arc.setAttribute('stroke', '#888780');
+    needle.setAttribute('x2', '80');
+    needle.setAttribute('y2', '80');
+    needle.setAttribute('stroke', '#444441');
+    valor.textContent = '—';
+    valor.style.color = '#888780';
+    return;
+  }
+
+  const ratio = cmv / cmvAlvo;
+  // Mapeia: 0% do alvo = ângulo 180° (esquerda), 200% do alvo = 0° (direita)
+  // ratio 1.0 = meio (90°)
+  // limita ratio entre 0 e 2 pra não passar do arco
+  const ratioLimitado = Math.max(0, Math.min(2, ratio));
+  // ângulo: começa em 180° (esq), termina em 0° (dir)
+  // ratio 0.0 → 180°, ratio 1.0 → 90°, ratio 2.0 → 0°
+  const angulo = 180 - (ratioLimitado / 2) * 180;
+  const anguloRad = angulo * Math.PI / 180;
+
+  // Centro do gauge: (80, 80), raio: 60
+  const cx = 80, cy = 80, r = 60;
+  const px = cx + r * Math.cos(Math.PI - anguloRad);
+  const py = cy - r * Math.sin(Math.PI - anguloRad);
+
+  // Arc path: do ponto inicial (esquerda) até o ponto atual
+  const startX = 20, startY = 80;
+  const largeArc = (180 - angulo) > 180 ? 1 : 0;
+  const arcPath = `M ${startX} ${startY} A ${r} ${r} 0 ${largeArc} 1 ${px.toFixed(2)} ${py.toFixed(2)}`;
+  arc.setAttribute('d', arcPath);
+
+  // Cor segundo o ratio
+  let corArco, corNeedle, corTexto;
+  if (ratio < 0.80) {
+    corArco = '#639922'; corNeedle = '#173404'; corTexto = '#173404';
+  } else if (ratio < 1.0) {
+    corArco = '#FAC775'; corNeedle = '#854F0B'; corTexto = '#854F0B';
+  } else if (ratio < 1.2) {
+    corArco = '#EF9F27'; corNeedle = '#633806'; corTexto = '#633806';
+  } else {
+    corArco = '#E24B4A'; corNeedle = '#791F1F'; corTexto = '#791F1F';
+  }
+
+  arc.setAttribute('stroke', corArco);
+
+  // Posição do ponteiro: centro até o ponto (px, py)
+  needle.setAttribute('x2', px.toFixed(2));
+  needle.setAttribute('y2', py.toFixed(2));
+  needle.setAttribute('stroke', corNeedle);
+
+  valor.textContent = (cmv * 100).toFixed(1) + '%';
+  valor.style.color = corTexto;
+}
+
+// --- SALVAR ficha ---
+
+async function salvarFicha() {
+  if (!fichaEmEdicao) return;
+
+  // Lê o estado atual da UI
+  fichaEmEdicao.nome = $('ficha-nome').value.trim();
+  fichaEmEdicao.rendimento = parseFloat($('ficha-rendimento').value) || 1;
+  fichaEmEdicao.unidadeRendimento = $('ficha-unidade-rendimento').value;
+  fichaEmEdicao.precoVenda = parseFloat($('ficha-preco-venda').value) || 0;
+
+  const cmvCustomPct = parseFloat($('ficha-cmv-custom').value);
+  fichaEmEdicao.cmvAlvoCustom = isNaN(cmvCustomPct) ? null : (cmvCustomPct / 100);
+
+  fichaEmEdicao.ehPrePreparo = $('ficha-eh-pp').checked;
+  fichaEmEdicao.tempoPreparo = $('ficha-tempo-preparo').value.trim();
+  fichaEmEdicao.modoPreparo = $('ficha-modo-preparo').value.trim();
+  fichaEmEdicao.observacoes = $('ficha-observacoes').value.trim();
+
+  const err = $('ficha-error');
+
+  if (!fichaEmEdicao.nome) {
+    err.textContent = 'Nome da ficha é obrigatório';
+    err.classList.add('show');
+    return;
+  }
+  if (fichaEmEdicao.rendimento <= 0) {
+    err.textContent = 'Rendimento deve ser maior que zero';
+    err.classList.add('show');
+    return;
+  }
+  // Verifica duplicado
+  const dup = fichas.find(f =>
+    f.nome.toLowerCase() === fichaEmEdicao.nome.toLowerCase() && f.id !== fichaEditandoId
+  );
+  if (dup) {
+    err.textContent = 'Já existe uma ficha com esse nome';
+    err.classList.add('show');
+    return;
+  }
+
+  // Limpa ingredientes com insumoId vazio
+  fichaEmEdicao.ingredientes = (fichaEmEdicao.ingredientes || []).filter(i => i.insumoId);
+
+  err.classList.remove('show');
+  const btn = $('btn-ficha-salvar');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+
+  try {
+    if (fichaEditandoId) {
+      await atualizarFicha(fichaEditandoId, fichaEmEdicao);
+      showToast(`✓ "${fichaEmEdicao.nome}" atualizada`, 'success');
+    } else {
+      await criarFicha(fichaEmEdicao);
+      showToast(`✓ Ficha "${fichaEmEdicao.nome}" criada`, 'success');
+    }
+    fecharModalFicha();
+  } catch (e) {
+    err.textContent = 'Erro: ' + e.message;
+    err.classList.add('show');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💾 Salvar Ficha';
+  }
+}
+
+async function removerFicha(fichaId) {
+  const f = fichas.find(x => x.id === fichaId);
+  if (!f) return;
+
+  if (!confirm(`Remover a ficha "${f.nome}"?`)) return;
+
+  try {
+    await deletarFicha(fichaId);
+    showToast(`✓ "${f.nome}" removida`, 'success');
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
+  }
 }
 
 // ============================================================================
@@ -2247,6 +2705,92 @@ function setupEventos() {
     else if (target.dataset.action === 'remover-insumo') removerInsumo(target.dataset.insumoId);
   });
 
+  // === FICHAS TÉCNICAS ===
+  $('btn-nova-ficha').addEventListener('click', () => abrirModalFicha());
+  $('filtro-fichas').addEventListener('change', e => {
+    filtroFichas = e.target.value;
+    renderFichas();
+  });
+  $('search-fichas').addEventListener('input', e => {
+    searchFichas = e.target.value.trim();
+    renderFichas();
+  });
+  $('search-fichas-clear').addEventListener('click', () => {
+    $('search-fichas').value = '';
+    searchFichas = '';
+    renderFichas();
+  });
+  $('list-fichas').addEventListener('click', e => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+    if (target.dataset.action === 'editar-ficha') abrirModalFicha(target.dataset.fichaId);
+    else if (target.dataset.action === 'remover-ficha') removerFicha(target.dataset.fichaId);
+  });
+
+  // Modal de ficha - botões
+  $('btn-ficha-salvar').addEventListener('click', salvarFicha);
+  $('btn-ficha-cancelar').addEventListener('click', fecharModalFicha);
+  $('btn-add-ingrediente').addEventListener('click', adicionarIngrediente);
+
+  // Modal de ficha - inputs principais (atualizam painel ao vivo)
+  ['ficha-rendimento', 'ficha-unidade-rendimento', 'ficha-preco-venda', 'ficha-cmv-custom'].forEach(id => {
+    const el = $(id);
+    if (el) {
+      el.addEventListener('input', () => {
+        if (!fichaEmEdicao) return;
+        fichaEmEdicao.rendimento = parseFloat($('ficha-rendimento').value) || 1;
+        fichaEmEdicao.unidadeRendimento = $('ficha-unidade-rendimento').value;
+        fichaEmEdicao.precoVenda = parseFloat($('ficha-preco-venda').value) || 0;
+        const cmvPct = parseFloat($('ficha-cmv-custom').value);
+        fichaEmEdicao.cmvAlvoCustom = isNaN(cmvPct) ? null : (cmvPct / 100);
+        atualizarPainelPrecificacao();
+      });
+      el.addEventListener('change', () => {
+        if (!fichaEmEdicao) return;
+        fichaEmEdicao.rendimento = parseFloat($('ficha-rendimento').value) || 1;
+        fichaEmEdicao.unidadeRendimento = $('ficha-unidade-rendimento').value;
+        fichaEmEdicao.precoVenda = parseFloat($('ficha-preco-venda').value) || 0;
+        const cmvPct = parseFloat($('ficha-cmv-custom').value);
+        fichaEmEdicao.cmvAlvoCustom = isNaN(cmvPct) ? null : (cmvPct / 100);
+        atualizarPainelPrecificacao();
+      });
+    }
+  });
+
+  // Modal de ficha - container de ingredientes (delegação)
+  $('ingredientes-container').addEventListener('click', e => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+    if (target.dataset.action === 'remover-ing') {
+      removerIngrediente(parseInt(target.dataset.idx, 10));
+    }
+  });
+
+  $('ingredientes-container').addEventListener('change', e => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+    const idx = parseInt(target.dataset.idx, 10);
+    if (target.dataset.action === 'update-ing-insumo') {
+      atualizarIngredienteInsumo(idx, target.value);
+    } else if (target.dataset.action === 'update-ing-peso') {
+      atualizarIngredientePeso(idx, target.value);
+    }
+  });
+
+  $('ingredientes-container').addEventListener('input', e => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+    const idx = parseInt(target.dataset.idx, 10);
+    if (target.dataset.action === 'update-ing-peso') {
+      atualizarIngredientePeso(idx, target.value);
+    }
+  });
+
+  // Click outside modal-ficha
+  $('modal-ficha').addEventListener('click', e => {
+    if (e.target.id === 'modal-ficha') fecharModalFicha();
+  });
+
   // Configurações de precificação
   $('config-metodo-precificacao').addEventListener('change', atualizarVisibilidadeCamposMetodo);
   $('btn-config-salvar').addEventListener('click', salvarConfigPrecificacao);
@@ -2429,6 +2973,7 @@ function setupEventos() {
       if ($('modal-add-atual').classList.contains('show')) { fecharModalAddAtual(); return; }
       if ($('modal-categorias').classList.contains('show')) { fecharModalCategorias(); return; }
       if ($('modal-insumo').classList.contains('show')) { fecharModalInsumo(); return; }
+      if ($('modal-ficha').classList.contains('show')) { fecharModalFicha(); return; }
     }
   });
 
