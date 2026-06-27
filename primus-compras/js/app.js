@@ -935,6 +935,7 @@ function renderFichas() {
     html += `</div>`;
     html += `<div class="ficha-card-cmv" style="color:${corCMV}">CMV<br>${textoCMV}</div>`;
     html += `<span class="item-actions">`;
+    html += `<button class="icon-btn" data-action="imprimir-ficha" data-ficha-id="${ficha.id}" title="Imprimir ficha" style="color:#7A1F38">📄</button>`;
     html += `<button class="icon-btn edit" data-action="editar-ficha" data-ficha-id="${ficha.id}" title="Editar">✏️</button>`;
     html += `<button class="icon-btn danger" data-action="remover-ficha" data-ficha-id="${ficha.id}" title="Remover">×</button>`;
     html += `</span>`;
@@ -1491,8 +1492,188 @@ function imprimirRelatorio() {
   }
   // Re-renderiza pra garantir dados atualizados (e atualiza a data)
   renderRelatorioFichas();
+
+  // Marca o body com a classe pra ativar o CSS de impressão correto
+  document.body.classList.add('printing-relatorio');
+
   // Espera 100ms pro DOM atualizar e chama print
-  setTimeout(() => window.print(), 100);
+  setTimeout(() => {
+    window.print();
+    // Remove a classe após imprimir
+    setTimeout(() => document.body.classList.remove('printing-relatorio'), 500);
+  }, 100);
+}
+
+// ============================================================================
+// IMPRESSÃO DE FICHA TÉCNICA INDIVIDUAL
+// ============================================================================
+
+function imprimirFichaIndividual(fichaId) {
+  const ficha = fichas.find(f => f.id === fichaId);
+  if (!ficha) {
+    showToast('⚠ Ficha não encontrada', 'error');
+    return;
+  }
+
+  // Calcula tudo
+  const custoReceita = calcularCustoReceita(ficha, insumos);
+  const custoPorcao = calcularCustoPorPorcao(ficha, insumos);
+  const cmv = calcularCMV(ficha, insumos);
+  const cmvAlvo = obterCMVAlvoEfetivo(ficha, configPrecificacao);
+  const precoSugerido = calcularPrecoSugerido(ficha, insumos, configPrecificacao);
+  const nPorcoes = calcularNumeroPorcoes(ficha);
+
+  const unidade = ficha.unidadeRendimento || 'KG';
+  const unidadeLower = unidade.toLowerCase();
+  const tamanhoPorcao = parseFloat(ficha.tamanhoPorcao);
+
+  // Cor do CMV
+  let corCMV = '#444';
+  let textoCMV = '—';
+  if (cmv !== null) {
+    textoCMV = (cmv * 100).toFixed(1) + '%';
+    const ratio = cmv / cmvAlvo;
+    if (ratio < 0.80) corCMV = '#173404';
+    else if (ratio < 1.0) corCMV = '#854F0B';
+    else if (ratio < 1.2) corCMV = '#633806';
+    else corCMV = '#791F1F';
+  }
+
+  const nPorcoesFmt = nPorcoes >= 10 ? Math.round(nPorcoes) : (Math.round(nPorcoes * 10) / 10);
+
+  // ----- Cabeçalho -----
+  let html = '';
+  html += `<div class="ficha-print-header">`;
+  html += `<img src="img/logo-primus.png" alt="Primus Peixaria" class="ficha-print-logo" onerror="this.style.display='none'">`;
+  html += `<div class="ficha-print-header-info">`;
+  html += `<div class="ficha-print-empresa">PRIMUS PEIXARIA</div>`;
+  html += `<div class="ficha-print-empresa-sub">Cuiabá - MT</div>`;
+  html += `</div>`;
+  html += `<div class="ficha-print-titulo-doc">FICHA TÉCNICA</div>`;
+  html += `</div>`;
+
+  // ----- Nome do prato -----
+  const badgePP = ficha.ehPrePreparo ? '<span class="ficha-print-pp-badge">PRÉ-PREPARO</span>' : '';
+  html += `<div class="ficha-print-nome">${escHtml(ficha.nome)}${badgePP}</div>`;
+
+  // ----- Informações da receita -----
+  html += `<div class="ficha-print-secao">`;
+  html += `<div class="ficha-print-secao-titulo">📊 Informações da Receita</div>`;
+  html += `<table class="ficha-print-infos"><tbody>`;
+  html += `<tr><td>Rendimento total</td><td>${ficha.rendimento || 1} ${escHtml(unidade)}</td></tr>`;
+
+  if (unidade !== 'PORCOES') {
+    if (!isNaN(tamanhoPorcao) && tamanhoPorcao > 0) {
+      html += `<tr><td>Tamanho da porção</td><td>${tamanhoPorcao} ${escHtml(unidade)} (≈ ${nPorcoesFmt} porções)</td></tr>`;
+    } else {
+      html += `<tr><td>Tamanho da porção</td><td><em style="color:#888">não definido</em></td></tr>`;
+    }
+  } else {
+    html += `<tr><td>Número de porções</td><td>${nPorcoesFmt}</td></tr>`;
+  }
+
+  if ((ficha.precoVenda || 0) > 0) {
+    html += `<tr><td>Preço de venda</td><td>${fmtMoeda(ficha.precoVenda)} <span style="color:#888;font-size:10px">(por porção)</span></td></tr>`;
+  }
+  if (ficha.tempoPreparo) {
+    html += `<tr><td>Tempo de preparo</td><td>${escHtml(ficha.tempoPreparo)}</td></tr>`;
+  }
+  html += `</tbody></table>`;
+  html += `</div>`;
+
+  // ----- Ingredientes -----
+  html += `<div class="ficha-print-secao">`;
+  html += `<div class="ficha-print-secao-titulo">📋 Ingredientes</div>`;
+  html += `<table class="ficha-print-ingredientes">`;
+  html += `<thead><tr>`;
+  html += `<th>Insumo</th>`;
+  html += `<th class="num">Peso Líq.</th>`;
+  html += `<th class="num">FC</th>`;
+  html += `<th class="num">Peso Bruto</th>`;
+  html += `<th class="num">Preço Unit.</th>`;
+  html += `<th class="num">Custo</th>`;
+  html += `</tr></thead><tbody>`;
+
+  const ingredientes = ficha.ingredientes || [];
+  if (!ingredientes.length) {
+    html += `<tr><td colspan="6" style="text-align:center;color:#888;padding:12px">Nenhum ingrediente cadastrado</td></tr>`;
+  } else {
+    for (const ing of ingredientes) {
+      const calc = calcularCustoIngrediente(ing, insumos);
+      if (!calc.encontrado) {
+        html += `<tr><td colspan="6" style="color:#791F1F">⚠ Insumo não encontrado</td></tr>`;
+        continue;
+      }
+      const unidadeIng = calc.unidade || 'KG';
+      html += `<tr>`;
+      html += `<td>${escHtml(calc.insumoNome)}</td>`;
+      html += `<td class="num">${(ing.pesoLiquido || 0).toFixed(3)} ${escHtml(unidadeIng)}</td>`;
+      html += `<td class="num">${calc.fc.toFixed(2)}</td>`;
+      html += `<td class="num">${calc.pesoBruto.toFixed(3)} ${escHtml(unidadeIng)}</td>`;
+      html += `<td class="num">${calc.precoUnitario > 0 ? fmtMoeda(calc.precoUnitario) + '/' + escHtml(unidadeIng) : '<em style="color:#888">sem preço</em>'}</td>`;
+      html += `<td class="num">${fmtMoeda(calc.custoIngrediente)}</td>`;
+      html += `</tr>`;
+    }
+  }
+
+  html += `</tbody><tfoot>`;
+  html += `<tr><td colspan="5" style="text-align:right">CUSTO TOTAL DA RECEITA</td><td class="num">${fmtMoeda(custoReceita)}</td></tr>`;
+  html += `<tr><td colspan="5" style="text-align:right">CUSTO POR PORÇÃO <span style="font-weight:400;color:#888;font-size:9px">(${nPorcoesFmt} porções)</span></td><td class="num">${fmtMoeda(custoPorcao)}</td></tr>`;
+  html += `</tfoot></table>`;
+  html += `</div>`;
+
+  // ----- Análise Financeira (só se tiver preço de venda) -----
+  if ((ficha.precoVenda || 0) > 0 && custoPorcao > 0) {
+    const margemContrib = ficha.precoVenda - custoPorcao;
+    const pctMargem = (margemContrib / ficha.precoVenda) * 100;
+
+    html += `<div class="ficha-print-secao">`;
+    html += `<div class="ficha-print-secao-titulo">💰 Análise Financeira</div>`;
+    html += `<table class="ficha-print-infos"><tbody>`;
+    html += `<tr><td>Preço de venda</td><td><strong>${fmtMoeda(ficha.precoVenda)}</strong></td></tr>`;
+    html += `<tr><td>Custo por porção</td><td>${fmtMoeda(custoPorcao)}</td></tr>`;
+    html += `<tr><td>CMV atual</td><td><strong style="color:${corCMV}">${textoCMV}</strong></td></tr>`;
+    html += `<tr><td>CMV alvo</td><td>${Math.round(cmvAlvo * 100)}%</td></tr>`;
+    html += `<tr><td>Margem de contribuição</td><td><strong>${fmtMoeda(margemContrib)}</strong> <span style="color:#888;font-size:10px">(${pctMargem.toFixed(1)}%)</span></td></tr>`;
+    if (precoSugerido > 0) {
+      html += `<tr><td>Preço sugerido (CMV alvo)</td><td>${fmtMoeda(precoSugerido)}</td></tr>`;
+    }
+    html += `</tbody></table>`;
+    html += `</div>`;
+  }
+
+  // ----- Modo de preparo -----
+  if (ficha.modoPreparo) {
+    html += `<div class="ficha-print-secao">`;
+    html += `<div class="ficha-print-secao-titulo">👨‍🍳 Modo de Preparo</div>`;
+    html += `<div class="ficha-print-modo">${escHtml(ficha.modoPreparo)}</div>`;
+    html += `</div>`;
+  }
+
+  // ----- Observações -----
+  if (ficha.observacoes) {
+    html += `<div class="ficha-print-secao">`;
+    html += `<div class="ficha-print-secao-titulo">📝 Observações</div>`;
+    html += `<div class="ficha-print-modo">${escHtml(ficha.observacoes)}</div>`;
+    html += `</div>`;
+  }
+
+  // ----- Rodapé -----
+  const agora = new Date();
+  const dataFmt = `${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+  html += `<div class="ficha-print-rodape">Ficha técnica gerada em ${dataFmt}</div>`;
+
+  // Insere no DOM e chama print
+  $('ficha-impressao').innerHTML = html;
+  document.body.classList.add('printing-ficha');
+
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => {
+      document.body.classList.remove('printing-ficha');
+      $('ficha-impressao').innerHTML = '';
+    }, 500);
+  }, 150);
 }
 
 // ============================================================================
@@ -3069,6 +3250,7 @@ function setupEventos() {
     if (!target) return;
     if (target.dataset.action === 'editar-ficha') abrirModalFicha(target.dataset.fichaId);
     else if (target.dataset.action === 'remover-ficha') removerFicha(target.dataset.fichaId);
+    else if (target.dataset.action === 'imprimir-ficha') imprimirFichaIndividual(target.dataset.fichaId);
   });
 
   // Modal de ficha - botões

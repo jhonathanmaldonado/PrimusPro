@@ -433,45 +433,245 @@
 }
 
 /* === ESTILOS PARA IMPRESSÃO === */
+/* Área de impressão de ficha individual - escondida na tela */
+.ficha-impressao-area {
+  display: none;
+}
+
 @media print {
   body * {
     visibility: hidden;
   }
-  #relatorio-conteudo, #relatorio-conteudo * {
+  /* Quando imprime relatório: mostra relatório */
+  body.printing-relatorio #relatorio-conteudo,
+  body.printing-relatorio #relatorio-conteudo * {
     visibility: visible;
   }
-  #relatorio-conteudo {
+  body.printing-relatorio #relatorio-conteudo {
     position: absolute;
     left: 0;
     top: 0;
     width: 100%;
     padding: 0;
   }
+  /* Quando imprime ficha individual: mostra ficha */
+  body.printing-ficha #ficha-impressao,
+  body.printing-ficha #ficha-impressao * {
+    visibility: visible;
+  }
+  body.printing-ficha #ficha-impressao {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+  }
+
   .no-print { display: none !important; }
   .print-only { display: block !important; }
 
-  .tabela-relatorio {
+  /* Tabela do relatório (paisagem) */
+  body.printing-relatorio .tabela-relatorio {
     font-size: 10px;
     border: 1px solid #333;
     border-radius: 0;
   }
-  .tabela-relatorio thead {
+  body.printing-relatorio .tabela-relatorio thead {
     background: #7A1F38 !important;
     color: #fff !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  .tabela-relatorio tbody tr:nth-child(even) {
+  body.printing-relatorio .tabela-relatorio tbody tr:nth-child(even) {
     background: #f5f5f5 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  .tabela-relatorio td, .tabela-relatorio th {
+  body.printing-relatorio .tabela-relatorio td,
+  body.printing-relatorio .tabela-relatorio th {
     padding: 4px 6px;
   }
-  @page {
-    size: A4 landscape;
-    margin: 1.5cm;
+
+  /* Página em paisagem pro relatório, retrato pra ficha individual */
+  body.printing-relatorio {
+    @page {
+      size: A4 landscape;
+      margin: 1.5cm;
+    }
+  }
+  body.printing-ficha {
+    @page {
+      size: A4 portrait;
+      margin: 1.2cm;
+    }
+  }
+}
+
+/* ====== FICHA TÉCNICA INDIVIDUAL (impressão) ====== */
+.ficha-print-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #7A1F38;
+  margin-bottom: 18px;
+}
+.ficha-print-logo {
+  width: 60px;
+  height: 60px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+.ficha-print-header-info {
+  flex: 1;
+}
+.ficha-print-empresa {
+  font-size: 18px;
+  font-weight: 700;
+  color: #7A1F38;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+.ficha-print-empresa-sub {
+  font-size: 10px;
+  color: #888780;
+  margin: 0;
+}
+.ficha-print-titulo-doc {
+  text-align: right;
+  font-size: 11px;
+  color: #888780;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 700;
+}
+
+.ficha-print-nome {
+  font-size: 24px;
+  font-weight: 700;
+  color: #7A1F38;
+  text-align: center;
+  margin: 0 0 18px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+.ficha-print-pp-badge {
+  display: inline-block;
+  background: #E9A93A;
+  color: #7A1F38;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 8px;
+  vertical-align: middle;
+  letter-spacing: 0.5px;
+}
+
+.ficha-print-secao {
+  margin-bottom: 14px;
+}
+.ficha-print-secao-titulo {
+  font-size: 11px;
+  font-weight: 700;
+  color: #7A1F38;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 0 0 6px 0;
+  padding-bottom: 3px;
+  border-bottom: 1px solid #f0d590;
+}
+
+.ficha-print-infos {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.ficha-print-infos td {
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+}
+.ficha-print-infos td:first-child {
+  background: #faf5e9;
+  color: #7A1F38;
+  font-weight: 600;
+  width: 35%;
+}
+
+.ficha-print-ingredientes {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 10.5px;
+}
+.ficha-print-ingredientes thead {
+  background: #7A1F38;
+  color: #fff;
+}
+.ficha-print-ingredientes th {
+  padding: 5px 7px;
+  font-size: 9px;
+  text-align: left;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  font-weight: 700;
+}
+.ficha-print-ingredientes th.num,
+.ficha-print-ingredientes td.num {
+  text-align: right;
+}
+.ficha-print-ingredientes td {
+  padding: 4px 7px;
+  border-bottom: 1px solid #eee;
+}
+.ficha-print-ingredientes tbody tr:nth-child(even) {
+  background: #faf8f5;
+}
+.ficha-print-ingredientes tfoot {
+  font-weight: 700;
+  color: #7A1F38;
+}
+.ficha-print-ingredientes tfoot td {
+  padding: 6px 7px;
+  border-top: 2px solid #7A1F38;
+  border-bottom: none;
+}
+
+.ficha-print-modo {
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: #333;
+  padding: 6px 0;
+}
+
+.ficha-print-rodape {
+  margin-top: 20px;
+  padding-top: 8px;
+  border-top: 1px solid #ddd;
+  font-size: 9px;
+  color: #888;
+  text-align: center;
+}
+
+@media print {
+  body.printing-ficha .ficha-impressao-area {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  body.printing-ficha .ficha-print-ingredientes thead {
+    background: #7A1F38 !important;
+    color: #fff !important;
+  }
+  body.printing-ficha .ficha-print-infos td:first-child {
+    background: #faf5e9 !important;
+  }
+  body.printing-ficha .ficha-print-ingredientes tbody tr:nth-child(even) {
+    background: #faf8f5 !important;
+  }
+  body.printing-ficha .ficha-print-pp-badge {
+    background: #E9A93A !important;
+    color: #7A1F38 !important;
   }
 }
 </style>
@@ -1408,6 +1608,9 @@
     </div>
   </div>
 </div>
+
+<!-- ÁREA DE IMPRESSÃO DE FICHA TÉCNICA INDIVIDUAL -->
+<div id="ficha-impressao" class="ficha-impressao-area"></div>
 
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
