@@ -591,7 +591,59 @@ export async function deletarFicha(fichaId) {
 // Custo de um único ingrediente
 // Ingrediente: { insumoId, pesoLiquido }
 // Retorna: { custoIngrediente, precoUnitario, pesoBruto, fc, unidade, encontrado }
-export function calcularCustoIngrediente(ingrediente, insumos) {
+// Custo unitário (por KG/L/UND) de uma ficha técnica usada como pré-preparo
+// Retorna o custo de produzir 1 unidade do rendimento dessa ficha
+// Ex: Pasta de Alho custa R$42,35 e rende 2.4 KG → custo unitário = R$17,65/KG
+//
+// fichas e insumos são passados pra evitar dependência circular não detectada
+// (o cálculo só vai 1 nível fundo; loops mais profundos são prevenidos no app.js)
+export function calcularCustoPorUnidadeFicha(ficha, fichas, insumos) {
+  if (!ficha) return 0;
+  const custoTotal = calcularCustoReceita(ficha, insumos, fichas);
+  const rendimento = parseFloat(ficha.rendimento) || 0;
+  if (rendimento <= 0) return 0;
+  return custoTotal / rendimento;
+}
+
+export function calcularCustoIngrediente(ingrediente, insumos, fichas) {
+  // Determina o tipo do ingrediente (default 'insumo' pra retrocompatibilidade)
+  const tipo = ingrediente.tipo || 'insumo';
+
+  if (tipo === 'ficha') {
+    // Ingrediente é um pré-preparo (sub-receita)
+    const fichaSub = (fichas || []).find(f => f.id === ingrediente.fichaId);
+    if (!fichaSub) {
+      return {
+        encontrado: false,
+        custoIngrediente: 0,
+        precoUnitario: 0,
+        pesoBruto: 0,
+        fc: 1,
+        unidade: '?',
+        tipo: 'ficha'
+      };
+    }
+
+    const pesoLiquido = parseFloat(ingrediente.pesoLiquido) || 0;
+    // Pré-preparos não têm FC (já está processado)
+    const fc = 1;
+    const precoUnitario = calcularCustoPorUnidadeFicha(fichaSub, fichas, insumos);
+    const pesoBruto = pesoLiquido;
+    const custoIngrediente = pesoBruto * precoUnitario;
+
+    return {
+      encontrado: true,
+      custoIngrediente,
+      precoUnitario,
+      pesoBruto,
+      fc,
+      unidade: fichaSub.unidadeRendimento || 'KG',
+      insumoNome: fichaSub.nome,
+      tipo: 'ficha'
+    };
+  }
+
+  // Ingrediente é insumo (comportamento original)
   const insumo = insumos.find(i => i.id === ingrediente.insumoId);
   if (!insumo) {
     return {
@@ -600,7 +652,8 @@ export function calcularCustoIngrediente(ingrediente, insumos) {
       precoUnitario: 0,
       pesoBruto: 0,
       fc: 1,
-      unidade: '?'
+      unidade: '?',
+      tipo: 'insumo'
     };
   }
 
@@ -617,21 +670,51 @@ export function calcularCustoIngrediente(ingrediente, insumos) {
     pesoBruto,
     fc,
     unidade: insumo.unidade || 'KG',
-    insumoNome: insumo.nome
+    insumoNome: insumo.nome,
+    tipo: 'insumo'
   };
 }
 
 // Custo total da receita
 // ficha: { ingredientes: [...] }
 // Retorna o somatório dos custos dos ingredientes
-export function calcularCustoReceita(ficha, insumos) {
+export function calcularCustoReceita(ficha, insumos, fichas) {
   if (!ficha || !ficha.ingredientes) return 0;
   let total = 0;
   for (const ing of ficha.ingredientes) {
-    const calc = calcularCustoIngrediente(ing, insumos);
+    const calc = calcularCustoIngrediente(ing, insumos, fichas);
     total += calc.custoIngrediente;
   }
   return total;
+}
+
+// Verifica se adicionar `fichaIdIngrediente` como ingrediente de `fichaIdAtual`
+// criaria uma dependência circular (loop)
+// Retorna: true = vai criar loop (BLOQUEAR), false = ok
+export function verificarDependenciaCircular(fichaIdAtual, fichaIdIngrediente, fichas) {
+  if (!fichaIdAtual || !fichaIdIngrediente) return false;
+  if (fichaIdAtual === fichaIdIngrediente) return true;  // auto-referência
+
+  // Busca recursivamente: a ficha que vamos adicionar usa a ficha atual?
+  const visitadas = new Set();
+
+  function buscar(fId) {
+    if (visitadas.has(fId)) return false;  // já visitada, sem loop por esse caminho
+    visitadas.add(fId);
+
+    const f = fichas.find(x => x.id === fId);
+    if (!f || !f.ingredientes) return false;
+
+    for (const ing of f.ingredientes) {
+      if (ing.tipo === 'ficha' && ing.fichaId) {
+        if (ing.fichaId === fichaIdAtual) return true;  // achou loop!
+        if (buscar(ing.fichaId)) return true;
+      }
+    }
+    return false;
+  }
+
+  return buscar(fichaIdIngrediente);
 }
 
 // Número de porções que a receita rende
@@ -658,8 +741,8 @@ export function calcularNumeroPorcoes(ficha) {
 
 // Custo por porção
 // custoPorPorcao = custoReceita ÷ númeroDePorcoes
-export function calcularCustoPorPorcao(ficha, insumos) {
-  const custoReceita = calcularCustoReceita(ficha, insumos);
+export function calcularCustoPorPorcao(ficha, insumos, fichas) {
+  const custoReceita = calcularCustoReceita(ficha, insumos, fichas);
   const nPorcoes = calcularNumeroPorcoes(ficha);
   if (nPorcoes <= 0) return custoReceita;
   return custoReceita / nPorcoes;
@@ -667,8 +750,8 @@ export function calcularCustoPorPorcao(ficha, insumos) {
 
 // CMV (Custo da Mercadoria Vendida) — fração entre 0 e 1+
 // CMV = custo por porção ÷ preço de venda
-export function calcularCMV(ficha, insumos) {
-  const custoPorcao = calcularCustoPorPorcao(ficha, insumos);
+export function calcularCMV(ficha, insumos, fichas) {
+  const custoPorcao = calcularCustoPorPorcao(ficha, insumos, fichas);
   const precoVenda = parseFloat(ficha?.precoVenda) || 0;
   if (precoVenda <= 0) return null;
   return custoPorcao / precoVenda;
@@ -677,8 +760,8 @@ export function calcularCMV(ficha, insumos) {
 // Preço sugerido baseado no método configurado
 // configPrecif: { metodo, cmvAlvo, markupFator, margemAlvo }
 // cmvAlvoCustom: sobrescreve o cmvAlvo global se preenchido
-export function calcularPrecoSugerido(ficha, insumos, configPrecif) {
-  const custoPorcao = calcularCustoPorPorcao(ficha, insumos);
+export function calcularPrecoSugerido(ficha, insumos, configPrecif, fichas) {
+  const custoPorcao = calcularCustoPorPorcao(ficha, insumos, fichas);
   if (custoPorcao <= 0) return 0;
 
   const metodo = configPrecif?.metodo || 'cmv_alvo';
@@ -916,50 +999,76 @@ export function agregarVendasPorProduto(vendas) {
 export function calcularConsumoInsumos(vendasVinculadas, fichas, insumos) {
   const mapa = {};
 
+  // Função auxiliar: expande uma ficha em consumo de insumos base
+  // qtdReceita = quantas vezes a receita inteira foi "consumida"
+  //   (se é prato vendido: qtdVendida ÷ porcoes da receita)
+  //   (se é pré-preparo dentro de outro: quanto da receita foi usado em proporção)
+  // visitadas = previne loop infinito
+  function expandirFicha(ficha, qtdReceita, visitadas) {
+    if (!ficha || qtdReceita <= 0) return;
+    if (visitadas.has(ficha.id)) return;  // proteção contra loop
+    visitadas.add(ficha.id);
+
+    for (const ing of (ficha.ingredientes || [])) {
+      const tipo = ing.tipo || 'insumo';
+      const pesoLiquidoNaReceita = parseFloat(ing.pesoLiquido) || 0;
+      const consumoLiquidoTotal = pesoLiquidoNaReceita * qtdReceita;
+
+      if (tipo === 'ficha') {
+        // É pré-preparo: expande recursivamente
+        const fichaSub = fichas.find(f => f.id === ing.fichaId);
+        if (!fichaSub) continue;
+
+        // Quanto da receita do pré-preparo foi usada?
+        // consumoLiquidoTotal (no rendimento do pré-preparo) ÷ rendimento total do pré-preparo
+        const rendimentoSub = parseFloat(fichaSub.rendimento) || 1;
+        const qtdReceitaSub = rendimentoSub > 0 ? consumoLiquidoTotal / rendimentoSub : 0;
+
+        // Recursão: usa um clone de visitadas pra cada caminho (não bloqueia árvores irmãs)
+        expandirFicha(fichaSub, qtdReceitaSub, new Set(visitadas));
+      } else {
+        // É insumo base
+        const insumo = insumos.find(i => i.id === ing.insumoId);
+        if (!insumo) continue;
+
+        const fc = parseFloat(insumo.fatorCorrecao) || 1;
+        const consumoBrutoTotal = consumoLiquidoTotal * fc;
+
+        if (!mapa[insumo.id]) {
+          mapa[insumo.id] = {
+            insumoId: insumo.id,
+            insumo,
+            consumoLiquido: 0,
+            consumoBruto: 0,
+            custo: 0
+          };
+        }
+
+        mapa[insumo.id].consumoLiquido += consumoLiquidoTotal;
+        mapa[insumo.id].consumoBruto += consumoBrutoTotal;
+        mapa[insumo.id].custo += consumoBrutoTotal * (insumo.precoPorUnidade || 0);
+      }
+    }
+  }
+
   for (const v of vendasVinculadas) {
     const ficha = fichas.find(f => f.id === v.fichaId);
     if (!ficha) continue;
 
-    // Quantas porções foram vendidas
     const qtdVendida = v.quantidade || 0;
     if (qtdVendida <= 0) continue;
 
-    // Para cada ingrediente da ficha
-    for (const ing of (ficha.ingredientes || [])) {
-      const insumo = insumos.find(i => i.id === ing.insumoId);
-      if (!insumo) continue;
+    // Quantas "receitas inteiras" foram consumidas?
+    // Ex: receita rende 54 porções, vendeu 68 porções → 68/54 = 1.26 receitas
+    const porcoes = (ficha.unidadeRendimento === 'PORCOES')
+      ? (ficha.rendimento || 1)
+      : (ficha.tamanhoPorcao && ficha.tamanhoPorcao > 0
+          ? (ficha.rendimento || 1) / ficha.tamanhoPorcao
+          : 1);
 
-      // Quanto desse insumo cada porção consome?
-      // Ficha.rendimento = quantas porções a receita rende
-      // ing.pesoLiquido = peso líquido total da receita
-      // Então: pesoLiquido / rendimento = peso líquido POR PORÇÃO
-      const porcoes = (ficha.unidadeRendimento === 'PORCOES')
-        ? (ficha.rendimento || 1)
-        : (ficha.tamanhoPorcao && ficha.tamanhoPorcao > 0
-            ? (ficha.rendimento || 1) / ficha.tamanhoPorcao
-            : 1);
+    const qtdReceita = porcoes > 0 ? qtdVendida / porcoes : 0;
 
-      const pesoLiquidoPorPorcao = (ing.pesoLiquido || 0) / porcoes;
-      const pesoLiquidoTotal = pesoLiquidoPorPorcao * qtdVendida;
-
-      // Aplica FC pra converter líquido em bruto
-      const fc = insumo.fatorCorrecao || 1;
-      const pesoBrutoTotal = pesoLiquidoTotal * fc;
-
-      if (!mapa[insumo.id]) {
-        mapa[insumo.id] = {
-          insumoId: insumo.id,
-          insumo,
-          consumoLiquido: 0,
-          consumoBruto: 0,
-          custo: 0
-        };
-      }
-
-      mapa[insumo.id].consumoLiquido += pesoLiquidoTotal;
-      mapa[insumo.id].consumoBruto += pesoBrutoTotal;
-      mapa[insumo.id].custo += pesoBrutoTotal * (insumo.precoPorUnidade || 0);
-    }
+    expandirFicha(ficha, qtdReceita, new Set());
   }
 
   return Object.values(mapa);
