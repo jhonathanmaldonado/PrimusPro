@@ -122,6 +122,10 @@ let cmvPeriodoTipo = 'mes-atual';      // mes-atual | mes-especifico | todos
 let cmvMesEspecifico = null;            // 'YYYY-MM' quando tipo === 'mes-especifico'
 let cmvOrdenacao = 'receita';           // receita | cmv
 
+// Análises (Fase 3D)
+let analisesPeriodoTipo = 'mes-atual';
+let analisesMesEspecifico = null;
+
 // Categoria modal
 let catEditandoId = null;
 let catCorSelecionada = '#7A1F38';
@@ -366,6 +370,7 @@ function iniciarListeners() {
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'insumos') renderInsumos();
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'relatorio') renderRelatorioFichas();
     if (currentTab === 'vendas' && currentSubTabVendas === 'cmv') renderCMVReal();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'analises') renderAnalises();
     // Se modal de ficha está aberto, recalcular (preço do insumo pode ter mudado)
     if ($('modal-ficha').classList.contains('show')) {
       renderIngredientesModal();
@@ -379,6 +384,7 @@ function iniciarListeners() {
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'relatorio') renderRelatorioFichas();
     if (currentTab === 'vendas' && currentSubTabVendas === 'vinculos') renderVinculos();
     if (currentTab === 'vendas' && currentSubTabVendas === 'cmv') renderCMVReal();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'analises') renderAnalises();
   }));
 
   unsubsRefs.push(observarVendas((v) => {
@@ -386,6 +392,7 @@ function iniciarListeners() {
     if (currentTab === 'vendas' && currentSubTabVendas === 'dados') renderDadosVendas();
     if (currentTab === 'vendas' && currentSubTabVendas === 'vinculos') renderVinculos();
     if (currentTab === 'vendas' && currentSubTabVendas === 'cmv') renderCMVReal();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'analises') renderAnalises();
     if (currentTab === 'vendas' && currentSubTabVendas === 'calendario' && diaSelecionadoCalendario) {
       renderDetalhesDia(diaSelecionadoCalendario);
     }
@@ -3246,11 +3253,13 @@ function switchSubTabVendas(sub) {
   $('vendas-subtab-dados').style.display = sub === 'dados' ? 'block' : 'none';
   $('vendas-subtab-vinculos').style.display = sub === 'vinculos' ? 'block' : 'none';
   $('vendas-subtab-cmv').style.display = sub === 'cmv' ? 'block' : 'none';
+  $('vendas-subtab-analises').style.display = sub === 'analises' ? 'block' : 'none';
 
   if (sub === 'calendario') renderCalendario();
   if (sub === 'dados') renderDadosVendas();
   if (sub === 'vinculos') renderVinculos();
   if (sub === 'cmv') renderCMVReal();
+  if (sub === 'analises') renderAnalises();
 }
 
 // ============================================================================
@@ -4116,6 +4125,306 @@ function desenharGaugeCMVReal(cmv, cmvAlvo) {
 }
 
 // ============================================================================
+// VENDAS - Análises Estratégicas (Fase 3D)
+// ============================================================================
+
+// Filtra vendas vinculadas pelo período da análise
+function filtrarVendasAnalises() {
+  let v = vendas.filter(x => x.fichaId && !x.ignorado);
+  if (analisesPeriodoTipo === 'mes-atual') {
+    const h = new Date();
+    const prefix = `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}`;
+    v = v.filter(x => x.data && x.data.startsWith(prefix));
+  } else if (analisesPeriodoTipo === 'mes-especifico' && analisesMesEspecifico) {
+    v = v.filter(x => x.data && x.data.startsWith(analisesMesEspecifico));
+  }
+  return v;
+}
+
+// Agrupa vendas vinculadas por ficha
+function agruparVendasPorFicha(vendasFiltradas) {
+  const porFicha = {};
+  for (const v of vendasFiltradas) {
+    const ficha = fichas.find(f => f.id === v.fichaId);
+    if (!ficha) continue;
+    if (!porFicha[ficha.id]) {
+      porFicha[ficha.id] = {
+        ficha,
+        nome: ficha.nome,
+        quantidade: 0,
+        receita: 0,
+        custoPorPorcao: calcularCustoPorPorcao(ficha, insumos)
+      };
+    }
+    porFicha[ficha.id].quantidade += v.quantidade || 0;
+    porFicha[ficha.id].receita += v.total || 0;
+  }
+  // Calcula custo total e CMV de cada
+  return Object.values(porFicha).map(p => ({
+    ...p,
+    custo: p.quantidade * p.custoPorPorcao,
+    cmv: p.receita > 0 ? (p.quantidade * p.custoPorPorcao) / p.receita : 0,
+    margem: p.receita - (p.quantidade * p.custoPorPorcao)
+  }));
+}
+
+function calcularAnalises() {
+  const vendasFiltradas = filtrarVendasAnalises();
+  const pratos = agruparVendasPorFicha(vendasFiltradas);
+
+  if (!pratos.length) {
+    return { vazio: true };
+  }
+
+  const receitaTotal = pratos.reduce((s, p) => s + p.receita, 0);
+  const cmvAlvoGlobal = configPrecificacao.cmvAlvo || 0.30;
+
+  // 🏆 Produto âncora: maior valor de "contribuição absoluta para margem"
+  // = receita × (1 - cmv) = margem em valor absoluto
+  const pratosOrdenadosPorContribuicao = [...pratos].sort((a, b) => b.margem - a.margem);
+  const ancora = pratosOrdenadosPorContribuicao[0];
+  const ancoraPctReceita = receitaTotal > 0 ? (ancora.receita / receitaTotal) * 100 : 0;
+
+  // 🚀 Top 5 mais vendidos (por receita)
+  const topReceita = [...pratos].sort((a, b) => b.receita - a.receita).slice(0, 5);
+
+  // 💎 Top 5 maiores margens (menor CMV)
+  // Filtra apenas pratos com volume mínimo (>= 3 vendas) pra não enviesar
+  const topMargens = pratos
+    .filter(p => p.quantidade >= 3)
+    .sort((a, b) => a.cmv - b.cmv)
+    .slice(0, 5);
+
+  // 💡 Sugestões pra promoção: CMV bom + vendas abaixo da mediana
+  // Calcula mediana das quantidades
+  const qtds = pratos.map(p => p.quantidade).sort((a, b) => a - b);
+  const mediana = qtds.length > 0 ? qtds[Math.floor(qtds.length / 2)] : 0;
+  const promocao = pratos
+    .filter(p => {
+      const ratio = p.cmv / cmvAlvoGlobal;
+      return ratio < 0.80 && p.quantidade < mediana && p.quantidade >= 2;
+    })
+    .sort((a, b) => a.cmv - b.cmv)
+    .slice(0, 5);
+
+  // ⚠️ Pratos pra revisar - 2 grupos
+  // (a) CMV alto (> 120% do alvo)
+  const cmvAlto = pratos
+    .filter(p => (p.cmv / cmvAlvoGlobal) > 1.2)
+    .sort((a, b) => b.cmv - a.cmv)
+    .slice(0, 5);
+  // (b) Baixa rotação (bottom 5 em quantidade, mas tendo pelo menos 1 venda)
+  const baixaRotacao = pratos
+    .filter(p => p.quantidade >= 1)
+    .sort((a, b) => a.quantidade - b.quantidade)
+    .slice(0, 5);
+
+  // 📅 Demanda por dia da semana (usa TODAS vendas do período, não só vinculadas)
+  let todasVendasPeriodo = vendas;
+  if (analisesPeriodoTipo === 'mes-atual') {
+    const h = new Date();
+    const prefix = `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}`;
+    todasVendasPeriodo = vendas.filter(x => x.data && x.data.startsWith(prefix));
+  } else if (analisesPeriodoTipo === 'mes-especifico' && analisesMesEspecifico) {
+    todasVendasPeriodo = vendas.filter(x => x.data && x.data.startsWith(analisesMesEspecifico));
+  }
+
+  const demandaPorDia = [0, 0, 0, 0, 0, 0, 0];  // [Dom, Seg, Ter, Qua, Qui, Sex, Sáb]
+  for (const v of todasVendasPeriodo) {
+    if (!v.data) continue;
+    const [ano, mes, dia] = v.data.split('-');
+    const d = new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia));
+    const diaSemana = d.getDay();
+    demandaPorDia[diaSemana] += v.total || 0;
+  }
+
+  return {
+    vazio: false,
+    receitaTotal,
+    cmvAlvoGlobal,
+    ancora: { ...ancora, pctReceita: ancoraPctReceita },
+    topReceita,
+    topMargens,
+    promocao,
+    cmvAlto,
+    baixaRotacao,
+    demandaPorDia
+  };
+}
+
+function renderAnalises() {
+  // Atualiza select de meses
+  const mesesDisponiveis = listarMesesDisponiveis();
+  const selectMeses = $('analises-filtro-mes');
+  if (selectMeses.options.length !== mesesDisponiveis.length || selectMeses.options.length === 0) {
+    selectMeses.innerHTML = mesesDisponiveis.map(m => `<option value="${m}">${nomeMes(m)}</option>`).join('');
+  }
+  if (analisesPeriodoTipo === 'mes-especifico' && !analisesMesEspecifico && mesesDisponiveis.length > 0) {
+    analisesMesEspecifico = mesesDisponiveis[0];
+    selectMeses.value = analisesMesEspecifico;
+  }
+  selectMeses.style.display = analisesPeriodoTipo === 'mes-especifico' ? 'inline-block' : 'none';
+
+  // Texto do período
+  const hoje = new Date();
+  const NOMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  let periodoTxt = '';
+  if (analisesPeriodoTipo === 'mes-atual') {
+    periodoTxt = `${NOMES[hoje.getMonth()]} ${hoje.getFullYear()}`;
+  } else if (analisesPeriodoTipo === 'mes-especifico' && analisesMesEspecifico) {
+    periodoTxt = nomeMes(analisesMesEspecifico);
+  } else {
+    periodoTxt = `Todo histórico`;
+  }
+  $('analises-periodo-texto').textContent = periodoTxt;
+
+  const a = calcularAnalises();
+
+  if (a.vazio) {
+    $('analises-conteudo').innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">🎯</div>
+      <div class="empty-state-text">Nenhuma análise disponível neste período.<br>Importe vendas e vincule produtos a fichas em <strong>🔗 Vínculos</strong>.</div>
+    </div>`;
+    return;
+  }
+
+  let html = '';
+
+  // 🏆 PRODUTO ÂNCORA
+  if (a.ancora) {
+    const stars = '⭐⭐⭐⭐⭐';
+    const cmvAlvoEfetivo = a.ancora.ficha.cmvAlvoCustom ?? a.cmvAlvoGlobal;
+    html += `<div class="ancora-card">`;
+    html += `<div class="ancora-label">🏆 Produto Âncora</div>`;
+    html += `<div class="ancora-nome">${escHtml(a.ancora.nome)}</div>`;
+    html += `<div class="ancora-stats"><strong>${fmtMoeda(a.ancora.receita)}</strong> em receita · CMV <strong>${(a.ancora.cmv * 100).toFixed(1)}%</strong> · ${Math.round(a.ancora.quantidade)} vendas</div>`;
+    html += `<div class="ancora-contribui">Responde por ${a.ancora.pctReceita.toFixed(1)}% da sua receita vinculada</div>`;
+    html += `<div class="ancora-stars">${stars} Carro-chefe</div>`;
+    html += `</div>`;
+  }
+
+  // 🚀 TOP 5 MAIS VENDIDOS (por receita)
+  html += `<div class="analise-section">`;
+  html += `<div class="analise-section-titulo">🚀 Top 5 — Mais vendidos <span class="analise-section-subtitulo">(por receita)</span></div>`;
+  html += `<ul class="top-lista">`;
+  for (let i = 0; i < a.topReceita.length; i++) {
+    const p = a.topReceita[i];
+    html += `<li class="top-item">`;
+    html += `<span class="top-item-numero">${i + 1}</span>`;
+    html += `<span class="top-item-nome">${escHtml(p.nome)}</span>`;
+    html += `<span class="top-item-valores">`;
+    html += `<div class="top-item-valor-principal">${fmtMoeda(p.receita)}</div>`;
+    html += `<div class="top-item-valor-meta">${Math.round(p.quantidade)} un · CMV ${(p.cmv * 100).toFixed(1)}%</div>`;
+    html += `</span>`;
+    html += `</li>`;
+  }
+  html += `</ul></div>`;
+
+  // 💎 TOP 5 MAIORES MARGENS
+  html += `<div class="analise-section">`;
+  html += `<div class="analise-section-titulo">💎 Top 5 — Maiores margens <span class="analise-section-subtitulo">(CMV mais baixo, mín. 3 vendas)</span></div>`;
+  if (a.topMargens.length === 0) {
+    html += `<div style="font-size:12px;color:var(--muted);font-style:italic">Sem dados suficientes (precisa de pratos com 3+ vendas)</div>`;
+  } else {
+    html += `<ul class="top-lista">`;
+    for (let i = 0; i < a.topMargens.length; i++) {
+      const p = a.topMargens[i];
+      html += `<li class="top-item">`;
+      html += `<span class="top-item-numero">${i + 1}</span>`;
+      html += `<span class="top-item-nome">${escHtml(p.nome)}</span>`;
+      html += `<span class="top-item-valores">`;
+      html += `<div class="top-item-valor-principal" style="color:#173404">CMV ${(p.cmv * 100).toFixed(1)}%</div>`;
+      html += `<div class="top-item-valor-meta">${Math.round(p.quantidade)} un · ${fmtMoeda(p.receita)}</div>`;
+      html += `</span>`;
+      html += `</li>`;
+    }
+    html += `</ul>`;
+  }
+  html += `</div>`;
+
+  // 💡 SUGESTÕES PRA PROMOÇÃO
+  html += `<div class="analise-section">`;
+  html += `<div class="analise-section-titulo">💡 Sugestões pra promoção <span class="analise-section-subtitulo">(margem ótima mas vendendo pouco)</span></div>`;
+  if (a.promocao.length === 0) {
+    html += `<div style="font-size:12px;color:var(--muted);font-style:italic">Nenhum prato identificado neste período. Todos os pratos com margem boa já estão com bom volume de vendas! 🎉</div>`;
+  } else {
+    for (const p of a.promocao) {
+      html += `<div class="sugestao-card">`;
+      html += `<div class="sugestao-nome">${escHtml(p.nome)}</div>`;
+      html += `<div class="sugestao-stats">CMV ${(p.cmv * 100).toFixed(1)}% · ${Math.round(p.quantidade)} un · ${fmtMoeda(p.receita)}</div>`;
+      html += `<div class="sugestao-comentario">Margem ótima! Vale a pena destacar no cardápio ou promover.</div>`;
+      html += `</div>`;
+    }
+  }
+  html += `</div>`;
+
+  // ⚠️ PRATOS PRA REVISAR
+  html += `<div class="analise-section">`;
+  html += `<div class="analise-section-titulo">⚠️ Pratos pra revisar</div>`;
+
+  if (a.cmvAlto.length > 0) {
+    html += `<div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">CMV muito acima do alvo:</div>`;
+    for (const p of a.cmvAlto) {
+      html += `<div class="sugestao-card critico">`;
+      html += `<div class="sugestao-nome">${escHtml(p.nome)}</div>`;
+      html += `<div class="sugestao-stats">CMV <strong style="color:#791F1F">${(p.cmv * 100).toFixed(1)}%</strong> (alvo ${Math.round(a.cmvAlvoGlobal * 100)}%) · ${Math.round(p.quantidade)} un · ${fmtMoeda(p.receita)}</div>`;
+      html += `<div class="sugestao-comentario">Margem comprimida. Considere ajustar preço de venda ou rever ingredientes.</div>`;
+      html += `</div>`;
+    }
+    html += `<div style="height:10px"></div>`;
+  }
+
+  if (a.baixaRotacao.length > 0) {
+    html += `<div style="font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600">Baixa rotação no período:</div>`;
+    for (const p of a.baixaRotacao) {
+      html += `<div class="sugestao-card atencao">`;
+      html += `<div class="sugestao-nome">${escHtml(p.nome)}</div>`;
+      html += `<div class="sugestao-stats">${Math.round(p.quantidade)} un · CMV ${(p.cmv * 100).toFixed(1)}% · ${fmtMoeda(p.receita)}</div>`;
+      html += `<div class="sugestao-comentario">Pouca venda no período. Avaliar se vale a pena manter no cardápio.</div>`;
+      html += `</div>`;
+    }
+  }
+
+  if (a.cmvAlto.length === 0 && a.baixaRotacao.length === 0) {
+    html += `<div style="font-size:12px;color:var(--muted);font-style:italic">Nenhum prato com sinais de alerta. Seu cardápio está bem balanceado! 👏</div>`;
+  }
+  html += `</div>`;
+
+  // 📅 DEMANDA POR DIA DA SEMANA
+  const diasNomes = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+  const maxDemanda = Math.max(...a.demandaPorDia);
+  const totalDemanda = a.demandaPorDia.reduce((s, v) => s + v, 0);
+  const diasComVenda = a.demandaPorDia.filter(v => v > 0).length;
+
+  if (totalDemanda > 0) {
+    html += `<div class="analise-section">`;
+    html += `<div class="analise-section-titulo">📅 Demanda por dia da semana <span class="analise-section-subtitulo">(receita por dia)</span></div>`;
+    html += `<div class="demanda-barras">`;
+    for (let i = 0; i < 7; i++) {
+      const valor = a.demandaPorDia[i];
+      const pct = maxDemanda > 0 ? (valor / maxDemanda) * 100 : 0;
+      const ehPico = valor === maxDemanda && valor > 0;
+      const fmt = valor >= 1000 ? `R$${(valor / 1000).toFixed(1)}k` : `R$${valor.toFixed(0)}`;
+      html += `<div class="demanda-linha">`;
+      html += `<span class="demanda-dia">${diasNomes[i]}</span>`;
+      html += `<div class="demanda-barra-wrap"><div class="demanda-barra-fill" style="width:${pct.toFixed(1)}%"></div></div>`;
+      html += `<span class="demanda-valor">${fmt}`;
+      if (ehPico) html += `<span class="demanda-pico"> pico</span>`;
+      html += `</span>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+    if (diasComVenda > 0) {
+      html += `<div style="font-size:11px;color:var(--muted);margin-top:10px;font-style:italic">💡 Use essa visão pra programar compras: planeje estoque considerando os dias de pico.</div>`;
+    }
+    html += `</div>`;
+  }
+
+  $('analises-conteudo').innerHTML = html;
+}
+
+// ============================================================================
 // EVENTOS
 // ============================================================================
 
@@ -4233,6 +4542,20 @@ function setupEventos() {
   $('cmv-ordenar-cmv').addEventListener('click', () => {
     cmvOrdenacao = 'cmv';
     renderCMVReal();
+  });
+
+  // Vendas - Análises (Fase 3D)
+  $('analises-filtro-periodo').addEventListener('change', e => {
+    analisesPeriodoTipo = e.target.value;
+    if (analisesPeriodoTipo === 'mes-especifico' && !analisesMesEspecifico) {
+      const meses = listarMesesDisponiveis();
+      if (meses.length > 0) analisesMesEspecifico = meses[0];
+    }
+    renderAnalises();
+  });
+  $('analises-filtro-mes').addEventListener('change', e => {
+    analisesMesEspecifico = e.target.value;
+    renderAnalises();
   });
 
   $('btn-criar-recolher').addEventListener('click', () => expandirOuRecolherCriar(false));

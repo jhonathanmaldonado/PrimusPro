@@ -739,6 +739,198 @@
   margin-left: 4px;
 }
 
+/* ====== ANÁLISES ====== */
+.analise-section {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+.analise-section-titulo {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--wine);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.analise-section-subtitulo {
+  font-size: 11px;
+  color: var(--muted);
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+/* Card âncora (destaque maior) */
+.ancora-card {
+  background: linear-gradient(135deg, var(--wine) 0%, #5a1428 100%);
+  color: #fff;
+  border-radius: 14px;
+  padding: 24px;
+  margin-bottom: 14px;
+  text-align: center;
+  border: 3px solid var(--gold);
+  -webkit-print-color-adjust: exact;
+}
+.ancora-card .ancora-label {
+  font-size: 11px;
+  color: var(--gold);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+.ancora-card .ancora-nome {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  color: #fff;
+  letter-spacing: 0.5px;
+}
+.ancora-card .ancora-stats {
+  font-size: 13px;
+  margin-bottom: 8px;
+  color: #fcecf0;
+}
+.ancora-card .ancora-stats strong { color: #fff; }
+.ancora-card .ancora-contribui {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--gold);
+  margin-bottom: 10px;
+}
+.ancora-card .ancora-stars {
+  font-size: 16px;
+  color: var(--gold);
+}
+
+/* Lista de top items */
+.top-lista {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.top-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.top-item:last-child { border-bottom: none; }
+.top-item-numero {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: var(--gold-soft);
+  color: var(--wine);
+  border-radius: 50%;
+  font-weight: 700;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.top-item-nome {
+  flex: 1;
+  font-weight: 600;
+  color: var(--ink);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.top-item-valores {
+  text-align: right;
+  font-size: 12px;
+}
+.top-item-valor-principal { font-weight: 700; color: var(--wine); }
+.top-item-valor-meta { font-size: 10px; color: var(--muted); }
+
+/* Cards de sugestão (promoção/revisão) */
+.sugestao-card {
+  background: #f0fdf4;
+  border-left: 4px solid #86efac;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 6px;
+}
+.sugestao-card.atencao {
+  background: #fef3c7;
+  border-left-color: #f0c674;
+}
+.sugestao-card.critico {
+  background: #fef2f2;
+  border-left-color: #fca5a5;
+}
+.sugestao-nome {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--ink);
+  margin-bottom: 2px;
+}
+.sugestao-stats {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.sugestao-comentario {
+  font-size: 12px;
+  color: var(--ink);
+  font-style: italic;
+}
+
+/* Gráfico de barras de demanda */
+.demanda-barras {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.demanda-linha {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.demanda-dia {
+  width: 30px;
+  font-weight: 700;
+  color: var(--wine);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.demanda-barra-wrap {
+  flex: 1;
+  height: 18px;
+  background: #fafaf9;
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+.demanda-barra-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold) 0%, var(--wine) 100%);
+  border-radius: 4px;
+  -webkit-print-color-adjust: exact;
+}
+.demanda-valor {
+  text-align: right;
+  min-width: 80px;
+  font-weight: 600;
+  color: var(--ink);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.demanda-pico {
+  font-size: 10px;
+  color: #15803d;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
 /* Área de impressão de ficha individual - escondida na tela */
 .ficha-impressao-area {
   display: none;
@@ -1425,6 +1617,7 @@
         <button class="sub-nav-btn" data-vendas-subtab="dados">📊 Dados</button>
         <button class="sub-nav-btn" data-vendas-subtab="vinculos">🔗 Vínculos</button>
         <button class="sub-nav-btn" data-vendas-subtab="cmv">📈 CMV Real</button>
+        <button class="sub-nav-btn" data-vendas-subtab="analises">🎯 Análises</button>
       </div>
 
       <!-- Sub-aba: Importar -->
@@ -1668,6 +1861,32 @@
           </div>
           <div id="cmv-tabela-pratos"></div>
         </div>
+      </div>
+
+      <!-- Sub-aba: Análises (Fase 3D) -->
+      <div id="vendas-subtab-analises" style="display:none">
+        <div class="toolbar">
+          <span class="toolbar-title">🎯 Análises estratégicas</span>
+        </div>
+
+        <div style="background:var(--gold-soft);border:1px solid #f0d590;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:12px;color:var(--wine-dark);line-height:1.5">
+          ℹ️ <strong>Inteligência do seu cardápio:</strong> O sistema analisa as vendas vinculadas a fichas técnicas para identificar produto âncora, oportunidades de promoção, pratos que precisam de revisão e padrões de demanda.
+        </div>
+
+        <!-- Filtro de período -->
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-radius:10px">
+          <span style="font-size:12px;color:var(--muted);font-weight:600">Período:</span>
+          <select id="analises-filtro-periodo" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff">
+            <option value="mes-atual">Mês atual</option>
+            <option value="mes-especifico">Mês específico</option>
+            <option value="todos">Todo o histórico</option>
+          </select>
+          <select id="analises-filtro-mes" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff;display:none"></select>
+          <span style="flex:1;text-align:right;font-size:11px;color:var(--muted)" id="analises-periodo-texto">—</span>
+        </div>
+
+        <!-- Container que vai receber tudo dinamicamente -->
+        <div id="analises-conteudo"></div>
       </div>
 
     </div>
