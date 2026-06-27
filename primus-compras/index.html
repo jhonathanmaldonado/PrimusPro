@@ -1287,7 +1287,7 @@
 
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <div class="form-field" style="flex:1;min-width:120px">
-          <label>Rendimento</label>
+          <label>Rendimento total</label>
           <input type="number" inputmode="decimal" id="ficha-rendimento" min="0.01" step="0.01" placeholder="1.0">
         </div>
         <div class="form-field" style="flex:1;min-width:120px">
@@ -1301,9 +1301,25 @@
         </div>
       </div>
 
-      <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <!-- Bloco "Tamanho da Porção" - aparece só se unidade NÃO for PORCOES -->
+      <div id="bloco-tamanho-porcao" style="margin-top:10px;padding:10px 12px;background:#fef9e7;border:1.5px dashed #f0c674;border-radius:8px">
+        <div style="font-size:12px;color:var(--wine-dark);margin-bottom:8px">
+          📏 <strong>Quanto pesa/mede uma porção?</strong>
+          <span style="font-weight:400;color:var(--muted);font-size:11px">(necessário pra calcular o custo correto)</span>
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
+          <div class="form-field" style="flex:1;min-width:120px;margin-bottom:0">
+            <label>Tamanho de 1 porção</label>
+            <input type="number" inputmode="decimal" id="ficha-tamanho-porcao" min="0" step="0.001" placeholder="0">
+          </div>
+          <div style="font-size:13px;color:var(--muted);padding-bottom:8px" id="ficha-tamanho-porcao-unidade">KG</div>
+          <div style="font-size:12px;color:var(--wine);padding-bottom:8px;font-weight:600" id="ficha-rende-info">—</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
         <div class="form-field" style="flex:1;min-width:120px">
-          <label>Preço de venda <span class="optional">(R$)</span></label>
+          <label>Preço de venda por porção <span class="optional">(R$)</span></label>
           <input type="number" inputmode="decimal" id="ficha-preco-venda" min="0" step="0.01" placeholder="0.00">
         </div>
         <div class="form-field" style="flex:1;min-width:120px">
@@ -1339,8 +1355,9 @@
           <div class="precif-box-value" id="painel-custo-receita">R$ 0,00</div>
         </div>
         <div class="precif-box">
-          <div class="precif-box-label">Custo por <span id="painel-unidade-porcao">porção</span></div>
+          <div class="precif-box-label">Custo por Porção</div>
           <div class="precif-box-value" id="painel-custo-porcao">R$ 0,00</div>
+          <div class="precif-box-sub" id="painel-n-porcoes">—</div>
         </div>
         <div class="precif-box precif-gauge">
           <div class="precif-box-label">CMV</div>

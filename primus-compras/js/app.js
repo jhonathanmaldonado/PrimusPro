@@ -60,6 +60,7 @@ import {
   calcularCustoIngrediente,
   calcularCustoReceita,
   calcularCustoPorPorcao,
+  calcularNumeroPorcoes,
   calcularCMV,
   calcularPrecoSugerido,
   obterCMVAlvoEfetivo
@@ -908,7 +909,22 @@ function renderFichas() {
     html += `<div class="ficha-card">`;
     html += `<div class="ficha-card-info">`;
     html += `<div class="ficha-card-nome">${escHtml(ficha.nome)} ${badgePP}</div>`;
-    html += `<div class="ficha-card-meta">Rende ${ficha.rendimento} ${escHtml(ficha.unidadeRendimento || 'KG')} · ${nIngredientes} ingrediente(s)</div>`;
+
+    // Meta: rendimento + número de porções (se aplicável)
+    const nPorcoes = calcularNumeroPorcoes(ficha);
+    const unidade = ficha.unidadeRendimento || 'KG';
+    let metaTxt = `Rende ${ficha.rendimento} ${escHtml(unidade)}`;
+    if (unidade !== 'PORCOES') {
+      const tam = parseFloat(ficha.tamanhoPorcao);
+      if (!isNaN(tam) && tam > 0) {
+        const nFmt = nPorcoes >= 10 ? Math.round(nPorcoes) : (Math.round(nPorcoes * 10) / 10);
+        metaTxt += ` ≈ ${nFmt} porções`;
+      } else {
+        metaTxt += ` ⚠ tamanho da porção não definido`;
+      }
+    }
+    html += `<div class="ficha-card-meta">${metaTxt} · ${nIngredientes} ingrediente(s)</div>`;
+
     html += `<div class="ficha-card-stats">`;
     html += `<span class="ficha-card-stat">Receita: <strong>${fmtMoeda(custoReceita)}</strong></span>`;
     html += `<span class="ficha-card-stat">Porção: <strong>${fmtMoeda(custoPorcao)}</strong></span>`;
@@ -945,6 +961,7 @@ function abrirModalFicha(fichaId = null) {
       nome: f.nome || '',
       rendimento: f.rendimento ?? 1,
       unidadeRendimento: f.unidadeRendimento || 'KG',
+      tamanhoPorcao: f.tamanhoPorcao ?? null,
       precoVenda: f.precoVenda ?? 0,
       cmvAlvoCustom: f.cmvAlvoCustom ?? null,
       ehPrePreparo: !!f.ehPrePreparo,
@@ -960,6 +977,7 @@ function abrirModalFicha(fichaId = null) {
       nome: '',
       rendimento: 1,
       unidadeRendimento: 'KG',
+      tamanhoPorcao: null,
       precoVenda: 0,
       cmvAlvoCustom: null,
       ehPrePreparo: false,
@@ -975,6 +993,9 @@ function abrirModalFicha(fichaId = null) {
   $('ficha-nome').value = fichaEmEdicao.nome;
   $('ficha-rendimento').value = fichaEmEdicao.rendimento;
   $('ficha-unidade-rendimento').value = fichaEmEdicao.unidadeRendimento;
+  $('ficha-tamanho-porcao').value = (fichaEmEdicao.tamanhoPorcao != null && fichaEmEdicao.tamanhoPorcao > 0)
+    ? fichaEmEdicao.tamanhoPorcao
+    : '';
   $('ficha-preco-venda').value = fichaEmEdicao.precoVenda || '';
   $('ficha-cmv-custom').value = fichaEmEdicao.cmvAlvoCustom != null ? Math.round(fichaEmEdicao.cmvAlvoCustom * 100) : '';
   $('ficha-eh-pp').checked = fichaEmEdicao.ehPrePreparo;
@@ -984,6 +1005,7 @@ function abrirModalFicha(fichaId = null) {
   $('ficha-error').classList.remove('show');
   $('ficha-error').textContent = '';
 
+  atualizarVisibilidadeTamanhoPorcao();
   renderIngredientesModal();
   atualizarPainelPrecificacao();
 
@@ -995,6 +1017,41 @@ function fecharModalFicha() {
   $('modal-ficha').classList.remove('show');
   fichaEditandoId = null;
   fichaEmEdicao = null;
+}
+
+// Atualiza o bloco "Tamanho da Porção": esconde se unidade é PORCOES,
+// e atualiza a label dinâmica (KG/L/und) ao lado do input
+function atualizarVisibilidadeTamanhoPorcao() {
+  if (!fichaEmEdicao) return;
+  const bloco = $('bloco-tamanho-porcao');
+  const labelUnid = $('ficha-tamanho-porcao-unidade');
+  const rendeInfo = $('ficha-rende-info');
+  const unidade = fichaEmEdicao.unidadeRendimento || 'KG';
+
+  if (unidade === 'PORCOES') {
+    // Receita já está em porções: não precisa de tamanho de porção
+    bloco.style.display = 'none';
+    return;
+  }
+
+  bloco.style.display = 'block';
+
+  // Label da unidade ao lado do input
+  const labels = { KG: 'KG', LITRO: 'L', UND: 'unidades' };
+  labelUnid.textContent = labels[unidade] || 'KG';
+
+  // Calcula e exibe "Rende ≈ N porções"
+  const rendimento = parseFloat(fichaEmEdicao.rendimento) || 0;
+  const tamanho = parseFloat(fichaEmEdicao.tamanhoPorcao) || 0;
+  if (rendimento > 0 && tamanho > 0) {
+    const n = rendimento / tamanho;
+    const nFormatado = n >= 100 ? Math.round(n) : (Math.round(n * 10) / 10);
+    rendeInfo.textContent = `→ Rende ≈ ${nFormatado} porções`;
+    rendeInfo.style.color = '#173404';
+  } else {
+    rendeInfo.textContent = '→ Informe o tamanho';
+    rendeInfo.style.color = '#888780';
+  }
 }
 
 // --- RENDER de ingredientes (cards) ---
@@ -1113,12 +1170,30 @@ function atualizarPainelPrecificacao() {
   const cmv = calcularCMV(fichaEmEdicao, insumos);
   const cmvAlvo = obterCMVAlvoEfetivo(fichaEmEdicao, configPrecificacao);
   const precoSugerido = calcularPrecoSugerido(fichaEmEdicao, insumos, configPrecificacao);
+  const nPorcoes = calcularNumeroPorcoes(fichaEmEdicao);
 
   $('painel-custo-receita').textContent = fmtMoeda(custoReceita);
   $('painel-custo-porcao').textContent = fmtMoeda(custoPorcao);
 
-  const unidadeLabel = fichaEmEdicao.unidadeRendimento === 'PORCOES' ? 'porção' : (fichaEmEdicao.unidadeRendimento || 'kg').toLowerCase();
-  $('painel-unidade-porcao').textContent = unidadeLabel;
+  // Mostra quantas porções a receita rende (no sublabel da caixinha)
+  const nPorcoesEl = $('painel-n-porcoes');
+  if (nPorcoesEl) {
+    const unidade = fichaEmEdicao.unidadeRendimento || 'KG';
+    const tamanho = parseFloat(fichaEmEdicao.tamanhoPorcao);
+    if (unidade === 'PORCOES') {
+      const nFmt = nPorcoes >= 10 ? Math.round(nPorcoes) : (Math.round(nPorcoes * 10) / 10);
+      nPorcoesEl.textContent = `Rende ${nFmt} porções`;
+    } else if (!isNaN(tamanho) && tamanho > 0) {
+      const nFmt = nPorcoes >= 10 ? Math.round(nPorcoes) : (Math.round(nPorcoes * 10) / 10);
+      nPorcoesEl.textContent = `Rende ≈ ${nFmt} porções`;
+    } else {
+      nPorcoesEl.textContent = '⚠ Informe o tamanho da porção';
+      nPorcoesEl.style.color = '#791F1F';
+    }
+    if (nPorcoesEl.textContent.startsWith('Rende')) {
+      nPorcoesEl.style.color = '#888780';
+    }
+  }
 
   $('painel-preco-sugerido').textContent = fmtMoeda(precoSugerido);
 
@@ -1207,6 +1282,15 @@ async function salvarFicha() {
   fichaEmEdicao.rendimento = parseFloat($('ficha-rendimento').value) || 1;
   fichaEmEdicao.unidadeRendimento = $('ficha-unidade-rendimento').value;
   fichaEmEdicao.precoVenda = parseFloat($('ficha-preco-venda').value) || 0;
+
+  // Tamanho da porção: só se aplica quando unidade NÃO é PORCOES
+  if (fichaEmEdicao.unidadeRendimento === 'PORCOES') {
+    fichaEmEdicao.tamanhoPorcao = null;
+  } else {
+    const tamPorcaoStr = $('ficha-tamanho-porcao').value;
+    const tamPorcao = parseFloat(tamPorcaoStr);
+    fichaEmEdicao.tamanhoPorcao = (!isNaN(tamPorcao) && tamPorcao > 0) ? tamPorcao : null;
+  }
 
   const cmvCustomPct = parseFloat($('ficha-cmv-custom').value);
   fichaEmEdicao.cmvAlvoCustom = isNaN(cmvCustomPct) ? null : (cmvCustomPct / 100);
@@ -1356,6 +1440,17 @@ function renderRelatorioFichas() {
     const precoSugerido = calcularPrecoSugerido(ficha, insumos, configPrecificacao);
     const nIng = (ficha.ingredientes || []).length;
     const unidadeAbrev = ficha.unidadeRendimento === 'PORCOES' ? 'porç.' : (ficha.unidadeRendimento || 'KG').toLowerCase();
+    const nPorcoes = calcularNumeroPorcoes(ficha);
+
+    // Texto da coluna "Rende": mostra rendimento + número de porções calculado
+    let rendeTxt = `${ficha.rendimento || 1} ${escHtml(unidadeAbrev)}`;
+    if (ficha.unidadeRendimento !== 'PORCOES') {
+      const tam = parseFloat(ficha.tamanhoPorcao);
+      if (!isNaN(tam) && tam > 0) {
+        const nFmt = nPorcoes >= 10 ? Math.round(nPorcoes) : (Math.round(nPorcoes * 10) / 10);
+        rendeTxt += `<br><span style="font-size:10px;color:var(--muted)">≈ ${nFmt} porções</span>`;
+      }
+    }
 
     // Cor do CMV
     let corCMV = '#888780';
@@ -1374,7 +1469,7 @@ function renderRelatorioFichas() {
 
     html += `<tr>`;
     html += `<td><strong>${escHtml(ficha.nome)}</strong>${tagPP}</td>`;
-    html += `<td class="num">${ficha.rendimento || 1} ${escHtml(unidadeAbrev)}</td>`;
+    html += `<td class="num">${rendeTxt}</td>`;
     html += `<td class="num">${nIng}</td>`;
     html += `<td class="num">${fmtMoeda(custoReceita)}</td>`;
     html += `<td class="num">${fmtMoeda(custoPorcao)}</td>`;
@@ -2985,27 +3080,33 @@ function setupEventos() {
   $('btn-imprimir-relatorio').addEventListener('click', imprimirRelatorio);
 
   // Modal de ficha - inputs principais (atualizam painel ao vivo)
-  ['ficha-rendimento', 'ficha-unidade-rendimento', 'ficha-preco-venda', 'ficha-cmv-custom'].forEach(id => {
+  // Função única: lê todos os campos da UI e atualiza fichaEmEdicao + painel
+  function sincronizarCamposFicha() {
+    if (!fichaEmEdicao) return;
+    fichaEmEdicao.rendimento = parseFloat($('ficha-rendimento').value) || 1;
+    fichaEmEdicao.unidadeRendimento = $('ficha-unidade-rendimento').value;
+
+    // Tamanho da porção (null se unidade for PORCOES ou vazio)
+    if (fichaEmEdicao.unidadeRendimento === 'PORCOES') {
+      fichaEmEdicao.tamanhoPorcao = null;
+    } else {
+      const tam = parseFloat($('ficha-tamanho-porcao').value);
+      fichaEmEdicao.tamanhoPorcao = (!isNaN(tam) && tam > 0) ? tam : null;
+    }
+
+    fichaEmEdicao.precoVenda = parseFloat($('ficha-preco-venda').value) || 0;
+    const cmvPct = parseFloat($('ficha-cmv-custom').value);
+    fichaEmEdicao.cmvAlvoCustom = isNaN(cmvPct) ? null : (cmvPct / 100);
+
+    atualizarVisibilidadeTamanhoPorcao();
+    atualizarPainelPrecificacao();
+  }
+
+  ['ficha-rendimento', 'ficha-unidade-rendimento', 'ficha-tamanho-porcao', 'ficha-preco-venda', 'ficha-cmv-custom'].forEach(id => {
     const el = $(id);
     if (el) {
-      el.addEventListener('input', () => {
-        if (!fichaEmEdicao) return;
-        fichaEmEdicao.rendimento = parseFloat($('ficha-rendimento').value) || 1;
-        fichaEmEdicao.unidadeRendimento = $('ficha-unidade-rendimento').value;
-        fichaEmEdicao.precoVenda = parseFloat($('ficha-preco-venda').value) || 0;
-        const cmvPct = parseFloat($('ficha-cmv-custom').value);
-        fichaEmEdicao.cmvAlvoCustom = isNaN(cmvPct) ? null : (cmvPct / 100);
-        atualizarPainelPrecificacao();
-      });
-      el.addEventListener('change', () => {
-        if (!fichaEmEdicao) return;
-        fichaEmEdicao.rendimento = parseFloat($('ficha-rendimento').value) || 1;
-        fichaEmEdicao.unidadeRendimento = $('ficha-unidade-rendimento').value;
-        fichaEmEdicao.precoVenda = parseFloat($('ficha-preco-venda').value) || 0;
-        const cmvPct = parseFloat($('ficha-cmv-custom').value);
-        fichaEmEdicao.cmvAlvoCustom = isNaN(cmvPct) ? null : (cmvPct / 100);
-        atualizarPainelPrecificacao();
-      });
+      el.addEventListener('input', sincronizarCamposFicha);
+      el.addEventListener('change', sincronizarCamposFicha);
     }
   });
 

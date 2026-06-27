@@ -504,7 +504,8 @@ export async function criarFicha(dados) {
   await setDoc(ref, {
     nome: dados.nome,
     rendimento: parseFloat(dados.rendimento) || 1,
-    unidadeRendimento: dados.unidadeRendimento || 'KG',  // KG | LITRO | UND | PORÇÕES
+    unidadeRendimento: dados.unidadeRendimento || 'KG',  // KG | LITRO | UND | PORCOES
+    tamanhoPorcao: dados.tamanhoPorcao != null ? parseFloat(dados.tamanhoPorcao) : null,  // tamanho de 1 porção (na mesma unidade do rendimento)
     precoVenda: parseFloat(dados.precoVenda) || 0,
     cmvAlvoCustom: dados.cmvAlvoCustom ?? null,  // se null, usa global
     ehPrePreparo: !!dados.ehPrePreparo,
@@ -523,6 +524,11 @@ export async function atualizarFicha(fichaId, dados) {
   // Normaliza campos numéricos
   if ('rendimento' in payload) payload.rendimento = parseFloat(payload.rendimento) || 1;
   if ('precoVenda' in payload) payload.precoVenda = parseFloat(payload.precoVenda) || 0;
+  if ('tamanhoPorcao' in payload) {
+    payload.tamanhoPorcao = payload.tamanhoPorcao != null && payload.tamanhoPorcao !== ''
+      ? parseFloat(payload.tamanhoPorcao)
+      : null;
+  }
   await updateDoc(ref, { ...payload, ...auditFields() });
 }
 
@@ -582,12 +588,35 @@ export function calcularCustoReceita(ficha, insumos) {
   return total;
 }
 
-// Custo por porção/unidade do rendimento
+// Número de porções que a receita rende
+// - Se unidadeRendimento === 'PORCOES': rendimento JÁ está em porções
+// - Se tamanhoPorcao está definido: número de porções = rendimento / tamanhoPorcao
+// - Caso contrário (compatibilidade com fichas antigas): assume rendimento = porções
+export function calcularNumeroPorcoes(ficha) {
+  if (!ficha) return 1;
+  const rendimento = parseFloat(ficha.rendimento) || 1;
+  const unidade = ficha.unidadeRendimento || 'KG';
+
+  if (unidade === 'PORCOES') {
+    return rendimento;
+  }
+
+  const tamanho = parseFloat(ficha.tamanhoPorcao);
+  if (!isNaN(tamanho) && tamanho > 0) {
+    return rendimento / tamanho;
+  }
+
+  // Compatibilidade com fichas antigas (sem tamanho de porção definido)
+  return rendimento;
+}
+
+// Custo por porção
+// custoPorPorcao = custoReceita ÷ númeroDePorcoes
 export function calcularCustoPorPorcao(ficha, insumos) {
   const custoReceita = calcularCustoReceita(ficha, insumos);
-  const rendimento = parseFloat(ficha?.rendimento) || 1;
-  if (rendimento <= 0) return custoReceita;
-  return custoReceita / rendimento;
+  const nPorcoes = calcularNumeroPorcoes(ficha);
+  if (nPorcoes <= 0) return custoReceita;
+  return custoReceita / nPorcoes;
 }
 
 // CMV (Custo da Mercadoria Vendida) — fração entre 0 e 1+
