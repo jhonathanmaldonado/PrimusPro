@@ -965,6 +965,125 @@
 .hist-item-subtotal { font-weight: 700; color: var(--wine); min-width: 80px; text-align: right; }
 .hist-item.sem-preco .hist-item-subtotal { color: var(--muted); font-style: italic; font-weight: 400; }
 
+/* ====== SUGESTÃO DE COMPRAS (Fase 3E) ====== */
+.compra-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.compra-card:last-child { border-bottom: none; }
+.compra-card:hover { background: #fafaf9; }
+.compra-card.classe-A {
+  background: #fef3c7;
+  border-left: 4px solid #FAC775;
+  padding-left: 8px;
+}
+.compra-card.classe-A:hover { background: #fde68a; }
+.compra-check {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+  accent-color: var(--wine);
+}
+.compra-info { flex: 1; min-width: 0; }
+.compra-nome {
+  font-weight: 700;
+  color: var(--ink);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.compra-meta {
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.compra-meta .classe-label {
+  background: var(--wine);
+  color: #fff;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 700;
+  font-size: 9px;
+  margin-left: 4px;
+  letter-spacing: 0.3px;
+}
+.compra-meta .classe-A-tag {
+  background: var(--gold);
+  color: var(--wine-dark);
+}
+.compra-meta .sem-item-tag {
+  background: #fef3c7;
+  color: #854F0B;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-weight: 600;
+  font-size: 9px;
+  margin-left: 4px;
+}
+.compra-quantidade {
+  text-align: right;
+  font-weight: 700;
+  color: var(--wine);
+  font-size: 13px;
+  min-width: 85px;
+  flex-shrink: 0;
+}
+.compra-valor {
+  text-align: right;
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+/* Curva ABC */
+.abc-grupo {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+.abc-grupo:last-child { border-bottom: none; }
+.abc-letra {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  color: #fff;
+  flex-shrink: 0;
+}
+.abc-letra.A { background: var(--gold); color: var(--wine-dark); }
+.abc-letra.B { background: #888780; }
+.abc-letra.C { background: #d1d5db; color: #444441; }
+.abc-info { flex: 1; min-width: 0; }
+.abc-titulo {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--wine);
+  margin-bottom: 2px;
+}
+.abc-percentual {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.abc-insumos {
+  font-size: 11px;
+  color: var(--ink);
+  line-height: 1.4;
+}
+
 /* Área de impressão de ficha individual - escondida na tela */
 .ficha-impressao-area {
   display: none;
@@ -1652,6 +1771,7 @@
         <button class="sub-nav-btn" data-vendas-subtab="vinculos">🔗 Vínculos</button>
         <button class="sub-nav-btn" data-vendas-subtab="cmv">📈 CMV Real</button>
         <button class="sub-nav-btn" data-vendas-subtab="analises">🎯 Análises</button>
+        <button class="sub-nav-btn" data-vendas-subtab="compras">🛒 Compras</button>
       </div>
 
       <!-- Sub-aba: Importar -->
@@ -1921,6 +2041,96 @@
 
         <!-- Container que vai receber tudo dinamicamente -->
         <div id="analises-conteudo"></div>
+      </div>
+
+      <!-- Sub-aba: Sugestão de Compras (Fase 3E) -->
+      <div id="vendas-subtab-compras" style="display:none">
+        <div class="toolbar">
+          <span class="toolbar-title">🛒 Sugestão de compras baseada em vendas</span>
+        </div>
+
+        <div style="background:var(--gold-soft);border:1px solid #f0d590;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:12px;color:var(--wine-dark);line-height:1.5">
+          ℹ️ <strong>Como funciona:</strong> O sistema calcula o consumo histórico de cada insumo (a partir das vendas vinculadas) e projeta a compra necessária para o próximo período. Considera o peso dos dias da semana (sex/sáb pesam mais), o FC dos insumos (peso bruto) e adiciona margem de segurança.
+        </div>
+
+        <!-- Configurações -->
+        <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px">
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:12px;color:var(--muted);font-weight:600">Base histórica:</span>
+              <select id="compras-base" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff">
+                <option value="mes-atual">Mês atual</option>
+                <option value="mes-especifico">Mês específico</option>
+                <option value="todos">Todo histórico</option>
+              </select>
+              <select id="compras-base-mes" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff;display:none"></select>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:12px;color:var(--muted);font-weight:600">Projetar para:</span>
+              <select id="compras-horizonte" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff">
+                <option value="3">Próximos 3 dias</option>
+                <option value="7" selected>Próxima semana (7 dias)</option>
+                <option value="14">Próximas 2 semanas (14 dias)</option>
+                <option value="30">Próximo mês (30 dias)</option>
+              </select>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:12px;color:var(--muted);font-weight:600">Margem segurança:</span>
+              <input type="number" id="compras-margem" value="10" min="0" max="100" step="5" style="width:60px;padding:6px 8px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff">
+              <span style="font-size:12px;color:var(--muted)">%</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Resumo -->
+        <div class="summary" style="margin-bottom:14px">
+          <div class="stat">
+            <div class="stat-label">Cobertura</div>
+            <div class="stat-value" id="compras-cobertura">—</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px" id="compras-base-dias">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Insumos sugeridos</div>
+            <div class="stat-value" id="compras-total-insumos">0</div>
+          </div>
+          <div class="stat gold">
+            <div class="stat-label">Total estimado</div>
+            <div class="stat-value" id="compras-total-valor">R$ 0,00</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px" id="compras-fator-ajuste">—</div>
+          </div>
+        </div>
+
+        <!-- Aviso vazio -->
+        <div id="compras-vazio" style="display:none"></div>
+
+        <!-- Lista de insumos -->
+        <div id="compras-lista-wrap" style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px;display:none">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+            <span style="font-size:13px;font-weight:700;color:var(--wine)">📋 Insumos a comprar</span>
+            <div style="display:flex;gap:6px">
+              <button class="vinculo-btn-sm" id="compras-selecionar-todos">Selecionar todos</button>
+              <button class="vinculo-btn-sm" id="compras-deselecionar">Desmarcar todos</button>
+            </div>
+          </div>
+          <div id="compras-lista"></div>
+
+          <div style="margin-top:14px;padding-top:10px;border-top:2px solid var(--wine);display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+            <div>
+              <div style="font-size:11px;color:var(--muted)">Selecionados</div>
+              <div style="font-weight:700;color:var(--wine);font-size:16px" id="compras-selecionados-valor">R$ 0,00</div>
+              <div style="font-size:11px;color:var(--muted)" id="compras-selecionados-count">0 insumos</div>
+            </div>
+            <button class="btn btn-primary" id="btn-criar-lista-compras" disabled>📥 Adicionar à Lista em Criação</button>
+          </div>
+        </div>
+
+        <!-- Curva ABC -->
+        <div id="compras-abc-wrap" style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;display:none">
+          <div style="font-size:13px;font-weight:700;color:var(--wine);margin-bottom:10px">🎯 Curva ABC <span style="font-size:11px;color:var(--muted);font-weight:400">(impacto no custo total)</span></div>
+          <div id="compras-abc-conteudo"></div>
+        </div>
       </div>
 
     </div>

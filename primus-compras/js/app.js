@@ -74,7 +74,10 @@ import {
   desvincularVenda,
   marcarProdutoIgnorado,
   autoVincularPorNomeNoPDV,
-  agregarVendasPorProduto
+  agregarVendasPorProduto,
+  calcularConsumoInsumos,
+  calcularFatorAjustePorDiaSemana,
+  adicionarItensListaEmCriacaoEmLote
 } from './db.js';
 
 // ============================================================================
@@ -125,6 +128,14 @@ let cmvOrdenacao = 'receita';           // receita | cmv
 // Análises (Fase 3D)
 let analisesPeriodoTipo = 'mes-atual';
 let analisesMesEspecifico = null;
+
+// Sugestão de compras (Fase 3E)
+let comprasBaseTipo = 'mes-atual';   // mes-atual | mes-especifico | todos
+let comprasBaseMes = null;            // 'YYYY-MM' quando tipo === 'mes-especifico'
+let comprasHorizonte = 7;             // dias (3 | 7 | 14 | 30)
+let comprasMargem = 10;               // % (margem de segurança)
+let comprasSelecionados = {};         // { insumoId: true } - quais insumos estão marcados
+let comprasResultadoAtual = null;     // último resultado calculado, pra usar no btn criar lista
 
 // Categoria modal
 let catEditandoId = null;
@@ -365,6 +376,7 @@ function iniciarListeners() {
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'relatorio') renderRelatorioFichas();
     if (currentTab === 'vendas' && currentSubTabVendas === 'cmv') renderCMVReal();
     if (currentTab === 'vendas' && currentSubTabVendas === 'analises') renderAnalises();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'compras') renderCompras();
     // Se modal de ficha está aberto, recalcular (preço do insumo pode ter mudado)
     if ($('modal-ficha').classList.contains('show')) {
       renderIngredientesModal();
@@ -379,6 +391,7 @@ function iniciarListeners() {
     if (currentTab === 'vendas' && currentSubTabVendas === 'vinculos') renderVinculos();
     if (currentTab === 'vendas' && currentSubTabVendas === 'cmv') renderCMVReal();
     if (currentTab === 'vendas' && currentSubTabVendas === 'analises') renderAnalises();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'compras') renderCompras();
   }));
 
   unsubsRefs.push(observarVendas((v) => {
@@ -387,6 +400,7 @@ function iniciarListeners() {
     if (currentTab === 'vendas' && currentSubTabVendas === 'vinculos') renderVinculos();
     if (currentTab === 'vendas' && currentSubTabVendas === 'cmv') renderCMVReal();
     if (currentTab === 'vendas' && currentSubTabVendas === 'analises') renderAnalises();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'compras') renderCompras();
     if (currentTab === 'vendas' && currentSubTabVendas === 'calendario' && diaSelecionadoCalendario) {
       renderDetalhesDia(diaSelecionadoCalendario);
     }
@@ -3285,12 +3299,14 @@ function switchSubTabVendas(sub) {
   $('vendas-subtab-vinculos').style.display = sub === 'vinculos' ? 'block' : 'none';
   $('vendas-subtab-cmv').style.display = sub === 'cmv' ? 'block' : 'none';
   $('vendas-subtab-analises').style.display = sub === 'analises' ? 'block' : 'none';
+  $('vendas-subtab-compras').style.display = sub === 'compras' ? 'block' : 'none';
 
   if (sub === 'calendario') renderCalendario();
   if (sub === 'dados') renderDadosVendas();
   if (sub === 'vinculos') renderVinculos();
   if (sub === 'cmv') renderCMVReal();
   if (sub === 'analises') renderAnalises();
+  if (sub === 'compras') renderCompras();
 }
 
 // ============================================================================
@@ -4456,6 +4472,348 @@ function renderAnalises() {
 }
 
 // ============================================================================
+// VENDAS - Sugestão de Compras (Fase 3E)
+// ============================================================================
+
+// Filtra vendas pelo período base selecionado
+function filtrarVendasCompras() {
+  let v = vendas.filter(x => x.fichaId && !x.ignorado);
+  if (comprasBaseTipo === 'mes-atual') {
+    const h = new Date();
+    const prefix = `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}`;
+    v = v.filter(x => x.data && x.data.startsWith(prefix));
+  } else if (comprasBaseTipo === 'mes-especifico' && comprasBaseMes) {
+    v = v.filter(x => x.data && x.data.startsWith(comprasBaseMes));
+  }
+  return v;
+}
+
+// Conta quantos dias únicos têm vendas no período filtrado
+function contarDiasBase() {
+  let diasUnicos;
+  if (comprasBaseTipo === 'mes-atual') {
+    const h = new Date();
+    const prefix = `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}`;
+    diasUnicos = vendasDias.filter(d => d.data && d.data.startsWith(prefix));
+  } else if (comprasBaseTipo === 'mes-especifico' && comprasBaseMes) {
+    diasUnicos = vendasDias.filter(d => d.data && d.data.startsWith(comprasBaseMes));
+  } else {
+    diasUnicos = vendasDias;
+  }
+  return diasUnicos.length;
+}
+
+// Calcula receita histórica por dia da semana (pra fator de ajuste)
+function calcularReceitaPorDiaSemana(vendasFiltradas) {
+  const porDia = [0, 0, 0, 0, 0, 0, 0];  // [Dom, Seg, ..., Sáb]
+  for (const v of vendasFiltradas) {
+    if (!v.data) continue;
+    const [ano, mes, dia] = v.data.split('-');
+    const d = new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia));
+    porDia[d.getDay()] += v.total || 0;
+  }
+  return porDia;
+}
+
+// Gera array de dias futuros a partir de hoje
+function gerarDiasFuturos(quantidadeDias) {
+  const dias = [];
+  const hoje = new Date();
+  for (let i = 1; i <= quantidadeDias; i++) {
+    const d = new Date(hoje);
+    d.setDate(hoje.getDate() + i);
+    dias.push(d);
+  }
+  return dias;
+}
+
+// Encontra o item de catálogo correspondente a um insumo
+function encontrarItemDoInsumo(insumoId) {
+  return itens.find(i => i.insumoId === insumoId);
+}
+
+// Calcula classe ABC: A = top X que somam 80% do custo, B = +15%, C = restante 5%
+function classificarABC(itensOrdenados) {
+  // itensOrdenados deve estar em ordem decrescente de custo
+  const total = itensOrdenados.reduce((s, i) => s + (i.custoProjetado || 0), 0);
+  if (total === 0) return itensOrdenados.map(i => ({ ...i, classe: 'C' }));
+
+  let acumulado = 0;
+  return itensOrdenados.map(i => {
+    acumulado += (i.custoProjetado || 0);
+    const pct = acumulado / total;
+    let classe = 'C';
+    if (pct <= 0.80) classe = 'A';
+    else if (pct <= 0.95) classe = 'B';
+    return { ...i, classe };
+  });
+}
+
+// Núcleo: calcula sugestões de compra completas
+function calcularSugestaoCompras() {
+  const vendasFiltradas = filtrarVendasCompras();
+  if (!vendasFiltradas.length) return { vazio: true, motivo: 'sem-vendas' };
+
+  const diasBase = contarDiasBase();
+  if (diasBase === 0) return { vazio: true, motivo: 'sem-dias' };
+
+  // 1. Calcula consumo do período (usando função pura do db.js)
+  const consumos = calcularConsumoInsumos(vendasFiltradas, fichas, insumos);
+  if (!consumos.length) return { vazio: true, motivo: 'sem-consumo' };
+
+  // 2. Fator de ajuste pelo dia da semana
+  const receitaPorDia = calcularReceitaPorDiaSemana(vendasFiltradas);
+  const diasFuturos = gerarDiasFuturos(comprasHorizonte);
+  const fatorAjuste = calcularFatorAjustePorDiaSemana(receitaPorDia, diasFuturos);
+
+  // 3. Projeção: consumo médio diário × dias do horizonte × fator × (1 + margem)
+  const margemMultiplicador = 1 + (comprasMargem / 100);
+  const sugestoes = consumos.map(c => {
+    const consumoMedioDia = c.consumoBruto / diasBase;
+    const projecao = consumoMedioDia * comprasHorizonte * fatorAjuste;
+    const sugestao = projecao * margemMultiplicador;
+    const custoProjetado = sugestao * (c.insumo.precoPorUnidade || 0);
+    const itemCatalogo = encontrarItemDoInsumo(c.insumoId);
+    return {
+      ...c,
+      consumoMedioDia,
+      projecao,
+      sugestao,
+      custoProjetado,
+      itemCatalogo  // pode ser undefined
+    };
+  });
+
+  // 4. Ordena por custo decrescente
+  sugestoes.sort((a, b) => b.custoProjetado - a.custoProjetado);
+
+  // 5. Aplica classificação ABC
+  const sugestoesClassificadas = classificarABC(sugestoes);
+
+  // 6. Estatísticas
+  const totalCusto = sugestoesClassificadas.reduce((s, i) => s + i.custoProjetado, 0);
+  const receitaVinculadaPeriodo = vendasFiltradas.reduce((s, v) => s + (v.total || 0), 0);
+  const receitaTotalPeriodo = (() => {
+    let vp = vendas;
+    if (comprasBaseTipo === 'mes-atual') {
+      const h = new Date();
+      const prefix = `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}`;
+      vp = vendas.filter(x => x.data && x.data.startsWith(prefix));
+    } else if (comprasBaseTipo === 'mes-especifico' && comprasBaseMes) {
+      vp = vendas.filter(x => x.data && x.data.startsWith(comprasBaseMes));
+    }
+    return vp.reduce((s, v) => s + (v.total || 0), 0);
+  })();
+  const cobertura = receitaTotalPeriodo > 0 ? receitaVinculadaPeriodo / receitaTotalPeriodo : 0;
+
+  return {
+    vazio: false,
+    sugestoes: sugestoesClassificadas,
+    totalCusto,
+    diasBase,
+    fatorAjuste,
+    cobertura,
+    receitaVinculadaPeriodo,
+    receitaTotalPeriodo
+  };
+}
+
+// Helper: formata quantidade do insumo de acordo com a unidade
+function fmtQtdInsumo(qtd, unidade) {
+  const u = unidade || 'KG';
+  if (u === 'UND') {
+    return `${Math.ceil(qtd)} ${u}`;
+  }
+  return `${qtd.toFixed(2)} ${u}`;
+}
+
+function renderCompras() {
+  // Popular dropdown de meses
+  const mesesDisponiveis = listarMesesDisponiveis();
+  const selectMeses = $('compras-base-mes');
+  if (selectMeses.options.length !== mesesDisponiveis.length || selectMeses.options.length === 0) {
+    selectMeses.innerHTML = mesesDisponiveis.map(m => `<option value="${m}">${nomeMes(m)}</option>`).join('');
+  }
+  if (comprasBaseTipo === 'mes-especifico' && !comprasBaseMes && mesesDisponiveis.length > 0) {
+    comprasBaseMes = mesesDisponiveis[0];
+    selectMeses.value = comprasBaseMes;
+  }
+  selectMeses.style.display = comprasBaseTipo === 'mes-especifico' ? 'inline-block' : 'none';
+
+  const r = calcularSugestaoCompras();
+  comprasResultadoAtual = r;
+
+  if (r.vazio) {
+    let msg = '';
+    if (r.motivo === 'sem-vendas') {
+      msg = 'Sem vendas vinculadas a fichas no período. Vincule produtos em <strong>🔗 Vínculos</strong> primeiro.';
+    } else if (r.motivo === 'sem-dias') {
+      msg = 'Nenhum dia importado neste período. Vá em <strong>📥 Importar</strong> primeiro.';
+    } else {
+      msg = 'As fichas vinculadas não têm ingredientes cadastrados. Edite as fichas em <strong>🍽️ Cardápio</strong>.';
+    }
+
+    $('compras-vazio').innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">🛒</div>
+      <div class="empty-state-text">${msg}</div>
+    </div>`;
+    $('compras-vazio').style.display = 'block';
+    $('compras-lista-wrap').style.display = 'none';
+    $('compras-abc-wrap').style.display = 'none';
+    $('compras-cobertura').textContent = '—';
+    $('compras-base-dias').textContent = '—';
+    $('compras-total-insumos').textContent = '0';
+    $('compras-total-valor').textContent = 'R$ 0,00';
+    $('compras-fator-ajuste').textContent = '—';
+    return;
+  }
+
+  $('compras-vazio').style.display = 'none';
+  $('compras-lista-wrap').style.display = 'block';
+  $('compras-abc-wrap').style.display = 'block';
+
+  // Stats
+  $('compras-cobertura').textContent = `${Math.round(r.cobertura * 100)}%`;
+  $('compras-base-dias').textContent = `${r.diasBase} dia${r.diasBase > 1 ? 's' : ''} de base`;
+  $('compras-total-insumos').textContent = r.sugestoes.length;
+  $('compras-total-valor').textContent = fmtMoeda(r.totalCusto);
+  $('compras-fator-ajuste').textContent = r.fatorAjuste === 1
+    ? 'sem ajuste'
+    : `ajuste ${r.fatorAjuste > 1 ? '+' : ''}${((r.fatorAjuste - 1) * 100).toFixed(0)}% (dias semana)`;
+
+  // Marca por padrão apenas os classe A se ainda não tiver seleção
+  if (Object.keys(comprasSelecionados).length === 0) {
+    for (const s of r.sugestoes) {
+      if (s.classe === 'A') {
+        comprasSelecionados[s.insumoId] = true;
+      }
+    }
+  }
+
+  // Lista de insumos
+  let html = '';
+  for (const s of r.sugestoes) {
+    const checked = comprasSelecionados[s.insumoId] ? 'checked' : '';
+    const itemTag = s.itemCatalogo
+      ? `<span class="classe-label ${s.classe === 'A' ? 'classe-A-tag' : ''}">${s.classe}</span>`
+      : `<span class="classe-label ${s.classe === 'A' ? 'classe-A-tag' : ''}">${s.classe}</span><span class="sem-item-tag" title="Este insumo não tem item de compra vinculado no catálogo">⚠ sem item</span>`;
+
+    const disabled = !s.itemCatalogo ? 'disabled title="Sem item de compra vinculado"' : '';
+
+    html += `<div class="compra-card ${s.classe === 'A' ? 'classe-A' : ''}">`;
+    html += `<input type="checkbox" class="compra-check" data-insumo="${s.insumoId}" ${checked} ${disabled}>`;
+    html += `<div class="compra-info">`;
+    html += `<div class="compra-nome">${escHtml(s.insumo.nome)}</div>`;
+    html += `<div class="compra-meta">${itemTag} · ${s.consumoMedioDia.toFixed(2)} ${s.insumo.unidade}/dia</div>`;
+    html += `</div>`;
+    html += `<div class="compra-quantidade">${fmtQtdInsumo(s.sugestao, s.insumo.unidade)}</div>`;
+    html += `<div class="compra-valor">${fmtMoeda(s.custoProjetado)}</div>`;
+    html += `</div>`;
+  }
+  $('compras-lista').innerHTML = html;
+
+  atualizarComprasSelecionados();
+
+  // Curva ABC
+  renderCurvaABC(r.sugestoes);
+}
+
+function atualizarComprasSelecionados() {
+  if (!comprasResultadoAtual || comprasResultadoAtual.vazio) return;
+  let valor = 0;
+  let count = 0;
+  let temItemValido = false;
+  for (const s of comprasResultadoAtual.sugestoes) {
+    if (comprasSelecionados[s.insumoId]) {
+      valor += s.custoProjetado;
+      count++;
+      if (s.itemCatalogo) temItemValido = true;
+    }
+  }
+  $('compras-selecionados-valor').textContent = fmtMoeda(valor);
+  $('compras-selecionados-count').textContent = `${count} ${count === 1 ? 'insumo' : 'insumos'}`;
+  $('btn-criar-lista-compras').disabled = !temItemValido;
+}
+
+function renderCurvaABC(sugestoes) {
+  const grupos = { A: [], B: [], C: [] };
+  for (const s of sugestoes) grupos[s.classe].push(s);
+
+  const total = sugestoes.reduce((s, i) => s + (i.custoProjetado || 0), 0);
+
+  let html = '';
+  for (const letra of ['A', 'B', 'C']) {
+    const itens = grupos[letra];
+    if (itens.length === 0) continue;
+    const custoGrupo = itens.reduce((s, i) => s + i.custoProjetado, 0);
+    const pctGrupo = total > 0 ? (custoGrupo / total) * 100 : 0;
+
+    const descricoes = {
+      A: 'Críticos — 80% do custo',
+      B: 'Importantes — 15% do custo',
+      C: 'Secundários — 5% do custo'
+    };
+
+    html += `<div class="abc-grupo">`;
+    html += `<div class="abc-letra ${letra}">${letra}</div>`;
+    html += `<div class="abc-info">`;
+    html += `<div class="abc-titulo">${descricoes[letra]}</div>`;
+    html += `<div class="abc-percentual">${itens.length} ${itens.length === 1 ? 'insumo' : 'insumos'} · ${fmtMoeda(custoGrupo)} (${pctGrupo.toFixed(1)}% do total)</div>`;
+    html += `<div class="abc-insumos">${itens.slice(0, 8).map(i => escHtml(i.insumo.nome)).join(', ')}${itens.length > 8 ? ` <em>+${itens.length - 8} outros</em>` : ''}</div>`;
+    html += `</div>`;
+    html += `</div>`;
+  }
+
+  $('compras-abc-conteudo').innerHTML = html;
+}
+
+async function criarListaDaSugestao() {
+  if (!comprasResultadoAtual || comprasResultadoAtual.vazio) return;
+
+  const itensParaAdicionar = [];
+  let semItemCount = 0;
+  for (const s of comprasResultadoAtual.sugestoes) {
+    if (!comprasSelecionados[s.insumoId]) continue;
+    if (!s.itemCatalogo) {
+      semItemCount++;
+      continue;
+    }
+    // Arredonda quantidade pra cima se UND, senão 2 decimais
+    const qtdFinal = s.insumo.unidade === 'UND' ? Math.ceil(s.sugestao) : parseFloat(s.sugestao.toFixed(2));
+    itensParaAdicionar.push({ itemId: s.itemCatalogo.id, qtd: qtdFinal });
+  }
+
+  if (!itensParaAdicionar.length) {
+    showToast('⚠ Nenhum insumo selecionado com item de compra válido', 'error');
+    return;
+  }
+
+  const btn = $('btn-criar-lista-compras');
+  btn.disabled = true;
+  btn.textContent = 'Adicionando...';
+
+  try {
+    const n = await adicionarItensListaEmCriacaoEmLote(itensParaAdicionar);
+    let msg = `✓ ${n} ${n === 1 ? 'item adicionado' : 'itens adicionados'} à Lista em Criação`;
+    if (semItemCount > 0) {
+      msg += ` (${semItemCount} sem item de compra ignorados)`;
+    }
+    showToast(msg, 'success');
+
+    // Reseta seleção pra não duplicar acidentalmente
+    comprasSelecionados = {};
+
+    // Vai pra aba Criar Lista
+    setTimeout(() => switchTab('criar'), 600);
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📥 Adicionar à Lista em Criação';
+  }
+}
+
+// ============================================================================
 // EVENTOS
 // ============================================================================
 
@@ -4588,6 +4946,56 @@ function setupEventos() {
     analisesMesEspecifico = e.target.value;
     renderAnalises();
   });
+
+  // Vendas - Sugestão de Compras (Fase 3E)
+  $('compras-base').addEventListener('change', e => {
+    comprasBaseTipo = e.target.value;
+    if (comprasBaseTipo === 'mes-especifico' && !comprasBaseMes) {
+      const meses = listarMesesDisponiveis();
+      if (meses.length > 0) comprasBaseMes = meses[0];
+    }
+    comprasSelecionados = {};  // reseta seleção quando muda período
+    renderCompras();
+  });
+  $('compras-base-mes').addEventListener('change', e => {
+    comprasBaseMes = e.target.value;
+    comprasSelecionados = {};
+    renderCompras();
+  });
+  $('compras-horizonte').addEventListener('change', e => {
+    comprasHorizonte = parseInt(e.target.value, 10) || 7;
+    renderCompras();
+  });
+  $('compras-margem').addEventListener('change', e => {
+    comprasMargem = parseFloat(e.target.value) || 0;
+    renderCompras();
+  });
+
+  // Lista de compras: checkbox individual
+  $('compras-lista').addEventListener('change', e => {
+    if (e.target.classList.contains('compra-check')) {
+      const insumoId = e.target.dataset.insumo;
+      if (e.target.checked) comprasSelecionados[insumoId] = true;
+      else delete comprasSelecionados[insumoId];
+      atualizarComprasSelecionados();
+    }
+  });
+
+  // Selecionar/desmarcar todos
+  $('compras-selecionar-todos').addEventListener('click', () => {
+    if (!comprasResultadoAtual || comprasResultadoAtual.vazio) return;
+    for (const s of comprasResultadoAtual.sugestoes) {
+      if (s.itemCatalogo) comprasSelecionados[s.insumoId] = true;
+    }
+    renderCompras();
+  });
+  $('compras-deselecionar').addEventListener('click', () => {
+    comprasSelecionados = {};
+    renderCompras();
+  });
+
+  // Botão criar lista
+  $('btn-criar-lista-compras').addEventListener('click', criarListaDaSugestao);
 
   $('btn-criar-recolher').addEventListener('click', () => expandirOuRecolherCriar(false));
   $('btn-criar-expandir').addEventListener('click', () => expandirOuRecolherCriar(true));

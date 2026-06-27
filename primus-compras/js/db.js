@@ -282,6 +282,35 @@ export async function limparListaEmCriacao() {
   await batch.commit();
 }
 
+// Adiciona vários itens à Lista em Criação de uma só vez (mais eficiente que loop)
+// itens: array de { itemId, qtd } — soma com qtd existente se já estiver na lista
+export async function adicionarItensListaEmCriacaoEmLote(itens) {
+  if (!itens || !itens.length) return 0;
+
+  // Lê o que já está em criação pra somar quantidades
+  const snapAtual = await getDocs(LISTA_EM_CRIACAO());
+  const atuais = {};
+  snapAtual.docs.forEach(d => {
+    atuais[d.id] = d.data().qtd || 0;
+  });
+
+  const batch = writeBatch(db);
+  let count = 0;
+  for (const i of itens) {
+    if (!i.itemId || !i.qtd || i.qtd <= 0) continue;
+    const qtdFinal = (atuais[i.itemId] || 0) + i.qtd;
+    const ref = doc(LISTA_EM_CRIACAO(), i.itemId);
+    batch.set(ref, {
+      itemId: i.itemId,
+      qtd: qtdFinal,
+      ...auditFields()
+    });
+    count++;
+  }
+  await batch.commit();
+  return count;
+}
+
 // ============================================================================
 // LISTA ATUAL (em compra)
 // ============================================================================
@@ -872,6 +901,95 @@ export function agregarVendasPorProduto(vendas) {
     if (v.ignorado) mapa[nome].ignorado = true;
   }
   return Object.values(mapa).map(p => ({ ...p, dias: p.dias.size }));
+}
+
+// ============================================================================
+// CONSUMO DE INSUMOS (Fase 3E)
+// ============================================================================
+
+// Função pura: calcula o consumo total de cada insumo a partir das vendas vinculadas
+// vendas: vendas filtradas pelo período (já vinculadas a ficha, não ignoradas)
+// Retorna: array de { insumoId, insumo, consumoLiquido, consumoBruto, custo }
+//   - consumoLiquido: total de peso líquido usado (sem FC)
+//   - consumoBruto: total a comprar (com FC aplicado) — usado para sugerir compras
+//   - custo: estimativa de custo do consumo
+export function calcularConsumoInsumos(vendasVinculadas, fichas, insumos) {
+  const mapa = {};
+
+  for (const v of vendasVinculadas) {
+    const ficha = fichas.find(f => f.id === v.fichaId);
+    if (!ficha) continue;
+
+    // Quantas porções foram vendidas
+    const qtdVendida = v.quantidade || 0;
+    if (qtdVendida <= 0) continue;
+
+    // Para cada ingrediente da ficha
+    for (const ing of (ficha.ingredientes || [])) {
+      const insumo = insumos.find(i => i.id === ing.insumoId);
+      if (!insumo) continue;
+
+      // Quanto desse insumo cada porção consome?
+      // Ficha.rendimento = quantas porções a receita rende
+      // ing.pesoLiquido = peso líquido total da receita
+      // Então: pesoLiquido / rendimento = peso líquido POR PORÇÃO
+      const porcoes = (ficha.unidadeRendimento === 'PORCOES')
+        ? (ficha.rendimento || 1)
+        : (ficha.tamanhoPorcao && ficha.tamanhoPorcao > 0
+            ? (ficha.rendimento || 1) / ficha.tamanhoPorcao
+            : 1);
+
+      const pesoLiquidoPorPorcao = (ing.pesoLiquido || 0) / porcoes;
+      const pesoLiquidoTotal = pesoLiquidoPorPorcao * qtdVendida;
+
+      // Aplica FC pra converter líquido em bruto
+      const fc = insumo.fatorCorrecao || 1;
+      const pesoBrutoTotal = pesoLiquidoTotal * fc;
+
+      if (!mapa[insumo.id]) {
+        mapa[insumo.id] = {
+          insumoId: insumo.id,
+          insumo,
+          consumoLiquido: 0,
+          consumoBruto: 0,
+          custo: 0
+        };
+      }
+
+      mapa[insumo.id].consumoLiquido += pesoLiquidoTotal;
+      mapa[insumo.id].consumoBruto += pesoBrutoTotal;
+      mapa[insumo.id].custo += pesoBrutoTotal * (insumo.precoPorUnidade || 0);
+    }
+  }
+
+  return Object.values(mapa);
+}
+
+// Função pura: calcula multiplicador por dia da semana para uma projeção
+// Se a próxima semana tem peso similar à média histórica, retorna 1
+// Se tem mais sextas/sábados que média, retorna > 1
+//
+// vendasPorDiaHistorico: array[7] com receita por dia da semana no período base
+// diasDoHorizonte: array de Date com os dias futuros
+// Retorna: número (fator multiplicador médio)
+export function calcularFatorAjustePorDiaSemana(vendasPorDiaHistorico, diasDoHorizonte) {
+  const totalHistorico = vendasPorDiaHistorico.reduce((s, v) => s + v, 0);
+  if (totalHistorico === 0) return 1;
+
+  // Média esperada por dia (se distribuísse igualmente)
+  const mediaIgual = totalHistorico / 7;
+
+  // Soma os pesos esperados dos dias do horizonte
+  let pesoEsperado = 0;
+  for (const dia of diasDoHorizonte) {
+    pesoEsperado += vendasPorDiaHistorico[dia.getDay()] || 0;
+  }
+
+  // Comparar com o que seria se fosse distribuição uniforme
+  const pesoUniforme = mediaIgual * diasDoHorizonte.length;
+  if (pesoUniforme === 0) return 1;
+
+  return pesoEsperado / pesoUniforme;
 }
 
 // ============================================================================
