@@ -207,6 +207,7 @@ export async function criarInsumo(dados) {
     fornecedor: dados.fornecedor || '',
     precoPorUnidade: dados.precoPorUnidade ?? null,
     dataUltimaCompra: dados.dataUltimaCompra ?? null,
+    origemPreco: dados.origemPreco || (dados.precoPorUnidade ? 'manual' : null),  // 'manual' | 'compra' | null
     ehPrePreparo: !!dados.ehPrePreparo,
     ...auditFields({ criadoEm: serverTimestamp() })
   });
@@ -242,6 +243,7 @@ export async function atualizarPrecoInsumo(insumoId, precoPorUnidade) {
   await updateDoc(ref, {
     precoPorUnidade: preco,
     dataUltimaCompra: serverTimestamp(),
+    origemPreco: 'compra',
     ...auditFields()
   });
 }

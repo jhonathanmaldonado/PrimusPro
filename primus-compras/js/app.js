@@ -1324,7 +1324,14 @@ function renderInsumos() {
     html += `</div>`;
     html += `<div class="insumo-card-preco">`;
     if (ins.precoPorUnidade && ins.precoPorUnidade > 0) {
-      html += `${fmtMoeda(ins.precoPorUnidade)}<br><span style="font-weight:400;font-size:10px;color:var(--muted)">por ${escHtml(ins.unidade || 'KG')}</span>`;
+      // Badge de origem
+      let badgeOrigemHtml = '';
+      if (ins.origemPreco === 'compra') {
+        badgeOrigemHtml = `<span style="display:inline-block;font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px;background:#dcfce7;color:#15803d;margin-left:2px" title="Atualizado por compra real">🛒</span>`;
+      } else if (ins.origemPreco === 'manual') {
+        badgeOrigemHtml = `<span style="display:inline-block;font-size:9px;font-weight:600;padding:1px 5px;border-radius:4px;background:#e5e7eb;color:#374151;margin-left:2px" title="Cadastrado manualmente">✋</span>`;
+      }
+      html += `${fmtMoeda(ins.precoPorUnidade)} ${badgeOrigemHtml}<br><span style="font-weight:400;font-size:10px;color:var(--muted)">por ${escHtml(ins.unidade || 'KG')}</span>`;
     } else {
       html += `<span class="insumo-card-preco-sem">sem preço</span>`;
     }
@@ -1343,6 +1350,9 @@ function renderInsumos() {
 function abrirModalInsumo(insumoId = null) {
   insumoEditandoId = insumoId;
 
+  // Variável usada pra detectar se o usuário mudou o preço (ao salvar)
+  window._precoInsumoOriginal = null;
+
   if (insumoId) {
     const ins = insumos.find(i => i.id === insumoId);
     if (!ins) {
@@ -1357,19 +1367,23 @@ function abrirModalInsumo(insumoId = null) {
     $('insumo-categoria').value = ins.categoria || '';
     $('insumo-fornecedor').value = ins.fornecedor || '';
 
-    // Mostrar informação do preço atual
-    if (ins.precoPorUnidade && ins.precoPorUnidade > 0) {
-      $('insumo-info-preco').style.display = 'block';
-      $('insumo-info-preco-valor').textContent = `${fmtMoeda(ins.precoPorUnidade)} por ${ins.unidade || 'KG'}`;
-      if (ins.dataUltimaCompra) {
-        const d = ins.dataUltimaCompra.toDate ? ins.dataUltimaCompra.toDate() : new Date(ins.dataUltimaCompra);
-        $('insumo-info-preco-data').textContent = `Atualizado em ${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
-      } else {
-        $('insumo-info-preco-data').textContent = '';
-      }
+    // Bloco de preço
+    const preco = ins.precoPorUnidade;
+    $('insumo-preco').value = (preco && preco > 0) ? preco.toFixed(2) : '';
+    window._precoInsumoOriginal = preco;
+
+    // Data da cotação (formato yyyy-mm-dd pro input type=date)
+    if (ins.dataUltimaCompra) {
+      const d = ins.dataUltimaCompra.toDate ? ins.dataUltimaCompra.toDate() : new Date(ins.dataUltimaCompra);
+      const ano = d.getFullYear();
+      const mes = String(d.getMonth() + 1).padStart(2, '0');
+      const dia = String(d.getDate()).padStart(2, '0');
+      $('insumo-data-cotacao').value = `${ano}-${mes}-${dia}`;
     } else {
-      $('insumo-info-preco').style.display = 'none';
+      $('insumo-data-cotacao').value = '';
     }
+
+    atualizarBadgeOrigem(ins.origemPreco);
   } else {
     $('modal-insumo-title').textContent = '📦 Novo Insumo';
     $('insumo-id').value = '';
@@ -1378,13 +1392,44 @@ function abrirModalInsumo(insumoId = null) {
     $('insumo-fc').value = '1.00';
     $('insumo-categoria').value = '';
     $('insumo-fornecedor').value = '';
-    $('insumo-info-preco').style.display = 'none';
+    $('insumo-preco').value = '';
+    $('insumo-data-cotacao').value = '';
+    atualizarBadgeOrigem(null);
   }
+
+  atualizarUnidadePrecoLabel();
 
   $('insumo-error').classList.remove('show');
   $('insumo-error').textContent = '';
   $('modal-insumo').classList.add('show');
   setTimeout(() => $('insumo-nome').focus(), 100);
+}
+
+// Atualiza a label "/kg", "/L" ou "/und" ao lado do preço
+function atualizarUnidadePrecoLabel() {
+  const unidade = $('insumo-unidade').value;
+  const labels = { KG: '/kg', LITRO: '/L', UND: '/und' };
+  $('insumo-preco-unidade').textContent = labels[unidade] || '/kg';
+}
+
+// Atualiza a badge de origem (Manual / Compra / —)
+function atualizarBadgeOrigem(origem) {
+  const badge = $('insumo-origem-badge');
+  if (!badge) return;
+
+  if (origem === 'compra') {
+    badge.textContent = '🛒 Compra';
+    badge.style.background = '#dcfce7';
+    badge.style.color = '#15803d';
+  } else if (origem === 'manual') {
+    badge.textContent = '✋ Manual';
+    badge.style.background = '#e5e7eb';
+    badge.style.color = '#374151';
+  } else {
+    badge.textContent = '— Sem preço';
+    badge.style.background = '#f3f4f6';
+    badge.style.color = '#9ca3af';
+  }
 }
 
 function fecharModalInsumo() {
@@ -1433,15 +1478,60 @@ async function salvarInsumo() {
   btn.disabled = true;
   btn.textContent = 'Salvando...';
 
+  // Lê os novos campos de preço
+  const precoStr = $('insumo-preco').value.trim();
+  const precoNovo = precoStr === '' ? null : parseFloat(precoStr);
+  const dataCotacaoStr = $('insumo-data-cotacao').value;
+
+  // Valida preço se preenchido
+  if (precoStr !== '' && (isNaN(precoNovo) || precoNovo < 0)) {
+    err.textContent = 'Preço inválido';
+    err.classList.add('show');
+    btn.disabled = false;
+    btn.textContent = '💾 Salvar';
+    return;
+  }
+
+  // Converte data (formato yyyy-mm-dd do input) pra Date
+  let dataCotacao = null;
+  if (dataCotacaoStr) {
+    dataCotacao = new Date(dataCotacaoStr + 'T12:00:00');
+  }
+
+  // Decide a origem do preço:
+  // Se editando e o preço NÃO mudou em relação ao original, mantém origem atual
+  // Se digitou preço (novo ou mudou), marca como 'manual'
+  // Se apagou o preço, origem vira null
+  let origemPreco = null;
+  if (precoNovo !== null && precoNovo > 0) {
+    const original = window._precoInsumoOriginal;
+    if (insumoEditandoId && original !== null && Math.abs((original || 0) - precoNovo) < 0.001) {
+      // Preço não mudou: mantém origem atual do insumo
+      const insumoAtual = insumos.find(i => i.id === insumoEditandoId);
+      origemPreco = insumoAtual?.origemPreco || 'manual';
+    } else {
+      origemPreco = 'manual';
+    }
+  }
+
   try {
     if (insumoEditandoId) {
-      await atualizarInsumo(insumoEditandoId, {
+      const payload = {
         nome,
         unidade,
         fatorCorrecao: fc,
         categoria,
-        fornecedor
-      });
+        fornecedor,
+        precoPorUnidade: precoNovo,
+        origemPreco
+      };
+      // Só inclui dataUltimaCompra se uma data foi informada (não sobrescreve sem motivo)
+      if (dataCotacao) {
+        payload.dataUltimaCompra = dataCotacao;
+      } else if (precoNovo === null) {
+        payload.dataUltimaCompra = null;
+      }
+      await atualizarInsumo(insumoEditandoId, payload);
       showToast(`✓ "${nome}" atualizado`, 'success');
     } else {
       await criarInsumo({
@@ -1449,7 +1539,10 @@ async function salvarInsumo() {
         unidade,
         fatorCorrecao: fc,
         categoria,
-        fornecedor
+        fornecedor,
+        precoPorUnidade: precoNovo,
+        dataUltimaCompra: dataCotacao,
+        origemPreco
       });
       showToast(`✓ Insumo "${nome}" criado`, 'success');
     }
@@ -2699,6 +2792,34 @@ function setupEventos() {
   $('btn-insumo-cancelar').addEventListener('click', fecharModalInsumo);
   ['insumo-nome', 'insumo-fc', 'insumo-categoria', 'insumo-fornecedor'].forEach(id => {
     $(id).addEventListener('keydown', e => { if (e.key === 'Enter') salvarInsumo(); });
+  });
+
+  // Quando muda unidade, atualiza label /kg /L /und ao lado do preço
+  $('insumo-unidade').addEventListener('change', atualizarUnidadePrecoLabel);
+
+  // Quando digita preço, atualiza badge ao vivo
+  $('insumo-preco').addEventListener('input', () => {
+    const valor = parseFloat($('insumo-preco').value);
+    if (!isNaN(valor) && valor > 0) {
+      // Se editando e o preço não mudou, mantém a badge original
+      const original = window._precoInsumoOriginal;
+      if (insumoEditandoId && original !== null && Math.abs((original || 0) - valor) < 0.001) {
+        const insumoAtual = insumos.find(i => i.id === insumoEditandoId);
+        atualizarBadgeOrigem(insumoAtual?.origemPreco || 'manual');
+      } else {
+        atualizarBadgeOrigem('manual');
+        // Auto-preenche data de hoje se estiver vazia (preço mudou ou novo)
+        if (!$('insumo-data-cotacao').value) {
+          const hoje = new Date();
+          const ano = hoje.getFullYear();
+          const mes = String(hoje.getMonth() + 1).padStart(2, '0');
+          const dia = String(hoje.getDate()).padStart(2, '0');
+          $('insumo-data-cotacao').value = `${ano}-${mes}-${dia}`;
+        }
+      }
+    } else {
+      atualizarBadgeOrigem(null);
+    }
   });
   $('list-insumos').addEventListener('click', e => {
     const target = e.target.closest('[data-action]');
