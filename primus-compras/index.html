@@ -676,6 +676,69 @@
 }
 .vinculo-btn-sm.danger:hover { background: #fef2f2; }
 
+/* ====== CMV REAL ====== */
+.cmv-status-otimo {
+  background: #dcfce7;
+  color: #173404;
+  border: 1px solid #86efac;
+}
+.cmv-status-bom {
+  background: #fef9c3;
+  color: #854F0B;
+  border: 1px solid #FAC775;
+}
+.cmv-status-atencao {
+  background: #fed7aa;
+  color: #633806;
+  border: 1px solid #EF9F27;
+}
+.cmv-status-critico {
+  background: #fecaca;
+  color: #791F1F;
+  border: 1px solid #f87171;
+}
+
+.cmv-tabela {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.cmv-tabela thead {
+  background: var(--wine);
+  color: #fff;
+}
+.cmv-tabela th {
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.cmv-tabela th.num, .cmv-tabela td.num { text-align: right; }
+.cmv-tabela td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.cmv-tabela tbody tr:nth-child(even) { background: #faf8f5; }
+.cmv-tabela tbody tr:hover { background: var(--gold-soft); }
+.cmv-tabela .pct {
+  font-weight: 700;
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+.cmv-incompleta {
+  background: #fef3c7;
+  color: #854F0B;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
 /* Área de impressão de ficha individual - escondida na tela */
 .ficha-impressao-area {
   display: none;
@@ -1361,6 +1424,7 @@
         <button class="sub-nav-btn" data-vendas-subtab="calendario">📅 Calendário</button>
         <button class="sub-nav-btn" data-vendas-subtab="dados">📊 Dados</button>
         <button class="sub-nav-btn" data-vendas-subtab="vinculos">🔗 Vínculos</button>
+        <button class="sub-nav-btn" data-vendas-subtab="cmv">📈 CMV Real</button>
       </div>
 
       <!-- Sub-aba: Importar -->
@@ -1527,6 +1591,83 @@
         </div>
 
         <div id="lista-vinculos"></div>
+      </div>
+
+      <!-- Sub-aba: CMV Real (Fase 3C) -->
+      <div id="vendas-subtab-cmv" style="display:none">
+        <div class="toolbar">
+          <span class="toolbar-title">📈 CMV Real — cruzamento de vendas com fichas técnicas</span>
+        </div>
+
+        <div style="background:var(--gold-soft);border:1px solid #f0d590;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:12px;color:var(--wine-dark);line-height:1.5">
+          ℹ️ <strong>Como funciona:</strong> O sistema calcula o custo real do que foi vendido (qtd × custo da ficha) e compara com a receita. Apenas vendas <strong>vinculadas a fichas técnicas</strong> entram no cálculo.
+        </div>
+
+        <!-- Filtro de período -->
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-radius:10px">
+          <span style="font-size:12px;color:var(--muted);font-weight:600">Período:</span>
+          <select id="cmv-filtro-periodo" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff">
+            <option value="mes-atual">Mês atual</option>
+            <option value="mes-especifico">Mês específico</option>
+            <option value="todos">Todo o histórico</option>
+          </select>
+          <select id="cmv-filtro-mes" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff;display:none"></select>
+          <span style="flex:1;text-align:right;font-size:11px;color:var(--muted)" id="cmv-periodo-texto">—</span>
+        </div>
+
+        <!-- Card principal: gauge + status -->
+        <div id="cmv-card-principal" style="background:#fff;border:2px solid var(--wine);border-radius:14px;padding:20px;margin-bottom:14px;text-align:center">
+          <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:10px">
+            CMV REAL DO PERÍODO
+          </div>
+
+          <svg id="cmv-gauge-svg" viewBox="0 0 200 130" style="width:200px;max-width:50%;margin:0 auto;display:block">
+            <path d="M 30 100 A 70 70 0 0 1 170 100" fill="none" stroke="#F1EFE8" stroke-width="18" stroke-linecap="round"/>
+            <path id="cmv-gauge-arc" d="" fill="none" stroke="#888780" stroke-width="18" stroke-linecap="round"/>
+            <line id="cmv-gauge-needle" x1="100" y1="100" x2="100" y2="100" stroke="#444441" stroke-width="4" stroke-linecap="round"/>
+            <circle cx="100" cy="100" r="8" fill="#444441"/>
+          </svg>
+
+          <div id="cmv-valor-principal" style="font-size:36px;font-weight:700;color:var(--wine);margin-top:6px">—</div>
+          <div id="cmv-alvo-texto" style="font-size:13px;color:var(--muted);margin-top:2px">Alvo: —</div>
+
+          <div id="cmv-status-mensagem" style="margin-top:14px;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;display:inline-block">
+            —
+          </div>
+        </div>
+
+        <!-- Resumo financeiro -->
+        <div class="summary" style="margin-bottom:14px">
+          <div class="stat">
+            <div class="stat-label">Receita vinculada</div>
+            <div class="stat-value" id="cmv-receita">R$ 0,00</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px" id="cmv-cobertura">—</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Custo total</div>
+            <div class="stat-value" id="cmv-custo">R$ 0,00</div>
+          </div>
+          <div class="stat gold">
+            <div class="stat-label">Margem de contribuição</div>
+            <div class="stat-value" id="cmv-margem">R$ 0,00</div>
+            <div style="font-size:10px;color:var(--muted);margin-top:2px" id="cmv-margem-pct">—</div>
+          </div>
+        </div>
+
+        <!-- Aviso de cobertura baixa -->
+        <div id="cmv-aviso-cobertura" style="display:none;background:#fef3c7;border:1px solid #f0c674;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#854F0B;line-height:1.5"></div>
+
+        <!-- Tabela por prato -->
+        <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+            <span style="font-size:13px;font-weight:700;color:var(--wine)">📋 Por prato</span>
+            <div style="display:flex;gap:6px">
+              <button class="vinculo-btn-sm" id="cmv-ordenar-receita">Por receita</button>
+              <button class="vinculo-btn-sm" id="cmv-ordenar-cmv">Por CMV</button>
+            </div>
+          </div>
+          <div id="cmv-tabela-pratos"></div>
+        </div>
       </div>
 
     </div>

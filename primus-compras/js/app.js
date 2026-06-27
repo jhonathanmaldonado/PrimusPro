@@ -117,6 +117,11 @@ let diaSelecionadoCalendario = null;
 let searchVinculos = '';
 let filtroVinculos = 'todos';  // todos | pendentes | vinculados | ignorados
 
+// CMV Real (Fase 3C)
+let cmvPeriodoTipo = 'mes-atual';      // mes-atual | mes-especifico | todos
+let cmvMesEspecifico = null;            // 'YYYY-MM' quando tipo === 'mes-especifico'
+let cmvOrdenacao = 'receita';           // receita | cmv
+
 // Categoria modal
 let catEditandoId = null;
 let catCorSelecionada = '#7A1F38';
@@ -360,6 +365,7 @@ function iniciarListeners() {
     popularSelectInsumo();
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'insumos') renderInsumos();
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'relatorio') renderRelatorioFichas();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'cmv') renderCMVReal();
     // Se modal de ficha está aberto, recalcular (preço do insumo pode ter mudado)
     if ($('modal-ficha').classList.contains('show')) {
       renderIngredientesModal();
@@ -372,12 +378,14 @@ function iniciarListeners() {
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'fichas') renderFichas();
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'relatorio') renderRelatorioFichas();
     if (currentTab === 'vendas' && currentSubTabVendas === 'vinculos') renderVinculos();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'cmv') renderCMVReal();
   }));
 
   unsubsRefs.push(observarVendas((v) => {
     vendas = v;
     if (currentTab === 'vendas' && currentSubTabVendas === 'dados') renderDadosVendas();
     if (currentTab === 'vendas' && currentSubTabVendas === 'vinculos') renderVinculos();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'cmv') renderCMVReal();
     if (currentTab === 'vendas' && currentSubTabVendas === 'calendario' && diaSelecionadoCalendario) {
       renderDetalhesDia(diaSelecionadoCalendario);
     }
@@ -3237,10 +3245,12 @@ function switchSubTabVendas(sub) {
   $('vendas-subtab-calendario').style.display = sub === 'calendario' ? 'block' : 'none';
   $('vendas-subtab-dados').style.display = sub === 'dados' ? 'block' : 'none';
   $('vendas-subtab-vinculos').style.display = sub === 'vinculos' ? 'block' : 'none';
+  $('vendas-subtab-cmv').style.display = sub === 'cmv' ? 'block' : 'none';
 
   if (sub === 'calendario') renderCalendario();
   if (sub === 'dados') renderDadosVendas();
   if (sub === 'vinculos') renderVinculos();
+  if (sub === 'cmv') renderCMVReal();
 }
 
 // ============================================================================
@@ -3776,6 +3786,336 @@ async function vinculoDesfazerIgnorar(produtoNome) {
 }
 
 // ============================================================================
+// VENDAS - CMV Real (Fase 3C)
+// ============================================================================
+
+// Filtra vendas pelo período selecionado e retorna apenas as vinculadas a fichas
+function filtrarVendasPeriodo() {
+  let vendasFiltradas = vendas.filter(v => v.fichaId && !v.ignorado);
+
+  if (cmvPeriodoTipo === 'mes-atual') {
+    const hoje = new Date();
+    const prefix = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+    vendasFiltradas = vendasFiltradas.filter(v => v.data && v.data.startsWith(prefix));
+  } else if (cmvPeriodoTipo === 'mes-especifico' && cmvMesEspecifico) {
+    vendasFiltradas = vendasFiltradas.filter(v => v.data && v.data.startsWith(cmvMesEspecifico));
+  }
+  // 'todos' = sem filtro adicional
+
+  return vendasFiltradas;
+}
+
+// Calcula o CMV real agregado (e também por prato)
+function calcularCMVRealCompleto() {
+  const vendasVinculadas = filtrarVendasPeriodo();
+
+  // Calcula receita total no período (incluindo pendentes/ignoradas, pra mostrar cobertura)
+  let vendasTotaisDoPeriodo = vendas;
+  if (cmvPeriodoTipo === 'mes-atual') {
+    const hoje = new Date();
+    const prefix = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+    vendasTotaisDoPeriodo = vendas.filter(v => v.data && v.data.startsWith(prefix));
+  } else if (cmvPeriodoTipo === 'mes-especifico' && cmvMesEspecifico) {
+    vendasTotaisDoPeriodo = vendas.filter(v => v.data && v.data.startsWith(cmvMesEspecifico));
+  }
+  const receitaTotal = vendasTotaisDoPeriodo.reduce((s, v) => s + (v.total || 0), 0);
+
+  // Agrupa por ficha (prato)
+  const porFicha = {};
+
+  for (const v of vendasVinculadas) {
+    const ficha = fichas.find(f => f.id === v.fichaId);
+    if (!ficha) continue;  // ficha foi apagada
+
+    const fichaId = ficha.id;
+    if (!porFicha[fichaId]) {
+      // Verifica se a ficha tem todos os ingredientes com preço
+      let incompleta = false;
+      for (const ing of (ficha.ingredientes || [])) {
+        const insumo = insumos.find(i => i.id === ing.insumoId);
+        if (!insumo || !insumo.precoPorUnidade || insumo.precoPorUnidade <= 0) {
+          incompleta = true;
+          break;
+        }
+      }
+
+      porFicha[fichaId] = {
+        ficha,
+        nome: ficha.nome,
+        quantidade: 0,
+        receita: 0,
+        custo: 0,
+        custoPorPorcao: calcularCustoPorPorcao(ficha, insumos),
+        incompleta
+      };
+    }
+    porFicha[fichaId].quantidade += v.quantidade || 0;
+    porFicha[fichaId].receita += v.total || 0;
+    porFicha[fichaId].custo += (v.quantidade || 0) * porFicha[fichaId].custoPorPorcao;
+  }
+
+  // Totais
+  const pratos = Object.values(porFicha).map(p => ({
+    ...p,
+    cmv: p.receita > 0 ? p.custo / p.receita : 0
+  }));
+
+  const receitaVinculada = pratos.reduce((s, p) => s + p.receita, 0);
+  const custoTotal = pratos.reduce((s, p) => s + p.custo, 0);
+  const margem = receitaVinculada - custoTotal;
+  const cmvReal = receitaVinculada > 0 ? custoTotal / receitaVinculada : 0;
+  const cobertura = receitaTotal > 0 ? receitaVinculada / receitaTotal : 0;
+
+  return {
+    receitaVinculada,
+    receitaTotal,
+    cobertura,
+    custoTotal,
+    margem,
+    cmvReal,
+    pratos,
+    cmvAlvo: configPrecificacao.cmvAlvo || 0.30
+  };
+}
+
+// Lista os meses disponíveis (com pelo menos uma venda)
+function listarMesesDisponiveis() {
+  const meses = new Set();
+  for (const vd of vendasDias) {
+    if (vd.data && vd.data.length >= 7) {
+      meses.add(vd.data.substring(0, 7));  // YYYY-MM
+    }
+  }
+  return Array.from(meses).sort().reverse();  // mais recentes primeiro
+}
+
+function nomeMes(yyyyMM) {
+  const NOMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  const [ano, mes] = yyyyMM.split('-');
+  return `${NOMES[parseInt(mes, 10) - 1]} ${ano}`;
+}
+
+function renderCMVReal() {
+  // Atualiza dropdown de meses (se mudou)
+  const mesesDisponiveis = listarMesesDisponiveis();
+  const selectMeses = $('cmv-filtro-mes');
+  if (selectMeses.options.length !== mesesDisponiveis.length || selectMeses.options.length === 0) {
+    selectMeses.innerHTML = mesesDisponiveis
+      .map(m => `<option value="${m}">${nomeMes(m)}</option>`)
+      .join('');
+  }
+  // Se mes-especifico mas sem mês selecionado, escolhe o mais recente
+  if (cmvPeriodoTipo === 'mes-especifico' && !cmvMesEspecifico && mesesDisponiveis.length > 0) {
+    cmvMesEspecifico = mesesDisponiveis[0];
+    selectMeses.value = cmvMesEspecifico;
+  }
+
+  // Mostra/esconde select de mês específico
+  selectMeses.style.display = cmvPeriodoTipo === 'mes-especifico' ? 'inline-block' : 'none';
+
+  // Texto do período
+  const hoje = new Date();
+  const NOMES = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+                 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+  let periodoTxt = '';
+  if (cmvPeriodoTipo === 'mes-atual') {
+    periodoTxt = `${NOMES[hoje.getMonth()]} ${hoje.getFullYear()}`;
+  } else if (cmvPeriodoTipo === 'mes-especifico' && cmvMesEspecifico) {
+    periodoTxt = nomeMes(cmvMesEspecifico);
+  } else {
+    periodoTxt = `Todo histórico (${vendasDias.length} dias)`;
+  }
+  $('cmv-periodo-texto').textContent = periodoTxt;
+
+  // Empty state se não tem vendas vinculadas
+  if (!vendas.length) {
+    $('cmv-valor-principal').textContent = '—';
+    $('cmv-alvo-texto').textContent = 'Importe vendas primeiro';
+    $('cmv-status-mensagem').textContent = 'Sem dados';
+    $('cmv-status-mensagem').className = '';
+    $('cmv-receita').textContent = 'R$ 0,00';
+    $('cmv-custo').textContent = 'R$ 0,00';
+    $('cmv-margem').textContent = 'R$ 0,00';
+    $('cmv-cobertura').textContent = '—';
+    $('cmv-margem-pct').textContent = '—';
+    $('cmv-tabela-pratos').innerHTML = `<div class="empty-msg">Importe vendas primeiro</div>`;
+    $('cmv-aviso-cobertura').style.display = 'none';
+    desenharGaugeCMVReal(null, 0.30);
+    return;
+  }
+
+  const r = calcularCMVRealCompleto();
+
+  if (r.pratos.length === 0) {
+    // Tem vendas mas nenhuma vinculada
+    $('cmv-valor-principal').textContent = '—';
+    $('cmv-alvo-texto').textContent = `Alvo: ${Math.round(r.cmvAlvo * 100)}%`;
+    const msg = $('cmv-status-mensagem');
+    msg.textContent = '⚠️ Vincule produtos em 🔗 Vínculos para calcular o CMV';
+    msg.className = 'cmv-status-atencao';
+    $('cmv-receita').textContent = fmtMoeda(0);
+    $('cmv-custo').textContent = fmtMoeda(0);
+    $('cmv-margem').textContent = fmtMoeda(0);
+    $('cmv-cobertura').textContent = `de ${fmtMoeda(r.receitaTotal)} (0%)`;
+    $('cmv-margem-pct').textContent = '—';
+    $('cmv-tabela-pratos').innerHTML = `<div class="empty-msg">Nenhum prato vinculado neste período</div>`;
+    $('cmv-aviso-cobertura').style.display = 'none';
+    desenharGaugeCMVReal(null, r.cmvAlvo);
+    return;
+  }
+
+  // Preenche stats
+  $('cmv-receita').textContent = fmtMoeda(r.receitaVinculada);
+  $('cmv-custo').textContent = fmtMoeda(r.custoTotal);
+  $('cmv-margem').textContent = fmtMoeda(r.margem);
+  $('cmv-margem-pct').textContent = r.receitaVinculada > 0
+    ? `${((r.margem / r.receitaVinculada) * 100).toFixed(1)}% da receita`
+    : '—';
+  $('cmv-cobertura').textContent = `de ${fmtMoeda(r.receitaTotal)} (${Math.round(r.cobertura * 100)}%)`;
+
+  // CMV principal
+  const cmvPct = (r.cmvReal * 100).toFixed(1);
+  $('cmv-valor-principal').textContent = `${cmvPct}%`;
+  $('cmv-alvo-texto').textContent = `Alvo: ${Math.round(r.cmvAlvo * 100)}%`;
+
+  // Cor do valor principal
+  const ratio = r.cmvReal / r.cmvAlvo;
+  let corValor;
+  if (ratio < 0.80) corValor = '#173404';
+  else if (ratio < 1.0) corValor = '#854F0B';
+  else if (ratio < 1.2) corValor = '#633806';
+  else corValor = '#791F1F';
+  $('cmv-valor-principal').style.color = corValor;
+
+  // Mensagem de status
+  const msg = $('cmv-status-mensagem');
+  const diffPontos = (r.cmvReal - r.cmvAlvo) * 100;
+  if (ratio < 0.80) {
+    msg.textContent = `✅ Excelente! Você está LUCRANDO ${Math.abs(diffPontos).toFixed(1)} pontos acima do alvo`;
+    msg.className = 'cmv-status-otimo';
+  } else if (ratio < 1.0) {
+    msg.textContent = `🟡 Próximo ao alvo (${Math.abs(diffPontos).toFixed(1)} pontos abaixo) — saudável`;
+    msg.className = 'cmv-status-bom';
+  } else if (ratio < 1.2) {
+    msg.textContent = `⚠️ Atenção: ${diffPontos.toFixed(1)} pontos acima do alvo — margem apertando`;
+    msg.className = 'cmv-status-atencao';
+  } else {
+    msg.textContent = `🔴 Crítico: ${diffPontos.toFixed(1)} pontos acima do alvo — revisar preços/custos`;
+    msg.className = 'cmv-status-critico';
+  }
+
+  // Aviso de cobertura
+  const aviso = $('cmv-aviso-cobertura');
+  if (r.cobertura < 0.80) {
+    const naoVinculada = r.receitaTotal - r.receitaVinculada;
+    aviso.innerHTML = `ℹ️ <strong>Cobertura ${Math.round(r.cobertura * 100)}%</strong> — ${fmtMoeda(naoVinculada)} de receita ainda não tem ficha vinculada. Para análise mais precisa, vincule mais produtos em <strong>🔗 Vínculos</strong>.`;
+    aviso.style.display = 'block';
+  } else {
+    aviso.style.display = 'none';
+  }
+
+  // Desenha gauge
+  desenharGaugeCMVReal(r.cmvReal, r.cmvAlvo);
+
+  // Tabela de pratos
+  renderTabelaCMV(r.pratos);
+}
+
+function renderTabelaCMV(pratos) {
+  if (!pratos.length) {
+    $('cmv-tabela-pratos').innerHTML = `<div class="empty-msg">Nenhum prato com vendas vinculadas</div>`;
+    return;
+  }
+
+  // Ordena
+  if (cmvOrdenacao === 'receita') {
+    pratos.sort((a, b) => b.receita - a.receita);
+  } else {
+    pratos.sort((a, b) => b.cmv - a.cmv);  // pior CMV no topo (chama atenção)
+  }
+
+  let html = '<table class="cmv-tabela">';
+  html += '<thead><tr>';
+  html += '<th>Prato</th>';
+  html += '<th class="num">Vendido</th>';
+  html += '<th class="num">Receita</th>';
+  html += '<th class="num">Custo</th>';
+  html += '<th class="num">CMV</th>';
+  html += '</tr></thead><tbody>';
+
+  for (const p of pratos) {
+    const cmvAlvo = p.ficha.cmvAlvoCustom ?? configPrecificacao.cmvAlvo ?? 0.30;
+    const ratio = cmvAlvo > 0 ? p.cmv / cmvAlvo : 0;
+    let corPct;
+    if (ratio < 0.80) corPct = 'background:#dcfce7;color:#173404';
+    else if (ratio < 1.0) corPct = 'background:#fef9c3;color:#854F0B';
+    else if (ratio < 1.2) corPct = 'background:#fed7aa;color:#633806';
+    else corPct = 'background:#fecaca;color:#791F1F';
+
+    const cmvPct = (p.cmv * 100).toFixed(1);
+    const incompletaBadge = p.incompleta ? `<span class="cmv-incompleta" title="Algum insumo desta ficha não tem preço cadastrado - o CMV está subestimado">⚠ incompleta</span>` : '';
+
+    html += `<tr>`;
+    html += `<td><strong>${escHtml(p.nome)}</strong>${incompletaBadge}</td>`;
+    html += `<td class="num">${Math.round(p.quantidade)} un</td>`;
+    html += `<td class="num">${fmtMoeda(p.receita)}</td>`;
+    html += `<td class="num">${fmtMoeda(p.custo)}</td>`;
+    html += `<td class="num"><span class="pct" style="${corPct}">${cmvPct}%</span></td>`;
+    html += `</tr>`;
+  }
+
+  html += '</tbody></table>';
+  $('cmv-tabela-pratos').innerHTML = html;
+}
+
+// Desenha o gauge principal de CMV Real (versão maior do gauge do modal de ficha)
+function desenharGaugeCMVReal(cmv, cmvAlvo) {
+  const arc = $('cmv-gauge-arc');
+  const needle = $('cmv-gauge-needle');
+
+  if (cmv === null || cmv <= 0) {
+    arc.setAttribute('d', '');
+    arc.setAttribute('stroke', '#888780');
+    needle.setAttribute('x2', '100');
+    needle.setAttribute('y2', '100');
+    needle.setAttribute('stroke', '#444441');
+    return;
+  }
+
+  const ratio = cmv / cmvAlvo;
+  const ratioLimitado = Math.max(0, Math.min(2, ratio));
+  const angulo = 180 - (ratioLimitado / 2) * 180;
+  const anguloRad = angulo * Math.PI / 180;
+
+  // Centro do gauge: (100, 100), raio: 70 (maior que o do modal)
+  const cx = 100, cy = 100, r = 70;
+  const px = cx + r * Math.cos(Math.PI - anguloRad);
+  const py = cy - r * Math.sin(Math.PI - anguloRad);
+
+  const startX = 30, startY = 100;
+  const largeArc = (180 - angulo) > 180 ? 1 : 0;
+  const arcPath = `M ${startX} ${startY} A ${r} ${r} 0 ${largeArc} 1 ${px.toFixed(2)} ${py.toFixed(2)}`;
+  arc.setAttribute('d', arcPath);
+
+  let corArco, corNeedle;
+  if (ratio < 0.80) {
+    corArco = '#639922'; corNeedle = '#173404';
+  } else if (ratio < 1.0) {
+    corArco = '#FAC775'; corNeedle = '#854F0B';
+  } else if (ratio < 1.2) {
+    corArco = '#EF9F27'; corNeedle = '#633806';
+  } else {
+    corArco = '#E24B4A'; corNeedle = '#791F1F';
+  }
+
+  arc.setAttribute('stroke', corArco);
+  needle.setAttribute('x2', px.toFixed(2));
+  needle.setAttribute('y2', py.toFixed(2));
+  needle.setAttribute('stroke', corNeedle);
+}
+
+// ============================================================================
 // EVENTOS
 // ============================================================================
 
@@ -3871,6 +4211,28 @@ function setupEventos() {
     else if (target.dataset.action === 'vinc-editar') vinculoEditar(produto);
     else if (target.dataset.action === 'vinc-ignorar') vinculoIgnorar(produto);
     else if (target.dataset.action === 'vinc-desfazer-ignorar') vinculoDesfazerIgnorar(produto);
+  });
+
+  // Vendas - CMV Real
+  $('cmv-filtro-periodo').addEventListener('change', e => {
+    cmvPeriodoTipo = e.target.value;
+    if (cmvPeriodoTipo === 'mes-especifico' && !cmvMesEspecifico) {
+      const meses = listarMesesDisponiveis();
+      if (meses.length > 0) cmvMesEspecifico = meses[0];
+    }
+    renderCMVReal();
+  });
+  $('cmv-filtro-mes').addEventListener('change', e => {
+    cmvMesEspecifico = e.target.value;
+    renderCMVReal();
+  });
+  $('cmv-ordenar-receita').addEventListener('click', () => {
+    cmvOrdenacao = 'receita';
+    renderCMVReal();
+  });
+  $('cmv-ordenar-cmv').addEventListener('click', () => {
+    cmvOrdenacao = 'cmv';
+    renderCMVReal();
   });
 
   $('btn-criar-recolher').addEventListener('click', () => expandirOuRecolherCriar(false));
