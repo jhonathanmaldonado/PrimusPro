@@ -1057,7 +1057,9 @@ function renderIngredientesModal() {
 
 function adicionarIngrediente() {
   if (!fichaEmEdicao) return;
-  fichaEmEdicao.ingredientes.push({ insumoId: '', pesoLiquido: 0 });
+  // Insere no topo (unshift) ao invés de no fim (push)
+  // Agiliza criar fichas grandes: o botão "+ Adicionar" fica sempre acima do último adicionado
+  fichaEmEdicao.ingredientes.unshift({ insumoId: '', pesoLiquido: 0 });
   renderIngredientesModal();
   atualizarPainelPrecificacao();
 }
