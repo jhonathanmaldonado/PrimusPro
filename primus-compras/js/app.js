@@ -327,20 +327,14 @@ async function ofertaSeedSeVazio() {
     const resp = await fetch('seed-catalog.json');
     if (!resp.ok) return;
     const seedData = await resp.json();
-    const total = seedData.reduce((s, c) => s + c.itens.length, 0);
 
-    if (confirm(
-      `Importar catálogo inicial?\n\n` +
-      `Vai importar ${seedData.length} categorias e ${total} itens.\n\n` +
-      `Importar agora?`
-    )) {
-      const result = await seedCatalogoSeVazio(seedData);
-      if (result.importado) {
-        showToast(`✓ Importado: ${result.categorias} categorias, ${result.itens} itens`, 'success');
-      }
+    // Importa automaticamente se o workspace estiver vazio (sem perguntar)
+    const result = await seedCatalogoSeVazio(seedData);
+    if (result.importado) {
+      showToast(`✓ Catálogo inicial importado: ${result.categorias} categorias, ${result.itens} itens`, 'success');
     }
   } catch (e) {
-    console.error('Erro ao oferecer seed:', e);
+    console.error('Erro ao importar seed:', e);
   }
 }
 
@@ -2322,22 +2316,59 @@ function verCompra(id) {
   const h = historico.find(x => x.id === id);
   if (!h) return;
   const d = h.data && h.data.toDate ? h.data.toDate() : new Date(h.data);
-  let txt = '🛒 COMPRA - ' + d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + '\n';
-  txt += `Finalizado por: ${h.finalizadoPorNome || '?'}\n`;
-  txt += '─────────────────────────────\n\n';
-  let lastCat = '';
-  (h.itens || []).forEach(i => {
-    if (i.categoriaNome !== lastCat) {
-      txt += '\n■ ' + i.categoriaNome + '\n';
-      lastCat = i.categoriaNome;
+
+  // Título
+  $('modal-hist-title').textContent = `🛒 Compra de ${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+
+  // Meta
+  const itensCount = (h.itens || []).length;
+  $('modal-hist-meta').innerHTML = `
+    <div>Finalizado por: <strong>${escHtml(h.finalizadoPorNome || '?')}</strong></div>
+    <div>${itensCount} ${itensCount === 1 ? 'item' : 'itens'}</div>
+  `;
+
+  // Agrupa por categoria e calcula subtotais
+  const porCategoria = {};
+  const ordemCategorias = [];
+  for (const i of (h.itens || [])) {
+    const cat = i.categoriaNome || 'Sem categoria';
+    if (!porCategoria[cat]) {
+      porCategoria[cat] = { itens: [], subtotal: 0 };
+      ordemCategorias.push(cat);
     }
-    txt += '  • ' + i.nome + ' — ' + i.qtd + ' ' + (i.tipo || '');
-    if (i.preco) txt += ' × ' + fmtMoeda(i.preco) + ' = ' + fmtMoeda(i.subtotal);
-    txt += '\n';
-  });
-  txt += '\n─────────────────────────────\n';
-  txt += 'TOTAL: ' + fmtMoeda(h.total) + '\n';
-  alert(txt);
+    porCategoria[cat].itens.push(i);
+    porCategoria[cat].subtotal += i.subtotal || 0;
+  }
+
+  // Monta HTML
+  let html = '';
+  for (const cat of ordemCategorias) {
+    const grupo = porCategoria[cat];
+    html += `<div class="hist-categoria">`;
+    html += `<span>${escHtml(cat)} <span style="opacity:0.7;font-weight:400">(${grupo.itens.length})</span></span>`;
+    html += `<span class="hist-categoria-subtotal">${fmtMoeda(grupo.subtotal)}</span>`;
+    html += `</div>`;
+
+    for (const i of grupo.itens) {
+      const semPreco = !i.preco || i.preco === 0;
+      html += `<div class="hist-item${semPreco ? ' sem-preco' : ''}">`;
+      html += `<span class="hist-item-nome">${escHtml(i.nome)}</span>`;
+      html += `<span class="hist-item-qtd">${i.qtd} ${escHtml(i.tipo || '')}</span>`;
+      if (i.preco) {
+        html += `<span class="hist-item-preco">× ${fmtMoeda(i.preco)}</span>`;
+        html += `<span class="hist-item-subtotal">${fmtMoeda(i.subtotal)}</span>`;
+      } else {
+        html += `<span class="hist-item-preco">—</span>`;
+        html += `<span class="hist-item-subtotal">sem preço</span>`;
+      }
+      html += `</div>`;
+    }
+  }
+
+  $('modal-hist-conteudo').innerHTML = html;
+  $('modal-hist-total').textContent = `TOTAL: ${fmtMoeda(h.total)}`;
+
+  $('modal-historico-detalhes').classList.add('show');
 }
 
 async function excluirCompraConfirm(id) {
@@ -4844,6 +4875,7 @@ function setupEventos() {
   $('modal-editar').addEventListener('click', e => { if (e.target.id === 'modal-editar') fecharModalEditar(); });
   $('modal-fornecedor').addEventListener('click', e => { if (e.target.id === 'modal-fornecedor') fecharModalFornecedor(); });
   $('modal-membro').addEventListener('click', e => { if (e.target.id === 'modal-membro') fecharModalMembro(); });
+  $('modal-historico-detalhes').addEventListener('click', e => { if (e.target.id === 'modal-historico-detalhes') $('modal-historico-detalhes').classList.remove('show'); });
   $('modal-add-atual').addEventListener('click', e => { if (e.target.id === 'modal-add-atual') fecharModalAddAtual(); });
   $('modal-categorias').addEventListener('click', e => { if (e.target.id === 'modal-categorias') fecharModalCategorias(); });
   $('modal-insumo').addEventListener('click', e => { if (e.target.id === 'modal-insumo') fecharModalInsumo(); });
@@ -4932,6 +4964,7 @@ function setupEventos() {
       if ($('modal-categorias').classList.contains('show')) { fecharModalCategorias(); return; }
       if ($('modal-insumo').classList.contains('show')) { fecharModalInsumo(); return; }
       if ($('modal-ficha').classList.contains('show')) { fecharModalFicha(); return; }
+      if ($('modal-historico-detalhes').classList.contains('show')) { $('modal-historico-detalhes').classList.remove('show'); return; }
     }
   });
 
