@@ -3568,7 +3568,11 @@ function renderDadosVendas() {
   $('search-vendas-clear').style.display = searchVendas ? 'block' : 'none';
 }
 
+// ============================================================================
+// EVENTOS
+// ============================================================================
 
+function setupEventos() {
   $('btn-login').addEventListener('click', tratarLogin);
   $('login-pin').addEventListener('keydown', e => { if (e.key === 'Enter') tratarLogin(); });
   $('login-username').addEventListener('keydown', e => { if (e.key === 'Enter') $('login-pin').focus(); });
