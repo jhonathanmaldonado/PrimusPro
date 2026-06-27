@@ -50,6 +50,8 @@ const HISTORICO = () => collection(db, 'workspaces', WORKSPACE_ID, 'historico');
 const FORNECEDORES = () => collection(db, 'workspaces', WORKSPACE_ID, 'fornecedores');
 const INSUMOS = () => collection(db, 'workspaces', WORKSPACE_ID, 'insumos');
 const FICHAS = () => collection(db, 'workspaces', WORKSPACE_ID, 'fichas');
+const VENDAS_DIAS = () => collection(db, 'workspaces', WORKSPACE_ID, 'vendas_dias');
+const VENDAS = () => collection(db, 'workspaces', WORKSPACE_ID, 'vendas');
 
 // ============================================================================
 // CONFIG (incluindo precificação)
@@ -656,6 +658,225 @@ export function calcularPrecoSugerido(ficha, insumos, configPrecif) {
 // Retorna o CMV alvo efetivo desta ficha (custom ou global)
 export function obterCMVAlvoEfetivo(ficha, configPrecif) {
   return ficha?.cmvAlvoCustom ?? configPrecif?.cmvAlvo ?? 0.30;
+}
+
+// ============================================================================
+// VENDAS - Importação e CRUD (Fase 3A)
+// ============================================================================
+
+export function observarVendas(callback) {
+  const q = query(VENDAS(), orderBy('data', 'desc'));
+  return onSnapshot(q, snap => {
+    const lista = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+    callback(lista);
+  });
+}
+
+export function observarVendasDias(callback) {
+  const q = query(VENDAS_DIAS(), orderBy('data', 'desc'));
+  return onSnapshot(q, snap => {
+    const lista = snap.docs.map(d => ({ ...d.data(), id: d.id }));
+    callback(lista);
+  });
+}
+
+// Deleta todas as vendas de um dia específico (usado antes de reimportar)
+export async function deletarVendasDoDia(data) {
+  // data no formato 'YYYY-MM-DD'
+  const q = query(VENDAS(), where('data', '==', data));
+  const snap = await getDocs(q);
+  const promises = snap.docs.map(d => deleteDoc(d.ref));
+  await Promise.all(promises);
+
+  // Deleta também o registro do dia
+  const diaRef = doc(VENDAS_DIAS(), data);
+  const diaSnap = await getDoc(diaRef);
+  if (diaSnap.exists()) {
+    await deleteDoc(diaRef);
+  }
+}
+
+// Salva os dados parseados no Firestore
+// vendasPorDia: { 'YYYY-MM-DD': { totalQuantidade, totalReceita, produtos: [...] } }
+export async function salvarVendasImportadas(vendasPorDia, userName = '') {
+  const datas = Object.keys(vendasPorDia);
+
+  for (const data of datas) {
+    const dadosDia = vendasPorDia[data];
+
+    // 1. Primeiro, deleta vendas existentes desse dia (se houver)
+    await deletarVendasDoDia(data);
+
+    // 2. Cria o registro do dia
+    const diaRef = doc(VENDAS_DIAS(), data);
+    await setDoc(diaRef, {
+      data,
+      totalQuantidade: dadosDia.totalQuantidade,
+      totalReceita: dadosDia.totalReceita,
+      totalPratos: dadosDia.produtos.length,
+      importadoEm: serverTimestamp(),
+      importadoPor: userName || 'sistema'
+    });
+
+    // 3. Cria cada venda do dia
+    for (const produto of dadosDia.produtos) {
+      const vendaRef = doc(VENDAS());
+      await setDoc(vendaRef, {
+        data,
+        produtoNome: produto.nome,
+        quantidade: produto.quantidade,
+        subtotal: produto.subtotal,
+        acrescimo: produto.acrescimo,
+        desconto: produto.desconto,
+        total: produto.total,
+        fichaId: null,  // será preenchido na fase 3B
+        ...auditFields({ criadoEm: serverTimestamp() })
+      });
+    }
+  }
+}
+
+// ============================================================================
+// PARSER DO RELATÓRIO GESTOR FOOD
+// ============================================================================
+// Lê o texto bruto e extrai todas as vendas estruturadas.
+// Resultado: { sucesso, mensagem, vendasPorDia, totalDias, totalProdutos, totalReceita }
+// ============================================================================
+
+export function parseRelatorioGestorFood(textoRelatorio) {
+  try {
+    if (!textoRelatorio || textoRelatorio.trim().length < 50) {
+      return { sucesso: false, mensagem: 'Relatório muito curto ou vazio' };
+    }
+
+    const linhas = textoRelatorio.split('\n');
+
+    // Estado do parser
+    let secaoAtual = null;       // 'PRODUTO' = estamos na seção que interessa
+    let produtoAtual = null;     // produto sendo lido
+    const vendasPorDia = {};     // { 'YYYY-MM-DD': { produtos: [...] } }
+
+    // Regex para detectar tipo de linha
+    const REGEX_HEADER_SECAO = /^(TURNO|CAIXA|VENDEDOR|GRUPO|SUBGRUPO|PRODUTO|DIA)\s+QUANTIDADE/i;
+    const REGEX_DATA = /^(\d{2})\/(\d{2})\/(\d{4})/;
+
+    for (let i = 0; i < linhas.length; i++) {
+      const linha = linhas[i].trim();
+      if (!linha) continue;
+
+      // Detecta header de seção
+      const matchHeader = linha.match(REGEX_HEADER_SECAO);
+      if (matchHeader) {
+        secaoAtual = matchHeader[1].toUpperCase();
+        produtoAtual = null;
+        continue;
+      }
+
+      // Só processa linhas dentro da seção PRODUTO
+      if (secaoAtual !== 'PRODUTO') continue;
+
+      // Pula linhas vazias ou cabeçalho
+      if (linha.toLowerCase().includes('quantidade')) continue;
+
+      // Divide por tabs ou múltiplos espaços
+      const partes = linha.split(/\t+|\s{2,}/).filter(p => p.trim());
+
+      if (partes.length < 6) continue;
+
+      // Os últimos 5 valores são sempre: qtd, subtotal, acréscimo, desconto, total
+      const total = parseNumeroBR(partes[partes.length - 1]);
+      const desconto = parseNumeroBR(partes[partes.length - 2]);
+      const acrescimo = parseNumeroBR(partes[partes.length - 3]);
+      const subtotal = parseNumeroBR(partes[partes.length - 4]);
+      const quantidade = parseNumeroBR(partes[partes.length - 5]);
+
+      // Todas as partes do início (até os 5 números) formam o nome
+      const primeiraColuna = partes.slice(0, partes.length - 5).join(' ').trim();
+
+      // É linha de DATA?
+      const matchData = primeiraColuna.match(REGEX_DATA);
+      if (matchData) {
+        // Linha de data (dentro de um produto)
+        if (!produtoAtual) continue;  // sem produto definido, ignora
+
+        const dataISO = `${matchData[3]}-${matchData[2]}-${matchData[1]}`;
+
+        // Garante estrutura do dia
+        if (!vendasPorDia[dataISO]) {
+          vendasPorDia[dataISO] = {
+            totalQuantidade: 0,
+            totalReceita: 0,
+            produtos: []
+          };
+        }
+
+        // Adiciona venda do produto-dia
+        vendasPorDia[dataISO].produtos.push({
+          nome: produtoAtual,
+          quantidade,
+          subtotal,
+          acrescimo,
+          desconto,
+          total
+        });
+
+        vendasPorDia[dataISO].totalQuantidade += quantidade;
+        vendasPorDia[dataISO].totalReceita += total;
+      } else {
+        // Linha de PRODUTO novo (totalizador)
+        produtoAtual = primeiraColuna;
+      }
+    }
+
+    const datas = Object.keys(vendasPorDia).sort();
+
+    if (datas.length === 0) {
+      return {
+        sucesso: false,
+        mensagem: 'Nenhum dado válido encontrado. Verifique se colou o relatório correto do Gestor Food (com a seção PRODUTO).'
+      };
+    }
+
+    // Estatísticas globais
+    let totalProdutos = 0;
+    let totalReceita = 0;
+    for (const data of datas) {
+      totalProdutos += vendasPorDia[data].produtos.length;
+      totalReceita += vendasPorDia[data].totalReceita;
+    }
+
+    return {
+      sucesso: true,
+      vendasPorDia,
+      dataInicio: datas[0],
+      dataFim: datas[datas.length - 1],
+      totalDias: datas.length,
+      totalProdutos,
+      totalReceita,
+      mensagem: `${datas.length} dia(s) detectado(s), ${totalProdutos} venda(s)`
+    };
+
+  } catch (e) {
+    return {
+      sucesso: false,
+      mensagem: 'Erro ao processar: ' + e.message
+    };
+  }
+}
+
+// Helper: converte "1.234,56" → 1234.56
+function parseNumeroBR(str) {
+  if (!str) return 0;
+  const limpo = String(str).trim().replace(/\./g, '').replace(',', '.');
+  const num = parseFloat(limpo);
+  return isNaN(num) ? 0 : num;
+}
+
+// Helper: formata data YYYY-MM-DD pra DD/MM/YYYY (uso na UI)
+export function formatarDataBR(dataISO) {
+  if (!dataISO) return '';
+  const m = String(dataISO).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : dataISO;
 }
 
 // ============================================================================

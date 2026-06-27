@@ -90,6 +90,14 @@ service cloud.firestore {
       match /fichas/{fichaId} {
         allow read, write: if isMember(wid);
       }
+
+      match /vendas_dias/{diaId} {
+        allow read, write: if isMember(wid);
+      }
+
+      match /vendas/{vendaId} {
+        allow read, write: if isMember(wid);
+      }
     }
   }
 }

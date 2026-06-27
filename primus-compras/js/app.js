@@ -63,7 +63,13 @@ import {
   calcularNumeroPorcoes,
   calcularCMV,
   calcularPrecoSugerido,
-  obterCMVAlvoEfetivo
+  obterCMVAlvoEfetivo,
+  observarVendas,
+  observarVendasDias,
+  parseRelatorioGestorFood,
+  salvarVendasImportadas,
+  deletarVendasDoDia,
+  formatarDataBR
 } from './db.js';
 
 // ============================================================================
@@ -76,6 +82,8 @@ let insumos = [];
 let fichas = [];
 let fornecedores = [];
 let usuarios = [];
+let vendas = [];
+let vendasDias = [];
 let listaEmCriacaoMap = {};
 let listaAtualMap = {};
 let historico = [];
@@ -89,10 +97,18 @@ let searchFornecedores = '';
 let searchAddAtual = '';
 let searchInsumos = '';
 let searchFichas = '';
+let searchVendas = '';
 let filtroFichas = 'todas';  // todas | pratos | pp
 let currentTab = 'criar';
 let currentSubTabCardapio = 'insumos';
+let currentSubTabVendas = 'importar';  // importar | calendario | dados
 let mediaN = 5;
+
+// Vendas - estado
+let vendasPreviewParseado = null;  // resultado do parser aguardando confirmação
+let calendarioAno = new Date().getFullYear();
+let calendarioMes = new Date().getMonth();  // 0-indexed
+let diaSelecionadoCalendario = null;
 
 // Categoria modal
 let catEditandoId = null;
@@ -348,6 +364,20 @@ function iniciarListeners() {
     fichas = fs;
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'fichas') renderFichas();
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'relatorio') renderRelatorioFichas();
+  }));
+
+  unsubsRefs.push(observarVendas((v) => {
+    vendas = v;
+    if (currentTab === 'vendas' && currentSubTabVendas === 'dados') renderDadosVendas();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'calendario' && diaSelecionadoCalendario) {
+      renderDetalhesDia(diaSelecionadoCalendario);
+    }
+  }));
+
+  unsubsRefs.push(observarVendasDias((vd) => {
+    vendasDias = vd;
+    if (currentTab === 'vendas' && currentSubTabVendas === 'calendario') renderCalendario();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'dados') renderDadosVendas();
   }));
 
   unsubsRefs.push(observarListaEmCriacao((lista) => {
@@ -3154,20 +3184,391 @@ function switchTab(tab) {
   $('tab-historico').style.display = tab === 'historico' ? 'block' : 'none';
   $('tab-fornecedores').style.display = tab === 'fornecedores' ? 'block' : 'none';
   $('tab-cardapio').style.display = tab === 'cardapio' ? 'block' : 'none';
+  $('tab-vendas').style.display = tab === 'vendas' ? 'block' : 'none';
   $('tab-equipe').style.display = tab === 'equipe' ? 'block' : 'none';
   if (tab === 'historico') renderHistorico();
   if (tab === 'fornecedores') renderFornecedores();
   if (tab === 'cardapio') {
     switchSubTabCardapio(currentSubTabCardapio || 'insumos');
   }
+  if (tab === 'vendas') {
+    switchSubTabVendas(currentSubTabVendas || 'importar');
+  }
   if (tab === 'equipe') renderEquipe();
 }
 
 // ============================================================================
-// EVENTOS
+// ABA VENDAS - sub-navegação
 // ============================================================================
 
-function setupEventos() {
+function switchSubTabVendas(sub) {
+  currentSubTabVendas = sub;
+  document.querySelectorAll('[data-vendas-subtab]').forEach(b => {
+    b.classList.toggle('active', b.dataset.vendasSubtab === sub);
+  });
+  $('vendas-subtab-importar').style.display = sub === 'importar' ? 'block' : 'none';
+  $('vendas-subtab-calendario').style.display = sub === 'calendario' ? 'block' : 'none';
+  $('vendas-subtab-dados').style.display = sub === 'dados' ? 'block' : 'none';
+
+  if (sub === 'calendario') renderCalendario();
+  if (sub === 'dados') renderDadosVendas();
+}
+
+// ============================================================================
+// VENDAS - Importação
+// ============================================================================
+
+function analisarRelatorio() {
+  const texto = $('vendas-textarea').value.trim();
+
+  // Reset
+  $('vendas-preview').style.display = 'none';
+  $('vendas-erro').style.display = 'none';
+  vendasPreviewParseado = null;
+
+  if (!texto) {
+    $('vendas-erro').textContent = '⚠ Cole o relatório do Gestor Food antes de analisar';
+    $('vendas-erro').style.display = 'block';
+    return;
+  }
+
+  const resultado = parseRelatorioGestorFood(texto);
+
+  if (!resultado.sucesso) {
+    $('vendas-erro').textContent = '⚠ ' + resultado.mensagem;
+    $('vendas-erro').style.display = 'block';
+    return;
+  }
+
+  vendasPreviewParseado = resultado;
+
+  // Preenche resumo
+  $('prev-dias').textContent = resultado.totalDias;
+  $('prev-produtos').textContent = resultado.totalProdutos;
+  $('prev-receita').textContent = fmtMoeda(resultado.totalReceita);
+
+  // Período
+  const periodoTxt = resultado.totalDias === 1
+    ? `📅 Dia: ${formatarDataBR(resultado.dataInicio)}`
+    : `📅 Período: ${formatarDataBR(resultado.dataInicio)} até ${formatarDataBR(resultado.dataFim)}`;
+  $('prev-periodo').textContent = periodoTxt;
+
+  // Verifica quais dias já existem
+  const diasJaExistentes = [];
+  const diasNovos = [];
+  for (const data of Object.keys(resultado.vendasPorDia)) {
+    if (vendasDias.find(vd => vd.data === data)) {
+      diasJaExistentes.push(data);
+    } else {
+      diasNovos.push(data);
+    }
+  }
+
+  // Alerta de sobrescrita
+  if (diasJaExistentes.length > 0) {
+    let alerta = `⚠️ <strong>Atenção:</strong> ${diasJaExistentes.length} dia(s) já estão importados e serão <strong>substituídos</strong>:<br>`;
+    alerta += diasJaExistentes.map(d => formatarDataBR(d)).join(', ');
+    $('prev-alerta').innerHTML = alerta;
+    $('prev-alerta').style.display = 'block';
+  } else {
+    $('prev-alerta').style.display = 'none';
+  }
+
+  // Lista resumida de dias
+  let listaHtml = '<div style="background:#fafaf9;border-radius:6px;padding:6px 10px;max-height:200px;overflow-y:auto">';
+  for (const data of Object.keys(resultado.vendasPorDia).sort()) {
+    const d = resultado.vendasPorDia[data];
+    const tag = diasJaExistentes.includes(data)
+      ? '<span class="dia-preview-substitui">⚠ SUBSTITUI</span>'
+      : '<span class="dia-preview-novo">✓ NOVO</span>';
+    listaHtml += `<div class="dia-preview-item">`;
+    listaHtml += `<span><span class="dia-preview-data">${formatarDataBR(data)}</span> ${tag}</span>`;
+    listaHtml += `<span class="dia-preview-info">${d.produtos.length} produtos · ${fmtMoeda(d.totalReceita)}</span>`;
+    listaHtml += `</div>`;
+  }
+  listaHtml += '</div>';
+  $('prev-dias-lista').innerHTML = listaHtml;
+
+  $('vendas-preview').style.display = 'block';
+  // Rola pra preview
+  setTimeout(() => $('vendas-preview').scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+}
+
+async function confirmarImportacao() {
+  if (!vendasPreviewParseado) return;
+
+  const btn = $('btn-confirmar-importacao');
+  btn.disabled = true;
+  btn.textContent = 'Importando...';
+
+  try {
+    const userName = userCtx?.username || 'sistema';
+    await salvarVendasImportadas(vendasPreviewParseado.vendasPorDia, userName);
+
+    const totalDias = vendasPreviewParseado.totalDias;
+    showToast(`✓ ${totalDias} dia(s) importado(s) com sucesso!`, 'success');
+
+    // Limpa tudo
+    $('vendas-textarea').value = '';
+    $('vendas-preview').style.display = 'none';
+    vendasPreviewParseado = null;
+
+    // Vai pra sub-aba calendário pra ver o resultado
+    switchSubTabVendas('calendario');
+  } catch (e) {
+    showToast('⚠ Erro ao importar: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💾 Confirmar Importação';
+  }
+}
+
+function cancelarImportacao() {
+  $('vendas-preview').style.display = 'none';
+  vendasPreviewParseado = null;
+}
+
+function limparTextarea() {
+  $('vendas-textarea').value = '';
+  $('vendas-preview').style.display = 'none';
+  $('vendas-erro').style.display = 'none';
+  vendasPreviewParseado = null;
+  $('vendas-textarea').focus();
+}
+
+// ============================================================================
+// VENDAS - Calendário
+// ============================================================================
+
+const NOMES_MESES = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'
+];
+
+function renderCalendario() {
+  // Atualiza título
+  $('cal-titulo').textContent = `${NOMES_MESES[calendarioMes]} ${calendarioAno}`;
+
+  // Stats globais
+  $('cal-dias-total').textContent = `${vendasDias.length} dias`;
+
+  // Stats do mês
+  const mesStr = String(calendarioMes + 1).padStart(2, '0');
+  const anoStr = String(calendarioAno);
+  const diasDoMes = vendasDias.filter(vd => {
+    return vd.data && vd.data.startsWith(`${anoStr}-${mesStr}`);
+  });
+  $('cal-dias-mes').textContent = diasDoMes.length;
+  const receitaMes = diasDoMes.reduce((sum, vd) => sum + (vd.totalReceita || 0), 0);
+  $('cal-receita-mes').textContent = fmtMoeda(receitaMes);
+
+  // Monta grid
+  const primeiroDia = new Date(calendarioAno, calendarioMes, 1);
+  const ultimoDia = new Date(calendarioAno, calendarioMes + 1, 0);
+  const diaSemanaInicio = primeiroDia.getDay();  // 0=domingo
+  const totalDiasMes = ultimoDia.getDate();
+  const hoje = new Date();
+  const ehMesAtual = hoje.getFullYear() === calendarioAno && hoje.getMonth() === calendarioMes;
+
+  let html = '<div class="calendario-grid">';
+
+  // Cabeçalho com dias da semana
+  html += '<div class="calendario-header">';
+  ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'].forEach(d => {
+    html += `<div class="calendario-header-dia">${d}</div>`;
+  });
+  html += '</div>';
+
+  // Corpo do calendário
+  html += '<div class="calendario-body">';
+
+  // Células vazias antes do dia 1
+  for (let i = 0; i < diaSemanaInicio; i++) {
+    html += '<div class="calendario-celula vazio"></div>';
+  }
+
+  // Células dos dias
+  for (let dia = 1; dia <= totalDiasMes; dia++) {
+    const diaStr = String(dia).padStart(2, '0');
+    const dataISO = `${anoStr}-${mesStr}-${diaStr}`;
+    const venda = vendasDias.find(vd => vd.data === dataISO);
+
+    let cls = 'calendario-celula';
+    if (venda) cls += ' tem-vendas';
+    if (ehMesAtual && hoje.getDate() === dia) cls += ' hoje';
+
+    if (venda) {
+      const receita = venda.totalReceita || 0;
+      const receitaFmt = receita >= 1000 ? `R$${(receita / 1000).toFixed(1)}k` : `R$${receita.toFixed(0)}`;
+      html += `<div class="${cls}" data-dia="${dataISO}">`;
+      html += `<div class="marca">✓</div>`;
+      html += `<div>${dia}</div>`;
+      html += `<div class="valor-receita">${receitaFmt}</div>`;
+      html += `</div>`;
+    } else {
+      html += `<div class="${cls}">${dia}</div>`;
+    }
+  }
+
+  html += '</div>';
+
+  // Legenda
+  html += '<div class="calendario-legenda">';
+  html += '<div class="calendario-legenda-item"><div class="calendario-legenda-quadrado" style="background:#dcfce7;border-color:#86efac"></div>Com vendas importadas</div>';
+  html += '<div class="calendario-legenda-item"><div class="calendario-legenda-quadrado" style="background:#fafaf9"></div>Sem importação</div>';
+  html += '<div class="calendario-legenda-item">👆 Clique em um dia para ver detalhes</div>';
+  html += '</div>';
+
+  html += '</div>';
+
+  $('calendario-grid').innerHTML = html;
+
+  // Esconde detalhes se mudou de mês
+  if (diaSelecionadoCalendario && !diaSelecionadoCalendario.startsWith(`${anoStr}-${mesStr}`)) {
+    $('dia-detalhes').style.display = 'none';
+    diaSelecionadoCalendario = null;
+  }
+}
+
+function renderDetalhesDia(dataISO) {
+  const dia = vendasDias.find(vd => vd.data === dataISO);
+  if (!dia) {
+    $('dia-detalhes').style.display = 'none';
+    return;
+  }
+
+  diaSelecionadoCalendario = dataISO;
+
+  const vendasDoDia = vendas.filter(v => v.data === dataISO);
+  // Ordena por receita (maior primeiro)
+  vendasDoDia.sort((a, b) => (b.total || 0) - (a.total || 0));
+
+  $('dia-detalhes-titulo').textContent = `📅 ${formatarDataBR(dataISO)} — ${dia.totalPratos} produtos · ${fmtMoeda(dia.totalReceita)}`;
+
+  let html = '';
+  if (vendasDoDia.length === 0) {
+    html = '<div style="text-align:center;color:var(--muted);padding:14px">Sem vendas neste dia</div>';
+  } else {
+    for (const v of vendasDoDia) {
+      html += `<div class="venda-card">`;
+      html += `<div class="venda-card-info">`;
+      html += `<div class="venda-card-nome">${escHtml(v.produtoNome)}</div>`;
+      html += `<div class="venda-card-meta">${v.quantidade} un · ${fmtMoeda(v.subtotal)} subtotal`;
+      if (v.desconto < 0) html += ` · ${fmtMoeda(v.desconto)} desc`;
+      html += `</div>`;
+      html += `</div>`;
+      html += `<div>`;
+      html += `<div class="venda-card-valor">${fmtMoeda(v.total)}</div>`;
+      html += `</div>`;
+      html += `</div>`;
+    }
+  }
+
+  $('dia-detalhes-conteudo').innerHTML = html;
+  $('dia-detalhes').style.display = 'block';
+  setTimeout(() => $('dia-detalhes').scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 100);
+}
+
+async function deletarDiaSelecionado() {
+  if (!diaSelecionadoCalendario) return;
+  const dataFmt = formatarDataBR(diaSelecionadoCalendario);
+  if (!confirm(`Remover a importação do dia ${dataFmt}?\n\nTodas as vendas deste dia serão apagadas.`)) return;
+
+  try {
+    await deletarVendasDoDia(diaSelecionadoCalendario);
+    showToast(`✓ Vendas de ${dataFmt} removidas`, 'success');
+    $('dia-detalhes').style.display = 'none';
+    diaSelecionadoCalendario = null;
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
+  }
+}
+
+function navegarMes(delta) {
+  calendarioMes += delta;
+  if (calendarioMes < 0) {
+    calendarioMes = 11;
+    calendarioAno--;
+  } else if (calendarioMes > 11) {
+    calendarioMes = 0;
+    calendarioAno++;
+  }
+  $('dia-detalhes').style.display = 'none';
+  diaSelecionadoCalendario = null;
+  renderCalendario();
+}
+
+// ============================================================================
+// VENDAS - Dados (agregação por produto)
+// ============================================================================
+
+function renderDadosVendas() {
+  // Stats gerais
+  const totalReceita = vendas.reduce((sum, v) => sum + (v.total || 0), 0);
+  const totalQtd = vendas.reduce((sum, v) => sum + (v.quantidade || 0), 0);
+  const ticket = totalQtd > 0 ? totalReceita / totalQtd : 0;
+
+  $('dados-receita').textContent = fmtMoeda(totalReceita);
+  $('dados-qtd').textContent = Math.round(totalQtd);
+  $('dados-ticket').textContent = fmtMoeda(ticket);
+
+  // Agrega por produto (soma todos os dias)
+  const agrupado = {};
+  for (const v of vendas) {
+    const nome = v.produtoNome;
+    if (!agrupado[nome]) {
+      agrupado[nome] = { nome, quantidade: 0, total: 0, dias: new Set() };
+    }
+    agrupado[nome].quantidade += v.quantidade || 0;
+    agrupado[nome].total += v.total || 0;
+    agrupado[nome].dias.add(v.data);
+  }
+
+  let produtos = Object.values(agrupado);
+  // Filtro de busca
+  if (searchVendas) {
+    const t = searchVendas.toLowerCase();
+    produtos = produtos.filter(p => (p.nome || '').toLowerCase().includes(t));
+  }
+  // Ordena por receita (maior primeiro)
+  produtos.sort((a, b) => b.total - a.total);
+
+  const el = $('lista-vendas');
+
+  if (!vendas.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">📊</div>
+      <div class="empty-state-text">Nenhuma venda importada ainda.<br>Vá em <strong>📥 Importar</strong> para começar.</div>
+    </div>`;
+    $('search-vendas-clear').style.display = 'none';
+    return;
+  }
+
+  if (!produtos.length) {
+    el.innerHTML = `<div class="empty-msg">Nenhum produto encontrado para "<strong>${escHtml(searchVendas)}</strong>"</div>`;
+    $('search-vendas-clear').style.display = 'block';
+    return;
+  }
+
+  let html = '';
+  for (const p of produtos) {
+    html += `<div class="venda-card">`;
+    html += `<div class="venda-card-info">`;
+    html += `<div class="venda-card-nome">${escHtml(p.nome)}</div>`;
+    html += `<div class="venda-card-meta">${Math.round(p.quantidade)} un vendidas · ${p.dias.size} dia(s)</div>`;
+    html += `</div>`;
+    html += `<div>`;
+    html += `<div class="venda-card-valor">${fmtMoeda(p.total)}</div>`;
+    html += `<div class="venda-card-qtd">${fmtMoeda(p.total / p.quantidade)}/un</div>`;
+    html += `</div>`;
+    html += `</div>`;
+  }
+
+  el.innerHTML = html;
+  $('search-vendas-clear').style.display = searchVendas ? 'block' : 'none';
+}
+
+
   $('btn-login').addEventListener('click', tratarLogin);
   $('login-pin').addEventListener('keydown', e => { if (e.key === 'Enter') tratarLogin(); });
   $('login-username').addEventListener('keydown', e => { if (e.key === 'Enter') $('login-pin').focus(); });
@@ -3189,8 +3590,41 @@ function setupEventos() {
   });
 
   // Sub-navegação do Cardápio
-  document.querySelectorAll('.sub-nav-btn').forEach(b => {
+  document.querySelectorAll('[data-subtab]').forEach(b => {
     b.addEventListener('click', () => switchSubTabCardapio(b.dataset.subtab));
+  });
+
+  // Sub-navegação de Vendas
+  document.querySelectorAll('[data-vendas-subtab]').forEach(b => {
+    b.addEventListener('click', () => switchSubTabVendas(b.dataset.vendasSubtab));
+  });
+
+  // Vendas - Importação
+  $('btn-analisar-relatorio').addEventListener('click', analisarRelatorio);
+  $('btn-confirmar-importacao').addEventListener('click', confirmarImportacao);
+  $('btn-cancelar-importacao').addEventListener('click', cancelarImportacao);
+  $('btn-limpar-textarea').addEventListener('click', limparTextarea);
+
+  // Vendas - Calendário
+  $('btn-cal-anterior').addEventListener('click', () => navegarMes(-1));
+  $('btn-cal-proximo').addEventListener('click', () => navegarMes(1));
+  $('calendario-grid').addEventListener('click', e => {
+    const cel = e.target.closest('.calendario-celula.tem-vendas');
+    if (cel && cel.dataset.dia) {
+      renderDetalhesDia(cel.dataset.dia);
+    }
+  });
+  $('btn-deletar-dia').addEventListener('click', deletarDiaSelecionado);
+
+  // Vendas - Dados (busca)
+  $('search-vendas').addEventListener('input', e => {
+    searchVendas = e.target.value.trim();
+    renderDadosVendas();
+  });
+  $('search-vendas-clear').addEventListener('click', () => {
+    $('search-vendas').value = '';
+    searchVendas = '';
+    renderDadosVendas();
   });
 
   $('btn-criar-recolher').addEventListener('click', () => expandirOuRecolherCriar(false));
