@@ -7,6 +7,7 @@
 <meta name="theme-color" content="#7A1F38">
 <link rel="icon" type="image/png" href="img/logo_compras.png">
 <link rel="apple-touch-icon" href="img/logo_compras.png">
+<link rel="preload" as="image" href="img/logo-primus.png">
 <link rel="stylesheet" href="css/styles.css">
 <style>
 /* Paleta de cores para categorias */
@@ -678,6 +679,9 @@
 </head>
 <body>
 
+<!-- Pre-carregamento da logo Primus (pra impressão) -->
+<img src="img/logo-primus.png" alt="" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true">
+
 <!-- SPLASH -->
 <div id="splash">
   <div class="splash-logo">
@@ -1020,9 +1024,17 @@
 
         <div id="relatorio-conteudo">
           <!-- Cabeçalho que só aparece na impressão -->
-          <div class="print-only" id="print-header">
-            <h1 style="margin:0 0 4px 0;font-size:18px;color:var(--wine)">Primus Peixaria</h1>
-            <h2 style="margin:0 0 12px 0;font-size:14px;color:var(--muted);font-weight:400">Relatório de Fichas Técnicas</h2>
+          <div class="print-only" id="print-header" style="display:none">
+            <div style="display:flex;align-items:center;gap:14px;padding-bottom:10px;border-bottom:2px solid #7A1F38;margin-bottom:12px">
+              <img src="img/logo-primus.png" alt="Primus Peixaria" style="width:55px;height:55px;object-fit:contain;flex-shrink:0">
+              <div style="flex:1">
+                <div style="font-size:18px;font-weight:700;color:#7A1F38;letter-spacing:0.5px">PRIMUS PEIXARIA</div>
+                <div style="font-size:10px;color:#888780">Cuiabá - MT</div>
+              </div>
+              <div style="text-align:right;font-size:11px;color:#888780;text-transform:uppercase;letter-spacing:1px;font-weight:700">
+                Relatório de Fichas Técnicas
+              </div>
+            </div>
           </div>
 
           <div id="relatorio-tabela"></div>

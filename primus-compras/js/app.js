@@ -1485,6 +1485,41 @@ function renderRelatorioFichas() {
   el.innerHTML = html;
 }
 
+// Função auxiliar: troca o document.title (que vira nome do PDF),
+// espera a logo carregar, chama window.print() e restaura tudo
+function executarImpressao(tituloDoArquivo, classeBody) {
+  const tituloOriginal = document.title;
+
+  // Aguarda a logo Primus terminar de carregar (necessário p/ imprimir com a imagem)
+  const logoImg = document.querySelector('img[src="img/logo-primus.png"]');
+  const aguardarLogo = new Promise((resolve) => {
+    if (!logoImg || logoImg.complete) {
+      resolve();
+    } else {
+      logoImg.addEventListener('load', resolve, { once: true });
+      logoImg.addEventListener('error', resolve, { once: true });
+      // Timeout de segurança: 2s
+      setTimeout(resolve, 2000);
+    }
+  });
+
+  aguardarLogo.then(() => {
+    // Troca o título (vira nome padrão do PDF)
+    document.title = tituloDoArquivo;
+    document.body.classList.add(classeBody);
+
+    // Pequeno delay pro DOM atualizar
+    setTimeout(() => {
+      window.print();
+      // Restaura título e remove classe após o diálogo de print fechar
+      setTimeout(() => {
+        document.title = tituloOriginal;
+        document.body.classList.remove(classeBody);
+      }, 500);
+    }, 200);
+  });
+}
+
 function imprimirRelatorio() {
   if (!fichas.length) {
     showToast('⚠ Cadastre fichas técnicas antes de imprimir', 'error');
@@ -1493,15 +1528,8 @@ function imprimirRelatorio() {
   // Re-renderiza pra garantir dados atualizados (e atualiza a data)
   renderRelatorioFichas();
 
-  // Marca o body com a classe pra ativar o CSS de impressão correto
-  document.body.classList.add('printing-relatorio');
-
-  // Espera 100ms pro DOM atualizar e chama print
-  setTimeout(() => {
-    window.print();
-    // Remove a classe após imprimir
-    setTimeout(() => document.body.classList.remove('printing-relatorio'), 500);
-  }, 100);
+  const dataFmt = new Date().toLocaleDateString('pt-BR').replace(/\//g, '-');
+  executarImpressao(`Relatorio de Fichas Tecnicas - ${dataFmt}`, 'printing-relatorio');
 }
 
 // ============================================================================
@@ -1663,17 +1691,39 @@ function imprimirFichaIndividual(fichaId) {
   const dataFmt = `${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
   html += `<div class="ficha-print-rodape">Ficha técnica gerada em ${dataFmt}</div>`;
 
-  // Insere no DOM e chama print
+  // Insere no DOM
   $('ficha-impressao').innerHTML = html;
-  document.body.classList.add('printing-ficha');
 
-  setTimeout(() => {
-    window.print();
+  // Nome do arquivo PDF: "Ficha Tecnica - Nome do Prato"
+  // Remove caracteres especiais que dão problema em nome de arquivo
+  const nomeArquivo = `Ficha Tecnica - ${(ficha.nome || 'sem nome').replace(/[\\/:*?"<>|]/g, '')}`;
+
+  const tituloOriginal = document.title;
+  const logoImg = document.querySelector('img[src="img/logo-primus.png"]');
+
+  const aguardarLogo = new Promise((resolve) => {
+    if (!logoImg || logoImg.complete) {
+      resolve();
+    } else {
+      logoImg.addEventListener('load', resolve, { once: true });
+      logoImg.addEventListener('error', resolve, { once: true });
+      setTimeout(resolve, 2000);
+    }
+  });
+
+  aguardarLogo.then(() => {
+    document.title = nomeArquivo;
+    document.body.classList.add('printing-ficha');
+
     setTimeout(() => {
-      document.body.classList.remove('printing-ficha');
-      $('ficha-impressao').innerHTML = '';
-    }, 500);
-  }, 150);
+      window.print();
+      setTimeout(() => {
+        document.title = tituloOriginal;
+        document.body.classList.remove('printing-ficha');
+        $('ficha-impressao').innerHTML = '';
+      }, 500);
+    }, 200);
+  });
 }
 
 // ============================================================================
