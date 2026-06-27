@@ -64,6 +64,8 @@ import {
   calcularCMV,
   calcularPrecoSugerido,
   obterCMVAlvoEfetivo,
+  calcularCustoPorUnidadeFicha,
+  verificarDependenciaCircular,
   observarVendas,
   observarVendasDias,
   parseRelatorioGestorFood,
@@ -946,11 +948,11 @@ function renderFichas() {
 
   let html = '';
   for (const ficha of filtradas) {
-    const custoReceita = calcularCustoReceita(ficha, insumos);
-    const custoPorcao = calcularCustoPorPorcao(ficha, insumos);
-    const cmv = calcularCMV(ficha, insumos);
+    const custoReceita = calcularCustoReceita(ficha, insumos, fichas);
+    const custoPorcao = calcularCustoPorPorcao(ficha, insumos, fichas);
+    const cmv = calcularCMV(ficha, insumos, fichas);
     const cmvAlvo = obterCMVAlvoEfetivo(ficha, configPrecificacao);
-    const precoSugerido = calcularPrecoSugerido(ficha, insumos, configPrecificacao);
+    const precoSugerido = calcularPrecoSugerido(ficha, insumos, configPrecificacao, fichas);
 
     const badgePP = ficha.ehPrePreparo ? `<span class="insumo-badge pp">PRÉ-PREPARO</span>` : '';
     const nIngredientes = (ficha.ingredientes || []).length;
@@ -1136,29 +1138,73 @@ function renderIngredientesModal() {
     return;
   }
 
+  // Pré-calcula listas ordenadas pra reusar em todas as linhas
+  const insumosOrdenados = [...insumos].sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+  // Pré-preparos disponíveis = todas as fichas exceto a ficha atual (e que não criem loop)
+  const prePreparosDisponiveis = fichas
+    .filter(f => {
+      if (!f.ehPrePreparo) return false;
+      if (fichaEditandoId && f.id === fichaEditandoId) return false;  // não pode usar a si mesmo
+      // Verifica loop (se a ficha atual for usada na árvore deste pré-preparo)
+      if (fichaEditandoId && verificarDependenciaCircular(fichaEditandoId, f.id, fichas)) return false;
+      return true;
+    })
+    .sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+
   let html = '';
   for (let i = 0; i < ings.length; i++) {
     const ing = ings[i];
-    const calc = calcularCustoIngrediente(ing, insumos);
+    const tipo = ing.tipo || 'insumo';
+    const calc = calcularCustoIngrediente(ing, insumos, fichas);
     const invalidoCls = !calc.encontrado ? ' invalido' : '';
     const semPreco = calc.encontrado && calc.precoUnitario <= 0;
 
     html += `<div class="ingrediente-card${invalidoCls}" data-idx="${i}">`;
     html += `<div class="ingrediente-header">`;
-    html += `<span class="ingrediente-nome">${calc.encontrado ? '✓ ' + escHtml(calc.insumoNome) : '⚠ Insumo não selecionado'}</span>`;
+
+    // Nome + badge de tipo
+    let nomeMostrado = '⚠ Não selecionado';
+    let badgeTipo = '';
+    if (calc.encontrado) {
+      nomeMostrado = '✓ ' + escHtml(calc.insumoNome);
+      if (tipo === 'ficha') {
+        badgeTipo = ' <span style="background:#FAC775;color:#854F0B;font-size:9px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:4px;letter-spacing:0.3px;text-transform:uppercase">Pré-preparo</span>';
+      }
+    }
+    html += `<span class="ingrediente-nome">${nomeMostrado}${badgeTipo}</span>`;
     html += `<button class="icon-btn danger" data-action="remover-ing" data-idx="${i}" title="Remover ingrediente">×</button>`;
     html += `</div>`;
 
     html += `<div class="ingrediente-row">`;
-    // Select insumo
-    html += `<div class="field" style="flex:2;min-width:160px"><label>Insumo</label>`;
-    html += `<select data-action="update-ing-insumo" data-idx="${i}">`;
+    // Select unificado: insumos + pré-preparos
+    // Valor combinado: "ins:ID" ou "ff:ID"
+    html += `<div class="field" style="flex:2;min-width:160px"><label>Insumo ou pré-preparo</label>`;
+    html += `<select data-action="update-ing-select" data-idx="${i}">`;
     html += `<option value="">— Selecione —</option>`;
-    const insumosOrdenados = [...insumos].sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
-    for (const ins of insumosOrdenados) {
-      const sel = ing.insumoId === ins.id ? ' selected' : '';
-      html += `<option value="${ins.id}"${sel}>${escHtml(ins.nome)} (${escHtml(ins.unidade || 'KG')})</option>`;
+
+    // Grupo: Insumos
+    if (insumosOrdenados.length > 0) {
+      html += `<optgroup label="📦 Insumos">`;
+      for (const ins of insumosOrdenados) {
+        const selecionado = (tipo === 'insumo' && ing.insumoId === ins.id) ? ' selected' : '';
+        html += `<option value="ins:${ins.id}"${selecionado}>${escHtml(ins.nome)} (${escHtml(ins.unidade || 'KG')})</option>`;
+      }
+      html += `</optgroup>`;
     }
+
+    // Grupo: Pré-preparos
+    if (prePreparosDisponiveis.length > 0) {
+      html += `<optgroup label="🍳 Pré-preparos">`;
+      for (const f of prePreparosDisponiveis) {
+        const selecionado = (tipo === 'ficha' && ing.fichaId === f.id) ? ' selected' : '';
+        const custoUnit = calcularCustoPorUnidadeFicha(f, fichas, insumos);
+        const semCustoTag = custoUnit <= 0 ? ' ⚠ sem custo' : '';
+        const labelExtra = custoUnit > 0 ? ` — ${fmtMoeda(custoUnit)}/${f.unidadeRendimento || 'KG'}` : '';
+        html += `<option value="ff:${f.id}"${selecionado}>${escHtml(f.nome)} (${escHtml(f.unidadeRendimento || 'KG')})${labelExtra}${semCustoTag}</option>`;
+      }
+      html += `</optgroup>`;
+    }
+
     html += `</select></div>`;
 
     // Peso líquido
@@ -1186,7 +1232,7 @@ function adicionarIngrediente() {
   if (!fichaEmEdicao) return;
   // Insere no topo (unshift) ao invés de no fim (push)
   // Agiliza criar fichas grandes: o botão "+ Adicionar" fica sempre acima do último adicionado
-  fichaEmEdicao.ingredientes.unshift({ insumoId: '', pesoLiquido: 0 });
+  fichaEmEdicao.ingredientes.unshift({ tipo: 'insumo', insumoId: '', fichaId: '', pesoLiquido: 0 });
   renderIngredientesModal();
   atualizarPainelPrecificacao();
 }
@@ -1198,9 +1244,35 @@ function removerIngrediente(idx) {
   atualizarPainelPrecificacao();
 }
 
-function atualizarIngredienteInsumo(idx, insumoId) {
+function atualizarIngredienteSelecionado(idx, valorSelecionado) {
   if (!fichaEmEdicao || !fichaEmEdicao.ingredientes[idx]) return;
-  fichaEmEdicao.ingredientes[idx].insumoId = insumoId;
+
+  if (!valorSelecionado) {
+    // Limpa: nem insumo nem ficha
+    fichaEmEdicao.ingredientes[idx].tipo = 'insumo';
+    fichaEmEdicao.ingredientes[idx].insumoId = '';
+    fichaEmEdicao.ingredientes[idx].fichaId = '';
+  } else if (valorSelecionado.startsWith('ins:')) {
+    // É insumo
+    fichaEmEdicao.ingredientes[idx].tipo = 'insumo';
+    fichaEmEdicao.ingredientes[idx].insumoId = valorSelecionado.substring(4);
+    fichaEmEdicao.ingredientes[idx].fichaId = '';
+  } else if (valorSelecionado.startsWith('ff:')) {
+    // É pré-preparo (ficha)
+    const fichaId = valorSelecionado.substring(3);
+
+    // Validação de loop circular (caso usuário burle o filtro do dropdown)
+    if (fichaEditandoId && verificarDependenciaCircular(fichaEditandoId, fichaId, fichas)) {
+      showToast('⚠ Não é possível usar este pré-preparo (criaria dependência circular)', 'error');
+      renderIngredientesModal();
+      return;
+    }
+
+    fichaEmEdicao.ingredientes[idx].tipo = 'ficha';
+    fichaEmEdicao.ingredientes[idx].fichaId = fichaId;
+    fichaEmEdicao.ingredientes[idx].insumoId = '';
+  }
+
   renderIngredientesModal();
   atualizarPainelPrecificacao();
 }
@@ -1211,7 +1283,7 @@ function atualizarIngredientePeso(idx, peso) {
   // Não re-renderiza tudo (preserva foco), só recalcula
   const card = document.querySelector(`.ingrediente-card[data-idx="${idx}"]`);
   if (card) {
-    const calc = calcularCustoIngrediente(fichaEmEdicao.ingredientes[idx], insumos);
+    const calc = calcularCustoIngrediente(fichaEmEdicao.ingredientes[idx], insumos, fichas);
     const infoEl = card.querySelector('.ingrediente-info-calc');
     if (infoEl && calc.encontrado) {
       const semPreco = calc.precoUnitario <= 0;
@@ -1231,11 +1303,11 @@ function atualizarIngredientePeso(idx, peso) {
 function atualizarPainelPrecificacao() {
   if (!fichaEmEdicao) return;
 
-  const custoReceita = calcularCustoReceita(fichaEmEdicao, insumos);
-  const custoPorcao = calcularCustoPorPorcao(fichaEmEdicao, insumos);
-  const cmv = calcularCMV(fichaEmEdicao, insumos);
+  const custoReceita = calcularCustoReceita(fichaEmEdicao, insumos, fichas);
+  const custoPorcao = calcularCustoPorPorcao(fichaEmEdicao, insumos, fichas);
+  const cmv = calcularCMV(fichaEmEdicao, insumos, fichas);
   const cmvAlvo = obterCMVAlvoEfetivo(fichaEmEdicao, configPrecificacao);
-  const precoSugerido = calcularPrecoSugerido(fichaEmEdicao, insumos, configPrecificacao);
+  const precoSugerido = calcularPrecoSugerido(fichaEmEdicao, insumos, configPrecificacao, fichas);
   const nPorcoes = calcularNumeroPorcoes(fichaEmEdicao);
 
   $('painel-custo-receita').textContent = fmtMoeda(custoReceita);
@@ -1389,8 +1461,21 @@ async function salvarFicha() {
     return;
   }
 
-  // Limpa ingredientes com insumoId vazio
-  fichaEmEdicao.ingredientes = (fichaEmEdicao.ingredientes || []).filter(i => i.insumoId);
+  // Limpa ingredientes inválidos (sem insumoId nem fichaId)
+  fichaEmEdicao.ingredientes = (fichaEmEdicao.ingredientes || [])
+    .filter(i => {
+      const tipo = i.tipo || 'insumo';
+      if (tipo === 'ficha') return !!i.fichaId;
+      return !!i.insumoId;
+    })
+    .map(i => {
+      // Garante consistência dos campos por tipo
+      const tipo = i.tipo || 'insumo';
+      if (tipo === 'ficha') {
+        return { tipo: 'ficha', fichaId: i.fichaId, pesoLiquido: parseFloat(i.pesoLiquido) || 0 };
+      }
+      return { tipo: 'insumo', insumoId: i.insumoId, pesoLiquido: parseFloat(i.pesoLiquido) || 0 };
+    });
 
   err.classList.remove('show');
   const btn = $('btn-ficha-salvar');
@@ -1463,7 +1548,7 @@ function renderRelatorioFichas() {
     let somaCMV = 0;
     let count = 0;
     for (const f of fichasComPreco) {
-      const cmv = calcularCMV(f, insumos);
+      const cmv = calcularCMV(f, insumos, fichas);
       if (cmv !== null && cmv > 0) {
         somaCMV += cmv;
         count++;
@@ -1495,8 +1580,8 @@ function renderRelatorioFichas() {
     if (!!a.ehPrePreparo !== !!b.ehPrePreparo) {
       return a.ehPrePreparo ? 1 : -1;  // pratos primeiro
     }
-    const cmvA = calcularCMV(a, insumos) ?? -1;
-    const cmvB = calcularCMV(b, insumos) ?? -1;
+    const cmvA = calcularCMV(a, insumos, fichas) ?? -1;
+    const cmvB = calcularCMV(b, insumos, fichas) ?? -1;
     return cmvB - cmvA;  // maior CMV no topo
   });
 
@@ -1514,11 +1599,11 @@ function renderRelatorioFichas() {
   html += '</tr></thead><tbody>';
 
   for (const ficha of ordenadas) {
-    const custoReceita = calcularCustoReceita(ficha, insumos);
-    const custoPorcao = calcularCustoPorPorcao(ficha, insumos);
-    const cmv = calcularCMV(ficha, insumos);
+    const custoReceita = calcularCustoReceita(ficha, insumos, fichas);
+    const custoPorcao = calcularCustoPorPorcao(ficha, insumos, fichas);
+    const cmv = calcularCMV(ficha, insumos, fichas);
     const cmvAlvo = obterCMVAlvoEfetivo(ficha, configPrecificacao);
-    const precoSugerido = calcularPrecoSugerido(ficha, insumos, configPrecificacao);
+    const precoSugerido = calcularPrecoSugerido(ficha, insumos, configPrecificacao, fichas);
     const nIng = (ficha.ingredientes || []).length;
     const unidadeAbrev = ficha.unidadeRendimento === 'PORCOES' ? 'porç.' : (ficha.unidadeRendimento || 'KG').toLowerCase();
     const nPorcoes = calcularNumeroPorcoes(ficha);
@@ -1628,11 +1713,11 @@ function imprimirFichaIndividual(fichaId) {
   }
 
   // Calcula tudo
-  const custoReceita = calcularCustoReceita(ficha, insumos);
-  const custoPorcao = calcularCustoPorPorcao(ficha, insumos);
-  const cmv = calcularCMV(ficha, insumos);
+  const custoReceita = calcularCustoReceita(ficha, insumos, fichas);
+  const custoPorcao = calcularCustoPorPorcao(ficha, insumos, fichas);
+  const cmv = calcularCMV(ficha, insumos, fichas);
   const cmvAlvo = obterCMVAlvoEfetivo(ficha, configPrecificacao);
-  const precoSugerido = calcularPrecoSugerido(ficha, insumos, configPrecificacao);
+  const precoSugerido = calcularPrecoSugerido(ficha, insumos, configPrecificacao, fichas);
   const nPorcoes = calcularNumeroPorcoes(ficha);
 
   const unidade = ficha.unidadeRendimento || 'KG';
@@ -1711,7 +1796,7 @@ function imprimirFichaIndividual(fichaId) {
     html += `<tr><td colspan="6" style="text-align:center;color:#888;padding:12px">Nenhum ingrediente cadastrado</td></tr>`;
   } else {
     for (const ing of ingredientes) {
-      const calc = calcularCustoIngrediente(ing, insumos);
+      const calc = calcularCustoIngrediente(ing, insumos, fichas);
       if (!calc.encontrado) {
         html += `<tr><td colspan="6" style="color:#791F1F">⚠ Insumo não encontrado</td></tr>`;
         continue;
@@ -3901,7 +3986,7 @@ function calcularCMVRealCompleto() {
         quantidade: 0,
         receita: 0,
         custo: 0,
-        custoPorPorcao: calcularCustoPorPorcao(ficha, insumos),
+        custoPorPorcao: calcularCustoPorPorcao(ficha, insumos, fichas),
         incompleta
       };
     }
@@ -4200,7 +4285,7 @@ function agruparVendasPorFicha(vendasFiltradas) {
         nome: ficha.nome,
         quantidade: 0,
         receita: 0,
-        custoPorPorcao: calcularCustoPorPorcao(ficha, insumos)
+        custoPorPorcao: calcularCustoPorPorcao(ficha, insumos, fichas)
       };
     }
     porFicha[ficha.id].quantidade += v.quantidade || 0;
@@ -5167,8 +5252,8 @@ function setupEventos() {
     const target = e.target.closest('[data-action]');
     if (!target) return;
     const idx = parseInt(target.dataset.idx, 10);
-    if (target.dataset.action === 'update-ing-insumo') {
-      atualizarIngredienteInsumo(idx, target.value);
+    if (target.dataset.action === 'update-ing-select') {
+      atualizarIngredienteSelecionado(idx, target.value);
     } else if (target.dataset.action === 'update-ing-peso') {
       atualizarIngredientePeso(idx, target.value);
     }
