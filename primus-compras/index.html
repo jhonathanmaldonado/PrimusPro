@@ -582,6 +582,100 @@
 .dia-preview-novo { color: #15803d; font-weight: 700; font-size: 10px; }
 .dia-preview-substitui { color: #854F0B; font-weight: 700; font-size: 10px; }
 
+/* ====== VENDAS: VÍNCULOS ====== */
+.vinculo-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 8px;
+}
+.vinculo-card.vinculado {
+  border-left: 4px solid #86efac;
+  background: #f0fdf4;
+}
+.vinculo-card.pendente {
+  border-left: 4px solid #FAC775;
+  background: #fffbeb;
+}
+.vinculo-card.ignorado {
+  border-left: 4px solid #d1d5db;
+  background: #fafaf9;
+  opacity: 0.7;
+}
+.vinculo-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.vinculo-nome {
+  flex: 1;
+  min-width: 200px;
+}
+.vinculo-nome-produto {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--wine);
+}
+.vinculo-nome-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.vinculo-valor {
+  text-align: right;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--wine);
+}
+.vinculo-acao {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.vinculo-status {
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.vinculo-status.ok { color: #15803d; }
+.vinculo-status.pendente { color: #854F0B; }
+.vinculo-status.ignorado { color: #6b7280; }
+.vinculo-select-ficha {
+  flex: 1;
+  min-width: 180px;
+  padding: 6px 10px;
+  font-size: 13px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+}
+.vinculo-btn-sm {
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+}
+.vinculo-btn-sm:hover { background: #fafaf9; }
+.vinculo-btn-sm.danger {
+  color: #791F1F;
+  border-color: #fca5a5;
+}
+.vinculo-btn-sm.danger:hover { background: #fef2f2; }
+
 /* Área de impressão de ficha individual - escondida na tela */
 .ficha-impressao-area {
   display: none;
@@ -1266,6 +1360,7 @@
         <button class="sub-nav-btn active" data-vendas-subtab="importar">📥 Importar</button>
         <button class="sub-nav-btn" data-vendas-subtab="calendario">📅 Calendário</button>
         <button class="sub-nav-btn" data-vendas-subtab="dados">📊 Dados</button>
+        <button class="sub-nav-btn" data-vendas-subtab="vinculos">🔗 Vínculos</button>
       </div>
 
       <!-- Sub-aba: Importar -->
@@ -1388,6 +1483,50 @@
         </div>
 
         <div id="lista-vendas"></div>
+      </div>
+
+      <!-- Sub-aba: Vínculos PDV ↔ Ficha Técnica -->
+      <div id="vendas-subtab-vinculos" style="display:none">
+        <div class="toolbar">
+          <span class="toolbar-title">🔗 Vincular vendas a fichas técnicas</span>
+        </div>
+
+        <div style="background:var(--gold-soft);border:1px solid #f0d590;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:12px;color:var(--wine-dark);line-height:1.5">
+          ℹ️ <strong>Como funciona:</strong> Vincule cada produto vendido no PDV à sua ficha técnica correspondente. Isso vai permitir o cálculo de <strong>CMV real</strong>, análises de margem e sugestões de compras. Você pode <strong>ignorar</strong> produtos que não têm ficha (água, refrigerante, brindes etc.).
+        </div>
+
+        <div class="summary">
+          <div class="stat">
+            <div class="stat-label">Produtos vendidos</div>
+            <div class="stat-value" id="vinc-total">0</div>
+          </div>
+          <div class="stat">
+            <div class="stat-label">Vinculados</div>
+            <div class="stat-value" id="vinc-vinculados" style="color:#15803d">0</div>
+          </div>
+          <div class="stat gold">
+            <div class="stat-label">Pendentes</div>
+            <div class="stat-value" id="vinc-pendentes" style="color:#854F0B">0</div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+          <span style="font-size:12px;color:var(--muted);font-weight:600">Filtrar:</span>
+          <select id="filtro-vinculos" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff">
+            <option value="todos">Todos</option>
+            <option value="pendentes">Apenas pendentes</option>
+            <option value="vinculados">Apenas vinculados</option>
+            <option value="ignorados">Apenas ignorados</option>
+          </select>
+        </div>
+
+        <div class="search-wrap">
+          <span class="search-icon">🔍</span>
+          <input type="text" class="search-input" id="search-vinculos" placeholder="Buscar produto...">
+          <button class="search-clear" id="search-vinculos-clear">×</button>
+        </div>
+
+        <div id="lista-vinculos"></div>
       </div>
 
     </div>
@@ -1779,6 +1918,14 @@
       <div class="form-field">
         <label>Nome da ficha</label>
         <input type="text" id="ficha-nome" placeholder="Ex: Bolinho de peixe">
+      </div>
+
+      <div class="form-field">
+        <label>Nome no PDV (Gestor Food) <span class="optional">(opcional, vincula vendas automaticamente)</span></label>
+        <input type="text" id="ficha-nome-pdv" placeholder="Ex: BOLINHO DE PEIXE" style="text-transform:uppercase">
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">
+          ℹ️ Use o nome <strong>exato</strong> como aparece no relatório do Gestor Food. Quando você salvar, todas as vendas com esse nome serão vinculadas a esta ficha.
+        </div>
       </div>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap">

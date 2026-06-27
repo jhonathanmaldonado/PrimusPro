@@ -69,7 +69,12 @@ import {
   parseRelatorioGestorFood,
   salvarVendasImportadas,
   deletarVendasDoDia,
-  formatarDataBR
+  formatarDataBR,
+  vincularVendaAFicha,
+  desvincularVenda,
+  marcarProdutoIgnorado,
+  autoVincularPorNomeNoPDV,
+  agregarVendasPorProduto
 } from './db.js';
 
 // ============================================================================
@@ -109,6 +114,8 @@ let vendasPreviewParseado = null;  // resultado do parser aguardando confirmaç�
 let calendarioAno = new Date().getFullYear();
 let calendarioMes = new Date().getMonth();  // 0-indexed
 let diaSelecionadoCalendario = null;
+let searchVinculos = '';
+let filtroVinculos = 'todos';  // todos | pendentes | vinculados | ignorados
 
 // Categoria modal
 let catEditandoId = null;
@@ -364,11 +371,13 @@ function iniciarListeners() {
     fichas = fs;
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'fichas') renderFichas();
     if (currentTab === 'cardapio' && currentSubTabCardapio === 'relatorio') renderRelatorioFichas();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'vinculos') renderVinculos();
   }));
 
   unsubsRefs.push(observarVendas((v) => {
     vendas = v;
     if (currentTab === 'vendas' && currentSubTabVendas === 'dados') renderDadosVendas();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'vinculos') renderVinculos();
     if (currentTab === 'vendas' && currentSubTabVendas === 'calendario' && diaSelecionadoCalendario) {
       renderDetalhesDia(diaSelecionadoCalendario);
     }
@@ -990,6 +999,7 @@ function abrirModalFicha(fichaId = null) {
     $('modal-ficha-title').textContent = '✏️ Editar Ficha Técnica';
     fichaEmEdicao = {
       nome: f.nome || '',
+      nomeNoPDV: f.nomeNoPDV || '',
       rendimento: f.rendimento ?? 1,
       unidadeRendimento: f.unidadeRendimento || 'KG',
       tamanhoPorcao: f.tamanhoPorcao ?? null,
@@ -1006,6 +1016,7 @@ function abrirModalFicha(fichaId = null) {
     $('modal-ficha-title').textContent = '📋 Nova Ficha Técnica';
     fichaEmEdicao = {
       nome: '',
+      nomeNoPDV: '',
       rendimento: 1,
       unidadeRendimento: 'KG',
       tamanhoPorcao: null,
@@ -1022,6 +1033,7 @@ function abrirModalFicha(fichaId = null) {
 
   // Popular UI com dados
   $('ficha-nome').value = fichaEmEdicao.nome;
+  $('ficha-nome-pdv').value = fichaEmEdicao.nomeNoPDV;
   $('ficha-rendimento').value = fichaEmEdicao.rendimento;
   $('ficha-unidade-rendimento').value = fichaEmEdicao.unidadeRendimento;
   $('ficha-tamanho-porcao').value = (fichaEmEdicao.tamanhoPorcao != null && fichaEmEdicao.tamanhoPorcao > 0)
@@ -1310,6 +1322,7 @@ async function salvarFicha() {
 
   // Lê o estado atual da UI
   fichaEmEdicao.nome = $('ficha-nome').value.trim();
+  fichaEmEdicao.nomeNoPDV = $('ficha-nome-pdv').value.trim();
   fichaEmEdicao.rendimento = parseFloat($('ficha-rendimento').value) || 1;
   fichaEmEdicao.unidadeRendimento = $('ficha-unidade-rendimento').value;
   fichaEmEdicao.precoVenda = parseFloat($('ficha-preco-venda').value) || 0;
@@ -1362,13 +1375,27 @@ async function salvarFicha() {
   btn.textContent = 'Salvando...';
 
   try {
+    let fichaIdSalva = fichaEditandoId;
     if (fichaEditandoId) {
       await atualizarFicha(fichaEditandoId, fichaEmEdicao);
       showToast(`✓ "${fichaEmEdicao.nome}" atualizada`, 'success');
     } else {
-      await criarFicha(fichaEmEdicao);
+      fichaIdSalva = await criarFicha(fichaEmEdicao);
       showToast(`✓ Ficha "${fichaEmEdicao.nome}" criada`, 'success');
     }
+
+    // Auto-vínculo: se preencheu nomeNoPDV, vincula todas as vendas com esse nome
+    if (fichaEmEdicao.nomeNoPDV && fichaIdSalva) {
+      try {
+        const n = await autoVincularPorNomeNoPDV(fichaIdSalva, fichaEmEdicao.nomeNoPDV);
+        if (n > 0) {
+          showToast(`🔗 ${n} venda(s) vinculada(s) automaticamente`, 'success');
+        }
+      } catch (e) {
+        console.warn('Auto-vínculo falhou:', e);
+      }
+    }
+
     fecharModalFicha();
   } catch (e) {
     err.textContent = 'Erro: ' + e.message;
@@ -3209,9 +3236,11 @@ function switchSubTabVendas(sub) {
   $('vendas-subtab-importar').style.display = sub === 'importar' ? 'block' : 'none';
   $('vendas-subtab-calendario').style.display = sub === 'calendario' ? 'block' : 'none';
   $('vendas-subtab-dados').style.display = sub === 'dados' ? 'block' : 'none';
+  $('vendas-subtab-vinculos').style.display = sub === 'vinculos' ? 'block' : 'none';
 
   if (sub === 'calendario') renderCalendario();
   if (sub === 'dados') renderDadosVendas();
+  if (sub === 'vinculos') renderVinculos();
 }
 
 // ============================================================================
@@ -3569,6 +3598,184 @@ function renderDadosVendas() {
 }
 
 // ============================================================================
+// VENDAS - Vínculos PDV ↔ Ficha (Fase 3B)
+// ============================================================================
+
+function renderVinculos() {
+  // Agrega vendas por produto
+  const produtos = agregarVendasPorProduto(vendas);
+
+  // Stats
+  $('vinc-total').textContent = produtos.length;
+  const vinculados = produtos.filter(p => p.fichaId).length;
+  const ignorados = produtos.filter(p => p.ignorado).length;
+  const pendentes = produtos.filter(p => !p.fichaId && !p.ignorado).length;
+  $('vinc-vinculados').textContent = vinculados;
+  $('vinc-pendentes').textContent = pendentes;
+
+  // Aplica filtros
+  let filtrados = produtos;
+  if (filtroVinculos === 'pendentes') {
+    filtrados = filtrados.filter(p => !p.fichaId && !p.ignorado);
+  } else if (filtroVinculos === 'vinculados') {
+    filtrados = filtrados.filter(p => p.fichaId);
+  } else if (filtroVinculos === 'ignorados') {
+    filtrados = filtrados.filter(p => p.ignorado);
+  }
+
+  if (searchVinculos) {
+    const t = searchVinculos.toLowerCase();
+    filtrados = filtrados.filter(p => (p.nome || '').toLowerCase().includes(t));
+  }
+
+  // Ordena: pendentes primeiro (maior receita), depois vinculados, depois ignorados
+  filtrados.sort((a, b) => {
+    const prioridadeA = a.ignorado ? 2 : (a.fichaId ? 1 : 0);
+    const prioridadeB = b.ignorado ? 2 : (b.fichaId ? 1 : 0);
+    if (prioridadeA !== prioridadeB) return prioridadeA - prioridadeB;
+    return b.total - a.total;  // dentro do mesmo grupo, maior receita primeiro
+  });
+
+  const el = $('lista-vinculos');
+
+  if (!vendas.length) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">🔗</div>
+      <div class="empty-state-text">Nenhuma venda importada ainda.<br>Vá em <strong>📥 Importar</strong> primeiro.</div>
+    </div>`;
+    return;
+  }
+
+  if (!filtrados.length) {
+    const txt = filtroVinculos === 'pendentes'
+      ? 'Não há produtos pendentes — todos foram vinculados ou ignorados! 🎉'
+      : 'Nenhum produto encontrado com os filtros aplicados';
+    el.innerHTML = `<div class="empty-msg">${txt}</div>`;
+    return;
+  }
+
+  // Monta lista de opções de fichas (pra dropdown)
+  const fichasOrdenadas = [...fichas].sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+
+  let html = '';
+  for (const p of filtrados) {
+    const ficha = p.fichaId ? fichas.find(f => f.id === p.fichaId) : null;
+
+    let cls = 'vinculo-card';
+    if (p.ignorado) cls += ' ignorado';
+    else if (p.fichaId) cls += ' vinculado';
+    else cls += ' pendente';
+
+    html += `<div class="${cls}">`;
+
+    // Header (nome + receita)
+    html += `<div class="vinculo-header">`;
+    html += `<div class="vinculo-nome">`;
+    html += `<div class="vinculo-nome-produto">${escHtml(p.nome)}</div>`;
+    html += `<div class="vinculo-nome-meta">${Math.round(p.quantidade)} un · ${p.dias} dia(s)</div>`;
+    html += `</div>`;
+    html += `<div class="vinculo-valor">${fmtMoeda(p.total)}</div>`;
+    html += `</div>`;
+
+    // Linha de ação (varia conforme status)
+    html += `<div class="vinculo-acao">`;
+
+    if (p.ignorado) {
+      html += `<span class="vinculo-status ignorado">🚫 Ignorado</span>`;
+      html += `<button class="vinculo-btn-sm" data-action="vinc-desfazer-ignorar" data-produto="${escHtml(p.nome)}">Desfazer</button>`;
+    } else if (p.fichaId && ficha) {
+      html += `<span class="vinculo-status ok">✅ Vinculado a: <strong>${escHtml(ficha.nome)}</strong></span>`;
+      html += `<div style="flex:1"></div>`;
+      html += `<button class="vinculo-btn-sm" data-action="vinc-editar" data-produto="${escHtml(p.nome)}">✏️ Trocar</button>`;
+      html += `<button class="vinculo-btn-sm danger" data-action="vinc-desvincular" data-produto="${escHtml(p.nome)}">Desvincular</button>`;
+    } else if (p.fichaId && !ficha) {
+      html += `<span class="vinculo-status pendente">⚠ Ficha apagada</span>`;
+      html += `<button class="vinculo-btn-sm" data-action="vinc-desvincular" data-produto="${escHtml(p.nome)}">Limpar</button>`;
+    } else {
+      // Pendente - mostra dropdown pra escolher
+      html += `<span class="vinculo-status pendente">⚠️ Sem vínculo</span>`;
+      html += `<select class="vinculo-select-ficha" data-action="vinc-selecionar" data-produto="${escHtml(p.nome)}">`;
+      html += `<option value="">— Escolher ficha técnica —</option>`;
+      for (const f of fichasOrdenadas) {
+        if (f.ehPrePreparo) continue;  // pré-preparos não vendem direto
+        html += `<option value="${f.id}">${escHtml(f.nome)}</option>`;
+      }
+      html += `</select>`;
+      html += `<button class="vinculo-btn-sm" data-action="vinc-ignorar" data-produto="${escHtml(p.nome)}">🚫 Ignorar</button>`;
+    }
+
+    html += `</div>`;
+    html += `</div>`;
+  }
+
+  el.innerHTML = html;
+}
+
+async function vinculoSelecionarFicha(produtoNome, fichaId) {
+  if (!fichaId) return;
+  try {
+    const n = await vincularVendaAFicha(produtoNome, fichaId);
+    showToast(`✓ ${n} venda(s) vinculada(s)`, 'success');
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
+  }
+}
+
+async function vinculoDesvincular(produtoNome) {
+  if (!confirm(`Desvincular todas as vendas de "${produtoNome}"?`)) return;
+  try {
+    const n = await desvincularVenda(produtoNome);
+    showToast(`✓ ${n} venda(s) desvinculada(s)`, 'success');
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
+  }
+}
+
+async function vinculoEditar(produtoNome) {
+  // Permite trocar a ficha vinculada
+  const fichasDisponiveis = fichas.filter(f => !f.ehPrePreparo);
+  if (!fichasDisponiveis.length) {
+    showToast('⚠ Nenhuma ficha disponível', 'error');
+    return;
+  }
+  // Cria prompt simples com lista de opções (numerada)
+  let opcoes = 'Escolha a nova ficha:\n\n';
+  fichasDisponiveis.forEach((f, i) => {
+    opcoes += `${i + 1}. ${f.nome}\n`;
+  });
+  opcoes += '\nDigite o número:';
+  const escolha = prompt(opcoes);
+  const idx = parseInt(escolha, 10) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= fichasDisponiveis.length) return;
+
+  const novaFicha = fichasDisponiveis[idx];
+  try {
+    const n = await vincularVendaAFicha(produtoNome, novaFicha.id);
+    showToast(`✓ Vinculado a "${novaFicha.nome}" (${n} vendas)`, 'success');
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
+  }
+}
+
+async function vinculoIgnorar(produtoNome) {
+  try {
+    const n = await marcarProdutoIgnorado(produtoNome, true);
+    showToast(`🚫 ${n} venda(s) marcada(s) como ignorada(s)`, 'success');
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
+  }
+}
+
+async function vinculoDesfazerIgnorar(produtoNome) {
+  try {
+    const n = await marcarProdutoIgnorado(produtoNome, false);
+    showToast(`✓ ${n} venda(s) reativada(s)`, 'success');
+  } catch (e) {
+    showToast('⚠ Erro: ' + e.message, 'error');
+  }
+}
+
+// ============================================================================
 // EVENTOS
 // ============================================================================
 
@@ -3629,6 +3836,41 @@ function setupEventos() {
     $('search-vendas').value = '';
     searchVendas = '';
     renderDadosVendas();
+  });
+
+  // Vendas - Vínculos (filtros e busca)
+  $('filtro-vinculos').addEventListener('change', e => {
+    filtroVinculos = e.target.value;
+    renderVinculos();
+  });
+  $('search-vinculos').addEventListener('input', e => {
+    searchVinculos = e.target.value.trim();
+    renderVinculos();
+  });
+  $('search-vinculos-clear').addEventListener('click', () => {
+    $('search-vinculos').value = '';
+    searchVinculos = '';
+    renderVinculos();
+  });
+
+  // Vendas - Vínculos (ações nos cards) - delegação
+  $('lista-vinculos').addEventListener('change', e => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+    if (target.dataset.action === 'vinc-selecionar') {
+      const produto = target.dataset.produto;
+      const fichaId = target.value;
+      if (fichaId) vinculoSelecionarFicha(produto, fichaId);
+    }
+  });
+  $('lista-vinculos').addEventListener('click', e => {
+    const target = e.target.closest('[data-action]');
+    if (!target) return;
+    const produto = target.dataset.produto;
+    if (target.dataset.action === 'vinc-desvincular') vinculoDesvincular(produto);
+    else if (target.dataset.action === 'vinc-editar') vinculoEditar(produto);
+    else if (target.dataset.action === 'vinc-ignorar') vinculoIgnorar(produto);
+    else if (target.dataset.action === 'vinc-desfazer-ignorar') vinculoDesfazerIgnorar(produto);
   });
 
   $('btn-criar-recolher').addEventListener('click', () => expandirOuRecolherCriar(false));

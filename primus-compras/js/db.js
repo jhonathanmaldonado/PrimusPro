@@ -505,13 +505,14 @@ export async function criarFicha(dados) {
   const ref = doc(FICHAS());
   await setDoc(ref, {
     nome: dados.nome,
+    nomeNoPDV: (dados.nomeNoPDV || '').trim(),  // nome exato como aparece no PDV (case-insensitive)
     rendimento: parseFloat(dados.rendimento) || 1,
     unidadeRendimento: dados.unidadeRendimento || 'KG',  // KG | LITRO | UND | PORCOES
-    tamanhoPorcao: dados.tamanhoPorcao != null ? parseFloat(dados.tamanhoPorcao) : null,  // tamanho de 1 porção (na mesma unidade do rendimento)
+    tamanhoPorcao: dados.tamanhoPorcao != null ? parseFloat(dados.tamanhoPorcao) : null,
     precoVenda: parseFloat(dados.precoVenda) || 0,
-    cmvAlvoCustom: dados.cmvAlvoCustom ?? null,  // se null, usa global
+    cmvAlvoCustom: dados.cmvAlvoCustom ?? null,
     ehPrePreparo: !!dados.ehPrePreparo,
-    ingredientes: dados.ingredientes || [],  // [{ insumoId, pesoLiquido }]
+    ingredientes: dados.ingredientes || [],
     tempoPreparo: dados.tempoPreparo || '',
     modoPreparo: dados.modoPreparo || '',
     observacoes: dados.observacoes || '',
@@ -531,10 +532,24 @@ export async function atualizarFicha(fichaId, dados) {
       ? parseFloat(payload.tamanhoPorcao)
       : null;
   }
+  if ('nomeNoPDV' in payload) {
+    payload.nomeNoPDV = (payload.nomeNoPDV || '').trim();
+  }
   await updateDoc(ref, { ...payload, ...auditFields() });
 }
 
 export async function deletarFicha(fichaId) {
+  // Primeiro desvincula todas as vendas que apontavam pra essa ficha
+  try {
+    // Não precisa esperar, mas pra ser seguro vamos aguardar
+    const snap = await getDocs(query(VENDAS(), where('fichaId', '==', fichaId)));
+    for (const docSnap of snap.docs) {
+      await updateDoc(docSnap.ref, { fichaId: null });
+    }
+  } catch (e) {
+    // Se falhar, continua e deleta a ficha mesmo assim
+    console.warn('[deletarFicha] Falha ao desvincular vendas:', e.message);
+  }
   await deleteDoc(doc(FICHAS(), fichaId));
 }
 
@@ -729,11 +744,134 @@ export async function salvarVendasImportadas(vendasPorDia, userName = '') {
         acrescimo: produto.acrescimo,
         desconto: produto.desconto,
         total: produto.total,
-        fichaId: null,  // será preenchido na fase 3B
+        fichaId: null,        // será vinculado em fase 3B
+        ignorado: false,      // marca produtos que não têm ficha (ex: água, sobremesa terceira)
         ...auditFields({ criadoEm: serverTimestamp() })
       });
     }
   }
+}
+
+// ============================================================================
+// VÍNCULO VENDAS ↔ FICHAS TÉCNICAS (Fase 3B)
+// ============================================================================
+
+// Compara nomes de produtos PDV vs nomeNoPDV das fichas (case-insensitive, trim)
+function normalizarNomePDV(nome) {
+  return (nome || '').trim().toUpperCase();
+}
+
+// Vincula TODAS as vendas com `produtoNome` a uma ficha técnica
+export async function vincularVendaAFicha(produtoNome, fichaId) {
+  if (!produtoNome) return 0;
+  const nomeNorm = normalizarNomePDV(produtoNome);
+
+  // Busca todas as vendas com este nome (case-insensitive não dá pra fazer query direta, então puxa todas)
+  const snap = await getDocs(VENDAS());
+  let count = 0;
+  for (const docSnap of snap.docs) {
+    const v = docSnap.data();
+    if (normalizarNomePDV(v.produtoNome) === nomeNorm && v.fichaId !== fichaId) {
+      await updateDoc(docSnap.ref, {
+        fichaId,
+        ignorado: false,
+        ...auditFields()
+      });
+      count++;
+    }
+  }
+  return count;
+}
+
+// Desvincula todas as vendas de um produto
+export async function desvincularVenda(produtoNome) {
+  if (!produtoNome) return 0;
+  const nomeNorm = normalizarNomePDV(produtoNome);
+
+  const snap = await getDocs(VENDAS());
+  let count = 0;
+  for (const docSnap of snap.docs) {
+    const v = docSnap.data();
+    if (normalizarNomePDV(v.produtoNome) === nomeNorm && v.fichaId) {
+      await updateDoc(docSnap.ref, {
+        fichaId: null,
+        ...auditFields()
+      });
+      count++;
+    }
+  }
+  return count;
+}
+
+// Marca/desmarca produto como ignorado (não entra em análises de CMV)
+export async function marcarProdutoIgnorado(produtoNome, ignorar) {
+  if (!produtoNome) return 0;
+  const nomeNorm = normalizarNomePDV(produtoNome);
+
+  const snap = await getDocs(VENDAS());
+  let count = 0;
+  for (const docSnap of snap.docs) {
+    const v = docSnap.data();
+    if (normalizarNomePDV(v.produtoNome) === nomeNorm) {
+      const update = { ignorado: !!ignorar, ...auditFields() };
+      if (ignorar) update.fichaId = null;  // se ignora, desvincula
+      await updateDoc(docSnap.ref, update);
+      count++;
+    }
+  }
+  return count;
+}
+
+// Auto-vinculação: roda quando uma ficha é salva com nomeNoPDV preenchido
+// Vincula todas as vendas que tenham esse nome
+export async function autoVincularPorNomeNoPDV(fichaId, nomeNoPDV) {
+  if (!fichaId || !nomeNoPDV || !nomeNoPDV.trim()) return 0;
+  return await vincularVendaAFicha(nomeNoPDV, fichaId);
+}
+
+// Auto-vinculação reversa: quando uma ficha é deletada ou seu nomeNoPDV é removido,
+// desvincula todas as vendas que apontavam pra ela
+export async function desvincularVendasDaFicha(fichaId) {
+  if (!fichaId) return 0;
+  const snap = await getDocs(VENDAS());
+  let count = 0;
+  for (const docSnap of snap.docs) {
+    const v = docSnap.data();
+    if (v.fichaId === fichaId) {
+      await updateDoc(docSnap.ref, {
+        fichaId: null,
+        ...auditFields()
+      });
+      count++;
+    }
+  }
+  return count;
+}
+
+// Função pura: agrega vendas por produto (para a tela de vínculos)
+// Retorna: [{ nome, quantidade, total, dias, fichaId, ignorado }]
+export function agregarVendasPorProduto(vendas) {
+  const mapa = {};
+  for (const v of vendas) {
+    const nome = v.produtoNome;
+    if (!mapa[nome]) {
+      mapa[nome] = {
+        nome,
+        quantidade: 0,
+        total: 0,
+        dias: new Set(),
+        fichaId: v.fichaId || null,
+        ignorado: !!v.ignorado
+      };
+    }
+    mapa[nome].quantidade += v.quantidade || 0;
+    mapa[nome].total += v.total || 0;
+    mapa[nome].dias.add(v.data);
+    // Se qualquer venda tem fichaId, considera vinculado
+    if (v.fichaId) mapa[nome].fichaId = v.fichaId;
+    if (v.ignorado) mapa[nome].ignorado = true;
+  }
+  return Object.values(mapa).map(p => ({ ...p, dias: p.dias.size }));
 }
 
 // ============================================================================
