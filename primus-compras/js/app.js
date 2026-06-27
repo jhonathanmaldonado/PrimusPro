@@ -1490,6 +1490,10 @@ function renderRelatorioFichas() {
 function executarImpressao(tituloDoArquivo, classeBody) {
   const tituloOriginal = document.title;
 
+  // TROCA O TÍTULO IMEDIATAMENTE - antes de qualquer await
+  // o navegador captura este valor quando window.print() é chamado
+  document.title = tituloDoArquivo;
+
   // Aguarda a logo Primus terminar de carregar (necessário p/ imprimir com a imagem)
   const logoImg = document.querySelector('img[src="img/logo-primus.png"]');
   const aguardarLogo = new Promise((resolve) => {
@@ -1504,19 +1508,19 @@ function executarImpressao(tituloDoArquivo, classeBody) {
   });
 
   aguardarLogo.then(() => {
-    // Troca o título (vira nome padrão do PDF)
-    document.title = tituloDoArquivo;
     document.body.classList.add(classeBody);
 
-    // Pequeno delay pro DOM atualizar
-    setTimeout(() => {
-      window.print();
-      // Restaura título e remove classe após o diálogo de print fechar
-      setTimeout(() => {
-        document.title = tituloOriginal;
-        document.body.classList.remove(classeBody);
-      }, 500);
-    }, 200);
+    // Espera o próximo frame para garantir que o título já está renderizado
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+        // Restaura título e remove classe após o diálogo de print fechar
+        setTimeout(() => {
+          document.title = tituloOriginal;
+          document.body.classList.remove(classeBody);
+        }, 1000);
+      });
+    });
   });
 }
 
@@ -1699,8 +1703,11 @@ function imprimirFichaIndividual(fichaId) {
   const nomeArquivo = `Ficha Tecnica - ${(ficha.nome || 'sem nome').replace(/[\\/:*?"<>|]/g, '')}`;
 
   const tituloOriginal = document.title;
-  const logoImg = document.querySelector('img[src="img/logo-primus.png"]');
 
+  // TROCA O TÍTULO IMEDIATAMENTE
+  document.title = nomeArquivo;
+
+  const logoImg = document.querySelector('img[src="img/logo-primus.png"]');
   const aguardarLogo = new Promise((resolve) => {
     if (!logoImg || logoImg.complete) {
       resolve();
@@ -1712,17 +1719,18 @@ function imprimirFichaIndividual(fichaId) {
   });
 
   aguardarLogo.then(() => {
-    document.title = nomeArquivo;
     document.body.classList.add('printing-ficha');
 
-    setTimeout(() => {
-      window.print();
-      setTimeout(() => {
-        document.title = tituloOriginal;
-        document.body.classList.remove('printing-ficha');
-        $('ficha-impressao').innerHTML = '';
-      }, 500);
-    }, 200);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+        setTimeout(() => {
+          document.title = tituloOriginal;
+          document.body.classList.remove('printing-ficha');
+          $('ficha-impressao').innerHTML = '';
+        }, 1000);
+      });
+    });
   });
 }
 
