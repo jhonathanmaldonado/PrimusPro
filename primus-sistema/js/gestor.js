@@ -11,6 +11,7 @@ import { inicializarUsuarios } from './usuarios.js';
 import { inicializarCompras } from './compras.js';
 import { inicializarAuditoria } from './auditoria.js';
 import { inicializarCatalogo } from './catalogo.js';
+import { inicializarPush } from './push.js';
 
 const sessao = exigirPerfil(['gestor']);
 if (!sessao) throw new Error('sem sessão');
@@ -120,6 +121,9 @@ Object.keys(views).forEach(id => {
 
 // Abre o dashboard por padrão
 mostrarView('dashboard');
+
+// Notificações push (mostra o botão de ativar só pra gestor)
+inicializarPush();
 
 // Menu mobile
 document.getElementById('btn-menu-mobile').onclick = () => {
