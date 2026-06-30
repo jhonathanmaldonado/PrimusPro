@@ -1,5 +1,5 @@
 // ===== VENDAS — PRIMUS =====
-// Upload de TXT do PDV, listagem de dias importados, visualização de detalhes
+// Importação por texto colado (PDV) + calendário mensal de cobertura de vendas.
 
 import { parsePdvTxt, resumirParse } from './pdv-parser.js';
 import { parseVendedorXProduto, validarParse } from './pdv-vxp-parser.js';
@@ -7,52 +7,88 @@ import { salvarVendas, listarDatasVendas, buscarVendasDia, listarVendas, salvarD
 import { recarregarDashboard } from './dashboard.js';
 
 // Cache
-let datasImportadas = [];
-let arquivoPendente = null; // { nome, parsed, resumo }
+let datasImportadas = [];      // só os IDs (datas) — usado no aviso de sobrescrever e no select do VxP
+let vendasCache = [];          // documentos completos — alimenta o calendário
+let calMes = null;             // Date do 1º dia do mês exibido no calendário
+let arquivoPendente = null;    // { nome, parsed, resumo }
 let arquivoVxPPendente = null; // { nome, texto, vendedores, validacao }
 
 // ===== FORMATADORES =====
 const fmtMoeda = v => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtInt   = v => Math.round(v || 0).toLocaleString('pt-BR');
 const fmtData  = d => { const [y,m,dd] = d.split('-'); return `${dd}/${m}/${y}`; };
+const fmtK     = v => { v = v || 0; return v >= 1000 ? 'R$' + (v/1000).toFixed(1) + 'k' : 'R$' + Math.round(v); };
+const NOMES_MES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+// ===== CSS DO CALENDÁRIO (injetado uma única vez) =====
+const VCAL_CSS = `
+.vcal-totais{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:18px}
+.vcal-card{border-radius:14px;padding:14px 16px;border-left:6px solid var(--vinho,#7C0047);background:#fbeef4}
+.vcal-card.ouro{border-left-color:#FAB900;background:#fdf6e3;grid-column:1/-1}
+.vcal-card-label{font-size:.72rem;letter-spacing:.04em;text-transform:uppercase;color:#7a6a72;font-weight:700;margin-bottom:6px}
+.vcal-card-val{font-family:'DM Mono',monospace;font-size:1.5rem;font-weight:700;color:var(--vinho,#7C0047);line-height:1.1}
+.vcal-card.ouro .vcal-card-val{color:#b6860a}
+.vcal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.vcal-mes{font-family:'Raleway',sans-serif;font-weight:800;font-size:1.15rem;color:var(--vinho,#7C0047)}
+.vcal-nav{display:flex;gap:8px}
+.vcal-nav button{border:1px solid #e4d6dd;background:#fff;border-radius:10px;padding:6px 12px;font-weight:700;color:var(--vinho,#7C0047);cursor:pointer;font-size:.85rem}
+.vcal-nav button:hover{background:#fbeef4}
+.vcal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.vcal-dow{text-align:center;font-size:.68rem;font-weight:700;letter-spacing:.03em;color:#9a8c93;padding:4px 0}
+.vcal-cell{position:relative;min-height:58px;border-radius:10px;border:1px solid #ececec;background:#fafafa;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px 2px}
+.vcal-cell.off{background:transparent;border:none}
+.vcal-cell.vazio .vcal-dnum{color:#bcbcbc;font-weight:600}
+.vcal-cell.tem{background:#e8f6ed;border:1.5px solid #93d4a8;cursor:pointer;transition:transform .08s,box-shadow .08s}
+.vcal-cell.tem:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(31,122,61,.18)}
+.vcal-cell.tem .vcal-dnum{color:#1c7a3d;font-weight:800}
+.vcal-dnum{font-family:'DM Mono',monospace;font-size:1rem;line-height:1}
+.vcal-dval{font-family:'DM Mono',monospace;font-size:.68rem;color:#2e8b57;margin-top:3px;font-weight:600}
+.vcal-check{position:absolute;top:3px;right:5px;font-size:.7rem;color:#1c7a3d;font-weight:800}
+.vcal-det{position:absolute;bottom:3px;right:4px;font-size:.62rem;opacity:.85}
+.vcal-legenda{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:14px;font-size:.78rem;color:#7a6a72}
+.vcal-legenda .lg{display:inline-flex;align-items:center;gap:6px}
+.vcal-legenda .sw{width:14px;height:14px;border-radius:4px;display:inline-block}
+.vcal-legenda .sw.tem{background:#e8f6ed;border:1.5px solid #93d4a8}
+.vcal-legenda .sw.vazio{background:#fafafa;border:1px solid #ececec}
+@media(max-width:520px){
+  .vcal-cell{min-height:50px}
+  .vcal-dnum{font-size:.9rem}
+  .vcal-dval{font-size:.6rem}
+  .vcal-card-val{font-size:1.25rem}
+}
+`;
+
+function injetarCssCalendario() {
+  if (document.getElementById('vcal-style')) return;
+  const style = document.createElement('style');
+  style.id = 'vcal-style';
+  style.textContent = VCAL_CSS;
+  document.head.appendChild(style);
+}
 
 // ===== INICIALIZAÇÃO =====
 export async function inicializarVendas() {
   const container = document.getElementById('vendas-container');
   if (!container) return;
 
+  injetarCssCalendario();
+
   container.innerHTML = `
     <div class="card">
       <div class="grafico-head">
-        <h3>📤 Importar TXT do PDV</h3>
-        <span class="grafico-sub">Suba o arquivo ou cole o conteúdo</span>
+        <h3>📤 Importar vendas do PDV</h3>
+        <span class="grafico-sub">Cole o relatório completo do Gestor Food (Ctrl+A → Ctrl+C → Ctrl+V)</span>
       </div>
 
-      <div class="upload-tabs">
-        <button class="upload-tab active" data-tab="arquivo">📁 Arquivo</button>
-        <button class="upload-tab" data-tab="texto">📋 Colar texto</button>
-      </div>
-
-      <div class="upload-tab-content active" data-tab="arquivo">
-        <div class="upload-zone" id="upload-zone">
-          <input type="file" id="upload-file" accept=".txt">
-          <div class="upload-icon">📄</div>
-          <div class="upload-title">Clique ou arraste o TXT do PDV aqui</div>
-          <div class="upload-hint">Formato esperado: relatório de vendas com seções TURNO, VENDEDOR, PRODUTO, DIA…</div>
-        </div>
-      </div>
-
-      <div class="upload-tab-content" data-tab="texto">
-        <textarea
-          id="upload-texto"
-          class="upload-textarea"
-          placeholder="Cole aqui o conteúdo completo do relatório do PDV (Ctrl+V)..."
-          rows="8"
-        ></textarea>
-        <div class="upload-acoes-texto">
-          <span class="upload-hint" id="upload-texto-hint">0 linhas</span>
-          <button class="btn btn-primary" id="btn-processar-texto">📊 Processar texto</button>
-        </div>
+      <textarea
+        id="upload-texto"
+        class="upload-textarea"
+        placeholder="Cole aqui o conteúdo completo do relatório do PDV (Ctrl+V)..."
+        rows="10"
+      ></textarea>
+      <div class="upload-acoes-texto">
+        <span class="upload-hint" id="upload-texto-hint">0 linhas</span>
+        <button class="btn btn-primary" id="btn-processar-texto">📊 Processar relatório</button>
       </div>
 
       <div id="preview-area" style="display:none"></div>
@@ -62,7 +98,7 @@ export async function inicializarVendas() {
     <div class="card" style="margin-top:16px">
       <div class="grafico-head">
         <h3>👥 Detalhamento Vendedor × Produto <span class="badge-opcional">opcional</span></h3>
-        <span class="grafico-sub">Suba o relatório "Itens vendidos por vendedor" pra ter valores REAIS em vez de estimativas</span>
+        <span class="grafico-sub">Cole o relatório "Itens vendidos por vendedor" pra ter valores REAIS em vez de estimativas</span>
       </div>
 
       <div class="info-vxp">
@@ -70,72 +106,57 @@ export async function inicializarVendas() {
         Útil para saber quem vende mais entradas, sobremesas, bebidas específicas, etc.
       </div>
 
-      <div class="upload-tabs">
-        <button class="upload-tab active" data-tab-vxp="arquivo">📁 Arquivo</button>
-        <button class="upload-tab" data-tab-vxp="texto">📋 Colar texto</button>
-      </div>
-
-      <div class="upload-tab-content-vxp active" data-tab-vxp="arquivo">
-        <div class="upload-zone" id="upload-zone-vxp">
-          <input type="file" id="upload-file-vxp" accept=".txt">
-          <div class="upload-icon">👥</div>
-          <div class="upload-title">Clique ou arraste o relatório "Itens vendidos por vendedor"</div>
-          <div class="upload-hint">Formato esperado: vendedor + seus produtos tabulados</div>
-        </div>
-      </div>
-
-      <div class="upload-tab-content-vxp" data-tab-vxp="texto">
-        <textarea
-          id="upload-texto-vxp"
-          class="upload-textarea"
-          placeholder="Cole aqui o conteúdo do relatório Vendedor × Produto (Ctrl+V)..."
-          rows="6"
-        ></textarea>
-        <div class="upload-acoes-texto">
-          <span class="upload-hint" id="upload-texto-vxp-hint">0 linhas</span>
-          <button class="btn btn-primary" id="btn-processar-vxp">📊 Processar</button>
-        </div>
+      <textarea
+        id="upload-texto-vxp"
+        class="upload-textarea"
+        placeholder="Cole aqui o conteúdo do relatório Vendedor × Produto (Ctrl+V)..."
+        rows="6"
+      ></textarea>
+      <div class="upload-acoes-texto">
+        <span class="upload-hint" id="upload-texto-vxp-hint">0 linhas</span>
+        <button class="btn btn-primary" id="btn-processar-vxp">📊 Processar</button>
       </div>
 
       <div id="preview-vxp" style="display:none"></div>
     </div>
 
-    <div class="card">
+    <!-- Calendário de cobertura de vendas -->
+    <div class="card" style="margin-top:16px">
       <div class="grafico-head">
-        <h3>📁 Dias já importados</h3>
-        <span class="grafico-sub" id="sub-importados"></span>
+        <h3>📅 Cobertura de vendas</h3>
+        <span class="grafico-sub">Clique num dia verde para ver os detalhes</span>
       </div>
-      <div id="lista-importados">
-        <div style="text-align:center;padding:30px"><span class="spinner"></span></div>
+
+      <div id="vendas-cal-totais" class="vcal-totais"></div>
+
+      <div class="vcal-head">
+        <div class="vcal-mes" id="vcal-mes-label">—</div>
+        <div class="vcal-nav">
+          <button id="vcal-prev">◀ Anterior</button>
+          <button id="vcal-next">Próximo ▶</button>
+        </div>
+      </div>
+
+      <div id="vendas-cal-grid" class="vcal-grid"></div>
+
+      <div class="vcal-legenda">
+        <span class="lg"><span class="sw tem"></span> Com vendas importadas</span>
+        <span class="lg"><span class="sw vazio"></span> Sem importação</span>
+        <span class="lg">👥 = tem também o detalhado</span>
       </div>
     </div>
   `;
 
-  setupTabs();
-  setupUpload();
   setupColarTexto();
-  setupTabsVxP();
-  setupUploadVxP();
   setupColarTextoVxP();
-  await carregarListaImportados();
+
+  document.getElementById('vcal-prev').onclick = () => navegarMes(-1);
+  document.getElementById('vcal-next').onclick = () => navegarMes(1);
+
+  await carregarCalendario();
 }
 
-// ===== TABS =====
-function setupTabs() {
-  document.querySelectorAll('.upload-tab').forEach(tab => {
-    tab.onclick = () => {
-      const alvo = tab.dataset.tab;
-      document.querySelectorAll('.upload-tab').forEach(t => t.classList.toggle('active', t === tab));
-      document.querySelectorAll('.upload-tab-content').forEach(c => {
-        c.classList.toggle('active', c.dataset.tab === alvo);
-      });
-      // Limpa prévia ao trocar de aba
-      cancelarUpload();
-    };
-  });
-}
-
-// ===== COLAR TEXTO =====
+// ===== COLAR TEXTO (relatório geral) =====
 function setupColarTexto() {
   const textarea = document.getElementById('upload-texto');
   const hint = document.getElementById('upload-texto-hint');
@@ -154,64 +175,13 @@ function setupColarTexto() {
       mostrarToast('Cole o conteúdo do relatório primeiro.', 'err');
       return;
     }
-    // Tenta detectar um "nome" virtual pro arquivo a partir do conteúdo
     const hoje = new Date();
     const nomeVirtual = `texto-colado-${hoje.toISOString().slice(0, 10)}.txt`;
     processarTexto(texto, nomeVirtual);
   };
 }
 
-// ===== SETUP UPLOAD =====
-function setupUpload() {
-  const zone = document.getElementById('upload-zone');
-  const input = document.getElementById('upload-file');
-
-  input.onchange = e => {
-    if (e.target.files[0]) processarArquivo(e.target.files[0]);
-  };
-
-  ['dragenter', 'dragover'].forEach(ev => {
-    zone.addEventListener(ev, e => {
-      e.preventDefault();
-      zone.classList.add('drag-over');
-    });
-  });
-  ['dragleave', 'drop'].forEach(ev => {
-    zone.addEventListener(ev, e => {
-      e.preventDefault();
-      zone.classList.remove('drag-over');
-    });
-  });
-  zone.addEventListener('drop', e => {
-    e.preventDefault();
-    zone.classList.remove('drag-over');
-    const f = e.dataTransfer.files[0];
-    if (f) processarArquivo(f);
-  });
-}
-
-// ===== PROCESSAR ARQUIVO =====
-async function processarArquivo(file) {
-  if (!file.name.toLowerCase().endsWith('.txt')) {
-    mostrarToast('O arquivo precisa ter extensão .txt', 'err');
-    return;
-  }
-
-  try {
-    // Detecta encoding: tenta UTF-8 primeiro, se der caractere quebrado usa ISO-8859-1 (comum em PDVs antigos)
-    let texto = await file.text();
-    if (/[\uFFFD\u0080-\u009F]/.test(texto)) {
-      const buf = await file.arrayBuffer();
-      texto = new TextDecoder('iso-8859-1').decode(buf);
-    }
-    processarTexto(texto, file.name);
-  } catch (e) {
-    console.error(e);
-    mostrarToast('Erro ao ler arquivo: ' + e.message, 'err');
-  }
-}
-
-// ===== PROCESSAR TEXTO (core - funciona pra arquivo ou texto colado) =====
+// ===== PROCESSAR TEXTO (core) =====
 function processarTexto(texto, nomeVirtual = 'texto-colado.txt') {
   const preview = document.getElementById('preview-area');
   preview.style.display = 'block';
@@ -299,8 +269,6 @@ function cancelarUpload() {
   arquivoPendente = null;
   const preview = document.getElementById('preview-area');
   if (preview) preview.style.display = 'none';
-  const fileInput = document.getElementById('upload-file');
-  if (fileInput) fileInput.value = '';
   const textarea = document.getElementById('upload-texto');
   if (textarea) {
     textarea.value = '';
@@ -332,7 +300,7 @@ async function confirmarUpload() {
     });
     mostrarToast(`Vendas de ${fmtData(data)} salvas!`, 'ok');
     cancelarUpload();
-    await carregarListaImportados();
+    await carregarCalendario();
     // Dispara recarga do dashboard na próxima vez que abrir
     window._dashboardPrecisaRecarregar = true;
   } catch (e) {
@@ -343,44 +311,7 @@ async function confirmarUpload() {
   }
 }
 
-// ===== LISTA DE IMPORTADOS =====
-// ===== UPLOAD VENDEDOR × PRODUTO (detalhado, opcional) =====
-
-function setupTabsVxP() {
-  document.querySelectorAll('[data-tab-vxp]').forEach(tab => {
-    if (tab.tagName !== 'BUTTON') return;
-    tab.onclick = () => {
-      const alvo = tab.dataset.tabVxp;
-      document.querySelectorAll('[data-tab-vxp]').forEach(el => {
-        if (el.dataset.tabVxp === alvo) el.classList.add('active');
-        else el.classList.remove('active');
-      });
-    };
-  });
-}
-
-function setupUploadVxP() {
-  const zona = document.getElementById('upload-zone-vxp');
-  const input = document.getElementById('upload-file-vxp');
-  if (!zona || !input) return;
-
-  zona.onclick = () => input.click();
-  input.onchange = e => {
-    const file = e.target.files?.[0];
-    if (file) processarArquivoVxP(file);
-  };
-
-  // Drag & drop
-  zona.ondragover = e => { e.preventDefault(); zona.classList.add('drag'); };
-  zona.ondragleave = () => zona.classList.remove('drag');
-  zona.ondrop = e => {
-    e.preventDefault();
-    zona.classList.remove('drag');
-    const file = e.dataTransfer.files?.[0];
-    if (file) processarArquivoVxP(file);
-  };
-}
-
+// ===== COLAR TEXTO (Vendedor × Produto, detalhado, opcional) =====
 function setupColarTextoVxP() {
   const ta = document.getElementById('upload-texto-vxp');
   const hint = document.getElementById('upload-texto-vxp-hint');
@@ -396,27 +327,6 @@ function setupColarTextoVxP() {
     if (!texto) { mostrarToast('Cole o conteúdo do relatório primeiro.', 'err'); return; }
     processarTextoVxP(texto);
   };
-}
-
-async function processarArquivoVxP(file) {
-  try {
-    // Tenta UTF-8 primeiro, depois latin-1 se falhar
-    let texto;
-    try {
-      texto = await file.text();
-      // Heurística: se tem muito caractere "Ã" ou "�", pode ser encoding errado
-      if ((texto.match(/Ã[\u0080-\u00BF]/g) || []).length > 5) {
-        const buf = await file.arrayBuffer();
-        texto = new TextDecoder('latin1').decode(buf);
-      }
-    } catch (e) {
-      const buf = await file.arrayBuffer();
-      texto = new TextDecoder('latin1').decode(buf);
-    }
-    processarTextoVxP(texto, file.name);
-  } catch (e) {
-    mostrarToast('Erro ao ler arquivo: ' + e.message, 'err');
-  }
 }
 
 function processarTextoVxP(texto, nomeVirtual = 'texto-colado.txt') {
@@ -445,7 +355,7 @@ function renderPreviewVxP() {
   const topVend = [...vendedores].sort((a,b) => b.total - a.total).slice(0, 5);
   const totalQtd = vendedores.reduce((s,v) => s + v.totalQtd, 0);
 
-  // Seletor de dia: lista os dias já importados + opção de escolher outro
+  // Seletor de dia: lista os dias já importados
   const opcoesDia = datasImportadas.map(d =>
     `<option value="${d}">${fmtData(d)}</option>`
   ).join('');
@@ -513,10 +423,12 @@ function renderPreviewVxP() {
 function cancelarUploadVxP() {
   arquivoVxPPendente = null;
   document.getElementById('preview-vxp').style.display = 'none';
-  const input = document.getElementById('upload-file-vxp');
-  if (input) input.value = '';
   const ta = document.getElementById('upload-texto-vxp');
-  if (ta) ta.value = '';
+  if (ta) {
+    ta.value = '';
+    const hint = document.getElementById('upload-texto-vxp-hint');
+    if (hint) hint.textContent = '0 linhas';
+  }
 }
 
 async function confirmarUploadVxP() {
@@ -558,7 +470,7 @@ async function confirmarUploadVxP() {
 
     mostrarToast(`✓ Detalhamento do dia ${fmtData(dia)} salvo!`, 'ok');
     cancelarUploadVxP();
-    await carregarListaImportados();
+    await carregarCalendario();
     window._dashboardPrecisaRecarregar = true;
   } catch (e) {
     console.error(e);
@@ -569,64 +481,96 @@ async function confirmarUploadVxP() {
   }
 }
 
-async function carregarListaImportados() {
-  const lista = document.getElementById('lista-importados');
+// ===== CALENDÁRIO DE COBERTURA =====
+async function carregarCalendario() {
+  const grid = document.getElementById('vendas-cal-grid');
+  if (grid) grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:30px"><span class="spinner"></span></div>`;
   try {
-    const vendas = await listarVendas({ limite: 200 });
+    const vendas = await listarVendas({ limite: 400 });
+    vendasCache = vendas;
     datasImportadas = vendas.map(v => v.id);
 
-    if (!vendas.length) {
-      lista.innerHTML = `
-        <div class="empty-state" style="box-shadow:none;padding:30px">
-          <div class="empty-icon">📁</div>
-          <h3>Nenhum dia importado ainda</h3>
-          <p>Suba o primeiro TXT do PDV no bloco acima para começar.</p>
-        </div>`;
-      document.getElementById('sub-importados').textContent = '';
-      return;
+    if (!calMes) {
+      const hoje = new Date();
+      calMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
     }
-
-    lista.innerHTML = vendas.map(v => {
-      const temGeral     = v.totais?.total != null;        // todo dia importado tem geral
-      const temDetalhado = (v.vendedoresDetalhado || []).length > 0;
-      return `
-        <div class="importado-item">
-          <div class="importado-data">
-            <div class="importado-dia">${fmtData(v.id)}</div>
-            <div class="importado-dow">${diaSemana(v.id)}</div>
-          </div>
-          <div class="importado-info">
-            <div class="importado-total">${fmtMoeda(v.totais?.total)}</div>
-            <div class="importado-meta">
-              ${fmtInt(v.totais?.qtd)} itens · ${(v.vendedores || []).length} vendedores
-            </div>
-          </div>
-          <div class="importado-arquivos">
-            <div class="arq-status ${temGeral ? 'arq-ok' : 'arq-falta'}" title="Relatório geral do PDV">
-              <span class="arq-check">${temGeral ? '✓' : '—'}</span>
-              <span class="arq-label">Geral</span>
-            </div>
-            <div class="arq-status ${temDetalhado ? 'arq-ok' : 'arq-falta'}" title="Relatório Vendedor × Produto">
-              <span class="arq-check">${temDetalhado ? '✓' : '—'}</span>
-              <span class="arq-label">Detalhado</span>
-            </div>
-          </div>
-          <div class="importado-acoes">
-            <button class="btn btn-ghost btn-sm" onclick="verDetalheVendas('${v.id}')">Ver detalhes</button>
-          </div>
-        </div>
-      `;
-    }).join('');
-    const comDetalhado = vendas.filter(v => (v.vendedoresDetalhado || []).length > 0).length;
-    const suffix = comDetalhado > 0
-      ? ` · ${comDetalhado} com detalhamento`
-      : '';
-    document.getElementById('sub-importados').textContent =
-      `${vendas.length} ${vendas.length === 1 ? 'dia' : 'dias'} no total${suffix}`;
+    renderCalendario();
   } catch (e) {
     console.error(e);
-    lista.innerHTML = `<div class="preview-err">Erro ao carregar: ${e.message}</div>`;
+    if (grid) grid.innerHTML = `<div class="preview-err" style="grid-column:1/-1">Erro ao carregar: ${e.message}</div>`;
   }
+}
+
+function navegarMes(delta) {
+  if (!calMes) return;
+  calMes = new Date(calMes.getFullYear(), calMes.getMonth() + delta, 1);
+  renderCalendario();
+}
+
+function renderCalendario() {
+  const ano = calMes.getFullYear();
+  const mes = calMes.getMonth(); // 0-based
+  const prefixo = `${ano}-${String(mes + 1).padStart(2, '0')}`;
+
+  // --- Totais ---
+  const doMes = vendasCache.filter(v => v.id.startsWith(prefixo));
+  const receitaMes = doMes.reduce((s, v) => s + (v.totais?.total || 0), 0);
+  const totaisEl = document.getElementById('vendas-cal-totais');
+  if (totaisEl) {
+    totaisEl.innerHTML = `
+      <div class="vcal-card">
+        <div class="vcal-card-label">Dias importados (mês)</div>
+        <div class="vcal-card-val">${doMes.length}</div>
+      </div>
+      <div class="vcal-card">
+        <div class="vcal-card-label">Receita do mês</div>
+        <div class="vcal-card-val">${fmtMoeda(receitaMes)}</div>
+      </div>
+      <div class="vcal-card ouro">
+        <div class="vcal-card-label">Total geral importado</div>
+        <div class="vcal-card-val">${vendasCache.length} ${vendasCache.length === 1 ? 'dia' : 'dias'}</div>
+      </div>
+    `;
+  }
+
+  // --- Cabeçalho do mês ---
+  const lbl = document.getElementById('vcal-mes-label');
+  if (lbl) lbl.textContent = `${NOMES_MES[mes]} ${ano}`;
+
+  // --- Grade ---
+  const mapa = {};
+  vendasCache.forEach(v => { mapa[v.id] = v; });
+
+  const primeiroDow = new Date(ano, mes, 1).getDay(); // 0=DOM
+  const diasNoMes = new Date(ano, mes + 1, 0).getDate();
+
+  const dows = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
+  let html = dows.map(d => `<div class="vcal-dow">${d}</div>`).join('');
+
+  for (let i = 0; i < primeiroDow; i++) {
+    html += `<div class="vcal-cell off"></div>`;
+  }
+
+  for (let d = 1; d <= diasNoMes; d++) {
+    const id = `${prefixo}-${String(d).padStart(2, '0')}`;
+    const v = mapa[id];
+    if (v) {
+      const temDet = (v.vendedoresDetalhado || []).length > 0;
+      const titulo = `${fmtData(id)} · ${fmtMoeda(v.totais?.total)}${temDet ? ' · com detalhado' : ' · só geral'}`;
+      html += `
+        <div class="vcal-cell tem" onclick="verDetalheVendas('${id}')" title="${titulo}">
+          <span class="vcal-check">✓</span>
+          ${temDet ? '<span class="vcal-det" title="tem detalhado">👥</span>' : ''}
+          <span class="vcal-dnum">${d}</span>
+          <span class="vcal-dval">${fmtK(v.totais?.total)}</span>
+        </div>`;
+    } else {
+      html += `<div class="vcal-cell vazio"><span class="vcal-dnum">${d}</span></div>`;
+    }
+  }
+
+  const grid = document.getElementById('vendas-cal-grid');
+  if (grid) grid.innerHTML = html;
 }
 
 // ===== AÇÕES GLOBAIS (chamadas do HTML) =====
