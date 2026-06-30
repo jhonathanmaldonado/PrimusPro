@@ -136,7 +136,7 @@ async function carregarContagens() {
   lista.innerHTML = '<div style="text-align:center;padding:40px"><span class="spinner"></span> Carregando contagens...</div>';
   try {
     contagensCache = await listarContagens({ limite: 200 });
-    renderizarContagens();
+    renderCalendarioContagens();
   } catch (e) {
     console.error(e);
     lista.innerHTML = `<div class="empty-state">
@@ -146,6 +146,141 @@ async function carregarContagens() {
     </div>`;
   }
 }
+
+// ===== CALENDÁRIO DE CONTAGENS (visão do gestor) =====
+// Mostra um mês com ícones do que foi feito por dia (🌅 início, 🌙 final, 🍨 sorvete).
+// Clicar no dia abre os cards daquele dia logo abaixo (com Ver detalhes / Excluir).
+let calContagemMes = null;   // Date do 1º dia do mês exibido
+let diaContagemSel = null;   // 'YYYY-MM-DD' selecionado
+
+const TIPO_ICON_CAL = { ini: '🌅', fin: '🌙', sorv: '🍨' };
+
+function injetarCssCalContagem() {
+  if (document.getElementById('ccal-style')) return;
+  const s = document.createElement('style');
+  s.id = 'ccal-style';
+  s.textContent = `
+.ccal-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.ccal-mes{font-family:'Raleway',sans-serif;font-weight:800;font-size:1.15rem;color:var(--vinho,#7C0047)}
+.ccal-nav{display:flex;gap:8px}
+.ccal-nav button{border:1px solid #e4d6dd;background:#fff;border-radius:10px;padding:6px 12px;font-weight:700;color:var(--vinho,#7C0047);cursor:pointer;font-size:.85rem}
+.ccal-nav button:hover{background:#fbeef4}
+.ccal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.ccal-dow{text-align:center;font-size:.68rem;font-weight:700;letter-spacing:.03em;color:#9a8c93;padding:4px 0}
+.ccal-cell{position:relative;min-height:64px;border-radius:10px;border:1px solid #ececec;background:#fafafa;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px 2px}
+.ccal-cell.off{background:transparent;border:none}
+.ccal-cell.vazia .ccal-dnum{color:#bcbcbc;font-weight:600}
+.ccal-cell.tem{background:#e8f6ed;border:1.5px solid #93d4a8;cursor:pointer;transition:transform .08s,box-shadow .08s}
+.ccal-cell.tem:hover{transform:translateY(-1px);box-shadow:0 3px 10px rgba(31,122,61,.18)}
+.ccal-cell.sel{outline:3px solid var(--amarelo,#FAB900);outline-offset:1px}
+.ccal-cell.tem .ccal-dnum{color:#1c7a3d;font-weight:800}
+.ccal-dnum{font-family:'DM Mono',monospace;font-size:1rem;line-height:1}
+.ccal-icons{margin-top:4px;font-size:.82rem;letter-spacing:1px;line-height:1}
+.ccal-legenda{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:14px;font-size:.78rem;color:#7a6a72}
+.ccal-dia-titulo{font-family:'Raleway',sans-serif;font-weight:800;color:var(--vinho,#7C0047);margin:18px 0 10px;font-size:1rem}
+@media(max-width:520px){.ccal-cell{min-height:54px}.ccal-dnum{font-size:.9rem}.ccal-icons{font-size:.72rem}}
+`;
+  document.head.appendChild(s);
+}
+
+function renderCalendarioContagens() {
+  injetarCssCalContagem();
+
+  // Esconde a barra de filtros — o calendário a substitui
+  const barra = document.querySelector('#view-contagens .filtros-bar');
+  if (barra) barra.style.display = 'none';
+
+  const lista = document.getElementById('contagens-lista');
+  lista.classList.remove('contagens-grid'); // evita o grid de cards atrapalhar o calendário
+  lista.innerHTML = `
+    <div class="ccal-head">
+      <div class="ccal-mes" id="ccal-mes-label">—</div>
+      <div class="ccal-nav">
+        <button id="ccal-prev">◀ Anterior</button>
+        <button id="ccal-next">Próximo ▶</button>
+      </div>
+    </div>
+    <div id="ccal-grid" class="ccal-grid"></div>
+    <div class="ccal-legenda">
+      <span>🌅 Início</span><span>🌙 Final</span><span>🍨 Sorvetes</span>
+      <span>· clique num dia para ver os detalhes</span>
+    </div>
+    <div id="contagens-do-dia"></div>
+  `;
+
+  document.getElementById('ccal-prev').onclick = () => navegarMesContagem(-1);
+  document.getElementById('ccal-next').onclick = () => navegarMesContagem(1);
+
+  if (!calContagemMes) {
+    // abre no mês da contagem mais recente (ou mês atual se não houver)
+    const maisRecente = contagensCache[0]?.data;
+    const base = maisRecente ? new Date(maisRecente + 'T00:00:00') : new Date();
+    calContagemMes = new Date(base.getFullYear(), base.getMonth(), 1);
+  }
+  renderGradeContagem();
+}
+
+function navegarMesContagem(delta) {
+  if (!calContagemMes) return;
+  calContagemMes = new Date(calContagemMes.getFullYear(), calContagemMes.getMonth() + delta, 1);
+  diaContagemSel = null;
+  document.getElementById('contagens-do-dia').innerHTML = '';
+  renderGradeContagem();
+}
+
+function renderGradeContagem() {
+  const ano = calContagemMes.getFullYear();
+  const mes = calContagemMes.getMonth();
+  const prefixo = `${ano}-${String(mes + 1).padStart(2, '0')}`;
+
+  document.getElementById('ccal-mes-label').textContent =
+    new Date(ano, mes, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+      .replace(/^./, c => c.toUpperCase());
+
+  // Agrupa tipos presentes por dia
+  const tiposPorDia = {};
+  contagensCache.forEach(c => {
+    if (!c.data || !c.data.startsWith(prefixo)) return;
+    (tiposPorDia[c.data] = tiposPorDia[c.data] || new Set()).add(c.tipo);
+  });
+
+  const primeiroDow = new Date(ano, mes, 1).getDay();
+  const diasNoMes = new Date(ano, mes + 1, 0).getDate();
+  const dows = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'];
+  let html = dows.map(d => `<div class="ccal-dow">${d}</div>`).join('');
+
+  for (let i = 0; i < primeiroDow; i++) html += `<div class="ccal-cell off"></div>`;
+
+  for (let d = 1; d <= diasNoMes; d++) {
+    const data = `${prefixo}-${String(d).padStart(2, '0')}`;
+    const tipos = tiposPorDia[data];
+    if (tipos && tipos.size) {
+      const icons = ['ini', 'fin', 'sorv'].filter(t => tipos.has(t)).map(t => TIPO_ICON_CAL[t]).join(' ');
+      const sel = data === diaContagemSel ? ' sel' : '';
+      html += `
+        <div class="ccal-cell tem${sel}" onclick="__selDiaContagem('${data}')" title="${formatarDataPtBr(data)}">
+          <span class="ccal-dnum">${d}</span>
+          <span class="ccal-icons">${icons}</span>
+        </div>`;
+    } else {
+      html += `<div class="ccal-cell vazia"><span class="ccal-dnum">${d}</span></div>`;
+    }
+  }
+
+  document.getElementById('ccal-grid').innerHTML = html;
+}
+
+window.__selDiaContagem = function(data) {
+  diaContagemSel = data;
+  renderGradeContagem(); // re-render pra marcar o dia selecionado
+  const alvo = document.getElementById('contagens-do-dia');
+  const doDia = contagensCache.filter(c => c.data === data);
+  if (!doDia.length) { alvo.innerHTML = ''; return; }
+  alvo.innerHTML = `
+    <div class="ccal-dia-titulo">📋 Contagens de ${formatarDataPtBr(data)}</div>
+    <div class="contagens-grid">${doDia.map(cardContagemHTML).join('')}</div>
+  `;
+};
 
 function renderizarContagens() {
   const lista = document.getElementById('contagens-lista');
@@ -168,11 +303,17 @@ function renderizarContagens() {
   const tipoLabel = { ini: 'Bebidas Início', fin: 'Bebidas Final', sorv: 'Sorvetes' };
   const tipoIcon  = { ini: '🌅', fin: '🌙', sorv: '🍨' };
 
-  lista.innerHTML = arr.map(c => {
-    const qtdItens = Object.keys(c.itens || {}).length;
-    const dataFmt = formatarDataPtBr(c.data);
-    const hora = c.criadoEm?.toDate ? formatarHora(c.criadoEm.toDate()) : '';
-    return `
+  lista.innerHTML = arr.map(cardContagemHTML).join('');
+}
+
+// Template de um card de contagem (reusado na lista e no calendário/dia)
+function cardContagemHTML(c) {
+  const tipoLabel = { ini: 'Bebidas Início', fin: 'Bebidas Final', sorv: 'Sorvetes' };
+  const tipoIcon  = { ini: '🌅', fin: '🌙', sorv: '🍨' };
+  const qtdItens = Object.keys(c.itens || {}).length;
+  const dataFmt = formatarDataPtBr(c.data);
+  const hora = c.criadoEm?.toDate ? formatarHora(c.criadoEm.toDate()) : '';
+  return `
       <div class="contagem-card" data-id="${c.id}">
         <div class="contagem-card-head">
           <div class="contagem-tipo-badge ${c.tipo}">
@@ -204,7 +345,6 @@ function renderizarContagens() {
           </button>
         </div>
       </div>`;
-  }).join('');
 }
 
 window.excluirContagemConf = async function(id) {
@@ -219,9 +359,10 @@ window.excluirContagemConf = async function(id) {
   try {
     await excluirContagem(id);
     mostrarToastGlobal(`Contagem excluída.`, 'ok');
-    // Remove do cache local e re-renderiza
+    // Remove do cache local e re-renderiza o calendário (e o dia aberto, se houver)
     contagensCache = contagensCache.filter(x => x.id !== id);
-    renderizarContagens();
+    renderGradeContagem();
+    if (diaContagemSel) window.__selDiaContagem(diaContagemSel);
   } catch (e) {
     console.error(e);
     mostrarToastGlobal('Erro ao excluir: ' + e.message, 'err');
