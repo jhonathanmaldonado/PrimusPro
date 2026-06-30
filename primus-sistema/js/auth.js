@@ -197,14 +197,33 @@ export async function setAtivoUsuario(id, ativo) {
   await setDoc(ref, novoDado, { merge: false });
 }
 
-// ===== SEED INICIAL =====
-// Se não tiver nenhum usuário, cria os 3 padrão.
-// Depois você pode mudar pelo painel do gestor.
+// ===== CRIAÇÃO DE USUÁRIOS INICIAIS (MANUAL E PROTEGIDA) =====
+// IMPORTANTE: a criação dos usuários padrão NUNCA acontece sozinha.
+// Antes, isto rodava automático a cada abertura da tela de login e, quando uma
+// leitura do Firestore falhava/voltava vazia (cache ruim, conexão), o sistema
+// achava que era "primeira instalação" e recriava os padrões POR CIMA dos
+// usuários reais — apagando-os e ressuscitando inativos. Agora só é criado por
+// ação explícita do gestor, pelo botão da tela de login.
+
+// No-op seguro: mantido apenas para não quebrar chamadas antigas. NÃO cria nada.
 export async function seedUsuariosSeNecessario() {
+  return false;
+}
+
+// Cria os 3 usuários padrão. Deve ser chamada SOMENTE pelo botão manual da
+// tela de login, numa instalação realmente nova. Recusa se já houver usuários.
+// Retorna os PINs criados para exibir uma única vez.
+export async function criarUsuariosIniciais() {
   const snap = await getDocs(collection(db, COL_USUARIOS));
-  if (!snap.empty) return false;
-  await criarUsuario({ id: 'barman_padrao',  nome: 'Barman',  perfil: 'barman',  pin: '1111' });
-  await criarUsuario({ id: 'gerente_padrao', nome: 'Gerente', perfil: 'gerente', pin: '2222' });
+  if (!snap.empty) {
+    throw new Error('Já existem usuários cadastrados — criação cancelada por segurança.');
+  }
   await criarUsuario({ id: 'gestor_padrao',  nome: 'Gestor',  perfil: 'gestor',  pin: '0000' });
-  return true;
+  await criarUsuario({ id: 'gerente_padrao', nome: 'Gerente', perfil: 'gerente', pin: '2222' });
+  await criarUsuario({ id: 'barman_padrao',  nome: 'Barman',  perfil: 'barman',  pin: '1111' });
+  return [
+    { nome: 'Gestor',  pin: '0000' },
+    { nome: 'Gerente', pin: '2222' },
+    { nome: 'Barman',  pin: '1111' },
+  ];
 }

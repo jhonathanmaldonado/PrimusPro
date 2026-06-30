@@ -343,7 +343,7 @@
 <div class="toast" id="toast"></div>
 
 <script type="module">
-  import { listarUsuarios, fazerLogin, seedUsuariosSeNecessario, getSessao } from './js/auth.js';
+  import { listarUsuarios, fazerLogin, criarUsuariosIniciais, getSessao } from './js/auth.js';
 
   // Se já tem sessão, redireciona
   const sess = getSessao();
@@ -376,16 +376,24 @@
 
   async function carregarUsuarios() {
     try {
-      // Seed inicial se for o primeiro acesso
-      const fezSeed = await seedUsuariosSeNecessario();
-
       const usuarios = await listarUsuarios();
       if (!usuarios.length) {
         $listaUsuarios.innerHTML = `
           <div class="empty-users">
             <div class="icon">👥</div>
-            Nenhum usuário cadastrado.
+            <div style="font-weight:700;margin-bottom:6px">Nenhum usuário aparece aqui</div>
+            <div style="font-size:12px;line-height:1.55;opacity:.85">
+              Se você <strong>já tinha usuários</strong> e eles sumiram, quase sempre é
+              falha de conexão. <strong>Recarregue a página (F5)</strong> antes de qualquer coisa —
+              NÃO crie usuários por cima.
+            </div>
+            <button type="button" id="btn-criar-iniciais"
+              style="margin-top:14px;padding:9px 14px;border:1px solid var(--cinza-borda,#ddd);background:#fff;border-radius:10px;font-weight:600;cursor:pointer;font-size:12px">
+              Criar usuários iniciais (só em instalação nova)
+            </button>
           </div>`;
+        const b = document.getElementById('btn-criar-iniciais');
+        if (b) b.onclick = criarIniciaisHandler;
         return;
       }
 
@@ -405,20 +413,6 @@
         btn.onclick = () => selecionarUsuario(u);
         $listaUsuarios.appendChild(btn);
       });
-
-      if (fezSeed) {
-        $seedNoticeWrap.innerHTML = `
-          <div class="seed-notice">
-            <strong>⚡ Primeiro acesso</strong>
-            Usuários padrão criados. PINs iniciais:
-            <div style="margin-top:8px;line-height:2">
-              Barman: <span class="pin-sample">1111</span> ·
-              Gerente: <span class="pin-sample">2222</span> ·
-              Gestor: <span class="pin-sample">0000</span>
-            </div>
-            <div style="margin-top:8px;opacity:0.85">Troque os PINs assim que fizer o primeiro login como gestor.</div>
-          </div>`;
-      }
     } catch (e) {
       console.error(e);
       $listaUsuarios.innerHTML = `
@@ -427,6 +421,31 @@
           <div style="color:var(--vermelho);font-weight:600;margin-bottom:6px">Erro ao conectar no Firebase</div>
           <div style="font-size:11px">${e.message}</div>
         </div>`;
+    }
+  }
+
+  // Criação manual e protegida dos usuários padrão (Opção A — só por ação explícita).
+  async function criarIniciaisHandler() {
+    const ok = confirm(
+      'Criar os usuários padrão (Gestor, Gerente, Barman)?\n\n' +
+      'Faça isso APENAS numa instalação nova, com o sistema realmente vazio.\n\n' +
+      'Se você já tinha usuários e eles sumiram, CANCELE e recarregue a página (F5) — ' +
+      'provavelmente é falha de conexão, e criar agora vai atrapalhar.'
+    );
+    if (!ok) return;
+    try {
+      const criados = await criarUsuariosIniciais();
+      const linhas = criados.map(c => `${c.nome}: <span class="pin-sample">${c.pin}</span>`).join(' · ');
+      $seedNoticeWrap.innerHTML = `
+        <div class="seed-notice">
+          <strong>✅ Usuários criados</strong>
+          PINs iniciais (anote e troque após o 1º login):
+          <div style="margin-top:8px;line-height:2">${linhas}</div>
+        </div>`;
+      await carregarUsuarios();
+    } catch (e) {
+      console.error(e);
+      mostrarToast(e.message, 'err');
     }
   }
 
