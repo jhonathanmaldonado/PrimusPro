@@ -51,6 +51,7 @@ export async function inicializarCompras() {
           · Sugestão para cobrir <strong>${COBERTURA_ALVO_DIAS} dias</strong>
         </div>
         <div class="compras-acoes-topo">
+          <button class="btn btn-ghost btn-sm" id="btn-diagnostico">🔍 Conferir cálculo de demanda</button>
           <button class="btn btn-ghost btn-sm" id="btn-fornecedores">⚙️ Gerenciar fornecedores</button>
           <button class="btn btn-ghost btn-sm" id="btn-recalcular">🔄 Recalcular</button>
         </div>
@@ -72,6 +73,24 @@ export async function inicializarCompras() {
       <div id="compras-resumo" style="display:none"></div>
       <div id="compras-lista" style="display:none"></div>
       <div id="compras-acoes-rodape" style="display:none"></div>
+    </div>
+
+    <!-- Modal: Diagnóstico de Demanda (somente leitura) -->
+    <div class="modal-backdrop" id="modal-diagnostico">
+      <div class="modal-box" style="max-width:720px">
+        <button class="modal-close" id="modal-diag-close">✕</button>
+        <div class="modal-head">
+          <h3>🔍 Conferir cálculo de demanda</h3>
+          <p>Compara o cálculo atual com o novo (15 dias com estoque, ignorando rupturas). Só leitura — não altera nada.</p>
+        </div>
+        <div style="padding:16px 24px 24px">
+          <div class="diag-controles">
+            <select id="diag-produto" class="diag-select"></select>
+            <button class="btn btn-primary" id="btn-diag-rodar">Conferir</button>
+          </div>
+          <div id="diag-resultado" style="margin-top:16px"></div>
+        </div>
+      </div>
     </div>
 
     <!-- Modal: Gerenciar Fornecedores -->
@@ -97,6 +116,12 @@ export async function inicializarCompras() {
 
   document.getElementById('btn-fornecedores').onclick = abrirModalFornecedores;
   document.getElementById('btn-recalcular').onclick = carregarECalcular;
+  document.getElementById('btn-diagnostico').onclick = abrirDiagnostico;
+  document.getElementById('modal-diag-close').onclick = fecharDiagnostico;
+  document.getElementById('modal-diagnostico').onclick = e => {
+    if (e.target.id === 'modal-diagnostico') fecharDiagnostico();
+  };
+  document.getElementById('btn-diag-rodar').onclick = rodarDiagnostico;
   document.getElementById('modal-forn-close').onclick = fecharModalFornecedores;
 
   await carregarECalcular();
@@ -1039,6 +1064,222 @@ window.removerFornecedor = async function(idx) {
   await salvarFornecedores(fornecedoresCache);
   renderizarFornecedoresModal();
 };
+
+// ============================================================================
+// DIAGNÓSTICO DE DEMANDA (somente leitura) — motor novo vs atual
+// ============================================================================
+
+const DIAG_DIAS_ALVO = 15;   // dias COM ESTOQUE que queremos juntar (3 semanas no 5x2)
+const DIAG_BUSCA_DIAS = 60;  // quanto recuar no tempo buscando esses dias
+
+function injetarCssDiag() {
+  if (document.getElementById('diag-style')) return;
+  const s = document.createElement('style');
+  s.id = 'diag-style';
+  s.textContent = `
+.diag-controles{display:flex;gap:10px;align-items:center}
+.diag-select{flex:1;padding:10px 12px;border:1px solid var(--cinza-borda,#e0d8dc);border-radius:10px;font-size:14px;background:#fff}
+.diag-cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+.diag-box{border-radius:12px;padding:14px 16px;border:1px solid #ececec}
+.diag-box.novo{border-left:5px solid #1c7a3d;background:#e8f6ed}
+.diag-box.antigo{border-left:5px solid #b0b0b0;background:#f6f6f6}
+.diag-box h5{margin:0 0 8px;font-family:'Raleway',sans-serif;font-size:.82rem;letter-spacing:.03em;text-transform:uppercase;color:#7a6a72}
+.diag-linha{display:flex;justify-content:space-between;font-size:.9rem;padding:3px 0}
+.diag-linha b{font-family:'DM Mono',monospace}
+.diag-destaque{font-size:1.5rem;font-weight:800;font-family:'DM Mono',monospace;color:#1c7a3d}
+.diag-antigo-val{font-size:1.5rem;font-weight:800;font-family:'DM Mono',monospace;color:#888}
+.diag-dias{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.diag-dia{font-size:.72rem;font-family:'DM Mono',monospace;padding:3px 7px;border-radius:6px;background:#e8f6ed;border:1px solid #93d4a8;color:#1c7a3d}
+.diag-dia.zero{background:#fff7e6;border-color:#f0c674;color:#9a6b00}
+.diag-dia.rupt{background:#fdeaea;border-color:#e0a0a0;color:#a33}
+.diag-sec{font-size:.8rem;font-weight:700;color:#7a6a72;margin:14px 0 4px}
+.diag-tend{display:inline-block;padding:2px 10px;border-radius:20px;font-size:.78rem;font-weight:700}
+.diag-tend.subindo{background:#e8f6ed;color:#1c7a3d}
+.diag-tend.caindo{background:#fdeaea;color:#a33}
+.diag-tend.estavel{background:#f0f0f0;color:#666}
+`;
+  document.head.appendChild(s);
+}
+
+async function abrirDiagnostico() {
+  injetarCssDiag();
+  if (!bebidasCache.length) {
+    try { bebidasCache = await obterBebidas(); } catch (_) {}
+  }
+  // Popula o seletor (Sprite Lemon Fresh no topo, se existir)
+  const sel = document.getElementById('diag-produto');
+  const lista = [...bebidasCache].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+  const idxSprite = lista.findIndex(b => slugify(b.nome).includes('sprite') && slugify(b.nome).includes('lemon'));
+  if (idxSprite > 0) { const [sp] = lista.splice(idxSprite, 1); lista.unshift(sp); }
+  sel.innerHTML = lista.map(b => `<option value="${escapeHtml(b.nome)}">${escapeHtml(b.nome)}</option>`).join('');
+
+  document.getElementById('diag-resultado').innerHTML =
+    '<p style="color:var(--cinza-texto,#888);font-size:13px">Escolha um produto e clique em Conferir.</p>';
+  document.getElementById('modal-diagnostico').classList.add('open');
+}
+
+function fecharDiagnostico() {
+  document.getElementById('modal-diagnostico').classList.remove('open');
+}
+
+async function rodarDiagnostico() {
+  const nome = document.getElementById('diag-produto').value;
+  const out = document.getElementById('diag-resultado');
+  if (!nome) return;
+  out.innerHTML = '<div style="text-align:center;padding:24px"><span class="spinner"></span> Cruzando contagens e vendas...</div>';
+
+  try {
+    const inicio = new Date(); inicio.setDate(inicio.getDate() - DIAG_BUSCA_DIAS);
+    const dataInicio = toIso(inicio);
+
+    const [contagens, vendas] = await Promise.all([
+      listarContagens({ dataInicio, limite: 500 }),
+      listarVendas({ dataInicio, limite: 365 })
+    ]);
+
+    const r = calcularDemandaProduto(nome, contagens, vendas, DIAG_DIAS_ALVO);
+    renderDiagnostico(out, nome, r);
+  } catch (e) {
+    console.error(e);
+    out.innerHTML = `<div class="preview-err">Erro: ${e.message}</div>`;
+  }
+}
+
+// ===== MOTOR: demanda real por dias-com-estoque =====
+function calcularDemandaProduto(nomeProduto, contagens, vendas, nAlvo = DIAG_DIAS_ALVO) {
+  const slug = slugify(nomeProduto);
+
+  // 1) Venda do produto por dia (match direto + fuzzy, igual a lista)
+  const vendaDia = {};
+  vendas.forEach(v => {
+    let q = 0;
+    (v.produtos || []).forEach(p => {
+      const sp = slugify(p.nome);
+      if (sp === slug || slugsSemelhantes(sp, slug)) q += p.qtd || 0;
+    });
+    if (q > 0) vendaDia[v.id] = (vendaDia[v.id] || 0) + q;
+  });
+
+  // 2) Saldo por dia a partir das contagens (ini principal, fin reforco).
+  //    Lista vem ordenada desc (data + criadoEm) -> 1a ocorrencia por dia = mais recente.
+  const saldoIni = {}, saldoFin = {};
+  contagens.forEach(c => {
+    const it = c.itens || {};
+    if (c.tipo === 'ini' && saldoIni[c.data] === undefined) {
+      const v = it[slug];
+      if (v && typeof v === 'object') {
+        saldoIni[c.data] = (typeof v.total === 'number' && v.total > 0)
+          ? v.total : (v.fr || v.freezer || 0) + (v.est || v.estoque || 0);
+      }
+    }
+    if (c.tipo === 'fin' && saldoFin[c.data] === undefined) {
+      const v = it[slug + '__fin'];
+      if (v && typeof v === 'object') saldoFin[c.data] = v.final || 0;
+    }
+  });
+
+  // 3) Universo de dias, do mais recente ao mais antigo
+  const todosDias = [...new Set([
+    ...Object.keys(saldoIni), ...Object.keys(saldoFin), ...Object.keys(vendaDia)
+  ])].sort().reverse();
+
+  // 4) Junta dias COM ESTOQUE ate nAlvo, recuando no tempo
+  const usados = [], excluidos = [];
+  for (const d of todosDias) {
+    const ini = saldoIni[d], fin = saldoFin[d], vend = vendaDia[d] || 0;
+    const temContagem = ini !== undefined || fin !== undefined;
+    const comEstoque = (ini > 0) || (fin > 0) || (!temContagem && vend > 0);
+    if (comEstoque) {
+      usados.push({ data: d, vendeu: vend, ini: ini ?? null, fin: fin ?? null });
+      if (usados.length >= nAlvo) break;
+    } else {
+      excluidos.push(d);
+    }
+  }
+
+  // 5) Media nova (inclui dias fracos com estoque, exclui rupturas)
+  const somaNova = usados.reduce((s, x) => s + x.vendeu, 0);
+  const mediaNova = usados.length ? somaNova / usados.length : 0;
+
+  // 6) Tendencia: metade recente vs metade antiga dos dias usados
+  let tendencia = 'estavel';
+  if (usados.length >= 4) {
+    const meio = Math.floor(usados.length / 2);
+    const rec = usados.slice(0, meio).reduce((s, x) => s + x.vendeu, 0) / meio;
+    const ant = usados.slice(meio).reduce((s, x) => s + x.vendeu, 0) / (usados.length - meio);
+    if (rec > ant * 1.15) tendencia = 'subindo';
+    else if (rec < ant * 0.85) tendencia = 'caindo';
+  }
+
+  // 7) Metodo ATUAL (replica do calcularSugestao): total / dias-com-venda-da-loja, janela fixa
+  const corte = new Date(); corte.setDate(corte.getDate() - (JANELA_CONSUMO_DIAS - 1));
+  const corteIso = toIso(corte);
+  const diasComVendaLoja = new Set();
+  let totalProdutoJanela = 0;
+  vendas.forEach(v => {
+    if (v.id < corteIso) return;
+    diasComVendaLoja.add(v.id);
+    (v.produtos || []).forEach(p => {
+      const sp = slugify(p.nome);
+      if (sp === slug || slugsSemelhantes(sp, slug)) totalProdutoJanela += p.qtd || 0;
+    });
+  });
+  const mediaAntiga = totalProdutoJanela / Math.max(diasComVendaLoja.size, 1);
+
+  // 8) Estoque atual (da sugestao ja calculada) e "compre Y" pelos dois metodos
+  const estoqueAtual = (sugestaoCache.find(s => s.slug === slug) || {}).estoque || 0;
+  const prevNova = mediaNova * COBERTURA_ALVO_DIAS;
+  const prevAntiga = mediaAntiga * COBERTURA_ALVO_DIAS;
+
+  return {
+    mediaNova, mediaAntiga, tendencia, usados, excluidos,
+    prevNova, prevAntiga, estoqueAtual,
+    compraNova: Math.max(0, Math.ceil(prevNova - estoqueAtual)),
+    compraAntiga: Math.max(0, Math.ceil(prevAntiga - estoqueAtual)),
+    janelaAntiga: JANELA_CONSUMO_DIAS, cobertura: COBERTURA_ALVO_DIAS
+  };
+}
+
+function renderDiagnostico(out, nome, r) {
+  const f1 = v => (v || 0).toFixed(1).replace('.', ',');
+  const diasUsadosHtml = r.usados.map(x => {
+    const cls = x.vendeu === 0 ? 'zero' : '';
+    return `<span class="diag-dia ${cls}" title="${fmtData(x.data)} - ini:${x.ini ?? '—'} fin:${x.fin ?? '—'}">${fmtData(x.data).slice(0,5)}: ${x.vendeu}</span>`;
+  }).join('');
+  const excluidosHtml = r.excluidos.length
+    ? r.excluidos.map(d => `<span class="diag-dia rupt">${fmtData(d).slice(0,5)}</span>`).join('')
+    : '<span style="font-size:.8rem;color:#888">nenhum</span>';
+
+  out.innerHTML = `
+    <div class="diag-cmp">
+      <div class="diag-box novo">
+        <h5>Novo (15 dias com estoque)</h5>
+        <div class="diag-destaque">${f1(r.mediaNova)}/dia</div>
+        <div class="diag-linha"><span>Previsao ${r.cobertura} dias</span><b>${Math.round(r.prevNova)} un</b></div>
+        <div class="diag-linha"><span>Compre</span><b>${r.compraNova} un</b></div>
+        <div style="margin-top:8px"><span class="diag-tend ${r.tendencia}">${r.tendencia}</span></div>
+      </div>
+      <div class="diag-box antigo">
+        <h5>Atual (${r.janelaAntiga} dias corridos)</h5>
+        <div class="diag-antigo-val">${f1(r.mediaAntiga)}/dia</div>
+        <div class="diag-linha"><span>Previsao ${r.cobertura} dias</span><b>${Math.round(r.prevAntiga)} un</b></div>
+        <div class="diag-linha"><span>Compre</span><b>${r.compraAntiga} un</b></div>
+        <div style="margin-top:8px;font-size:.78rem;color:#999">estoque atual: ${r.estoqueAtual}</div>
+      </div>
+    </div>
+
+    <div class="diag-sec">${r.usados.length} dias usados (amarelo = tinha estoque mas vendeu 0):</div>
+    <div class="diag-dias">${diasUsadosHtml || '<span style="font-size:.8rem;color:#888">sem dias com estoque no periodo</span>'}</div>
+
+    <div class="diag-sec">Dias excluidos por ruptura (estoque 0 e sem venda):</div>
+    <div class="diag-dias">${excluidosHtml}</div>
+
+    <p style="margin-top:14px;font-size:.78rem;color:#999;line-height:1.5">
+      Leitura: o metodo novo ignora os dias de ruptura, entao a media reflete o que o produto vende
+      quando esta disponivel. Confira se o numero bate com a sua cabeca antes de a gente trocar o motor da lista.
+    </p>
+  `;
+}
 
 // ===== UTILS =====
 function toIso(d) {
