@@ -14,7 +14,8 @@ import {
   salvarAuditoriaFechada, buscarAuditoriaFechada,
   listarAuditoriasFechadas, excluirAuditoriaFechada,
   corrigirItemContagem,
-  registrarRecebimento, excluirRecebimento
+  registrarRecebimento, excluirRecebimento,
+  salvarConsumoInterno, listarConsumoInternoDia
 } from './db.js';
 import { slugify } from './produtos.js';
 import { obterBebidas, obterSorvetes } from './produtos-store.js';
@@ -96,6 +97,13 @@ export async function inicializarAuditoria() {
           </small>
         </div>
         <button class="btn btn-primary" id="aud-executar">🔍 Executar</button>
+      </div>
+
+      <div id="aud-consumo-wrap" style="display:none;margin-top:10px">
+        <button class="btn btn-ghost btn-sm" id="aud-btn-consumo">🥤 Lançar consumo interno</button>
+        <small class="aud-periodo-hint" style="display:block;margin-top:4px">
+          Retiradas do estoque fora do PDV (ex: pegou do freezer após a contagem). Corrige a virada para o dia seguinte.
+        </small>
       </div>
 
       <div class="aud-info" id="aud-info"></div>
@@ -255,6 +263,15 @@ export async function inicializarAuditoria() {
   };
 
   document.getElementById('aud-executar').onclick = executarAuditoria;
+
+  // Consumo interno: só gestor vê o botão
+  const sessaoAtual = getSessao();
+  if (sessaoAtual?.perfil === 'gestor') {
+    const wrap = document.getElementById('aud-consumo-wrap');
+    if (wrap) wrap.style.display = 'block';
+    const btnCons = document.getElementById('aud-btn-consumo');
+    if (btnCons) btnCons.onclick = abrirModalConsumoInterno;
+  }
 
   // Listeners das sub-abas
   document.querySelectorAll('.subaba').forEach(btn => {
@@ -558,7 +575,11 @@ async function executarModoOperacional() {
   const recebimentos = await listarRecebimentos(dataInicio, dataFim);
 
   // 5) Calcula auditoria de bebidas (com D-1 e diagnóstico)
-  resultadoAuditoria = await calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior);
+  // Consumo interno do dia anterior (abatido do FIN anterior no D-1)
+  const consumoInternoAnt = contagemFinAnterior
+    ? (await listarConsumoInternoDia(contagemFinAnterior.data)).itens
+    : {};
+  resultadoAuditoria = await calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior, consumoInternoAnt);
 
   // 5b) Calcula auditoria de sorvetes (se houver contagem)
   if (contagemSorv) {
@@ -617,7 +638,9 @@ async function executarModoVirada() {
   }
 
   // 3) Calcula auditoria de virada com cruzamento (bebidas)
-  resultadoAuditoria = await calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior);
+  // Consumo interno do dia anterior (abatido do FIN anterior)
+  const consumoInternoViradaAnt = (await listarConsumoInternoDia(contagemFinAnterior.data)).itens;
+  resultadoAuditoria = await calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior, consumoInternoViradaAnt);
 
   // 3b) Calcula virada de sorvetes (se houver as duas contagens)
   if (contagemSorvAnterior && contagemSorvAtual) {
@@ -651,7 +674,7 @@ function mostrarErro(msg) {
 }
 
 // ===== MOTOR DO CÁLCULO — MODO OPERACIONAL =====
-async function calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior) {
+async function calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior, consumoInternoAnt = {}) {
   // Carrega catálogo efetivo de bebidas (base + overrides do gestor)
   const bebidas = await obterBebidas();
 
@@ -708,10 +731,12 @@ async function calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, re
     const diferenca = real - esperado;
 
     // D-1: diferença entre INI atual e FIN anterior (quanto sumiu/apareceu na virada)
-    // Só calcula se tivermos FIN anterior
+    // Só calcula se tivermos FIN anterior. O consumo interno do dia anterior
+    // (retiradas fora do PDV após a contagem final) é abatido do FIN anterior,
+    // pra não aparecer como "sumiço" na virada.
     let d1 = null;
     if (estoqueFinAnt !== null) {
-      const finAnt = estoqueFinAnt[slug] || 0;
+      const finAnt = (estoqueFinAnt[slug] || 0) - (consumoInternoAnt[slug] || 0);
       d1 = ini - finAnt;  // negativo = sumiu na virada; positivo = apareceu
     }
 
@@ -818,7 +843,7 @@ function extrairCamposSorvetes(contagemSorv) {
 // Compara FIN do dia anterior com INI do dia atual.
 // Em teoria, deveriam ser IGUAIS (não houve operação entre eles).
 // Qualquer diferença significa sumiço ou erro de contagem.
-async function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior = null) {
+async function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior = null, consumoInternoAnt = {}) {
   // Carrega catálogo efetivo de bebidas (base + overrides do gestor)
   const bebidas = await obterBebidas();
 
@@ -835,7 +860,8 @@ async function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, au
 
   return bebidas.map(bebida => {
     const slug = slugify(bebida.nome);
-    const fimAnterior = estoqueFim[slug] || 0;
+    // FIN anterior já descontando o consumo interno daquele dia (retiradas fora do PDV)
+    const fimAnterior = (estoqueFim[slug] || 0) - (consumoInternoAnt[slug] || 0);
     const iniAtual    = estoqueIni[slug] || 0;
     const diferenca = iniAtual - fimAnterior;  // neg = sumiu; pos = "apareceu"
 
@@ -3758,4 +3784,134 @@ function toIso(d) {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${dd}`;
+}
+
+// ============================================================================
+// CONSUMO INTERNO — lançamento manual (só gestor)
+// Retiradas de estoque fora do PDV. Abate do FIN do dia escolhido na virada.
+// ============================================================================
+
+let _ciHouveLancamento = false;
+
+function garantirModalConsumo() {
+  if (document.getElementById('modal-consumo-interno')) return;
+  const html = `
+    <div class="modal-backdrop" id="modal-consumo-interno">
+      <div class="modal-box" style="max-width:480px">
+        <button class="modal-close" id="ci-close">✕</button>
+        <div class="modal-head">
+          <h3>🥤 Lançar consumo interno</h3>
+          <p>Retiradas do estoque fora do PDV. Abate do FIN do dia escolhido — corrige a virada para o dia seguinte. Não altera a auditoria do próprio dia.</p>
+        </div>
+        <div style="padding:4px 24px 24px">
+          <label style="display:block;font-size:.8rem;font-weight:700;color:#7a6a72;margin:10px 0 4px">Dia (em que retirou, após a contagem final)</label>
+          <input type="date" id="ci-data" style="width:100%;padding:9px 11px;border:1px solid #e0d8dc;border-radius:9px;font-size:14px">
+          <label style="display:block;font-size:.8rem;font-weight:700;color:#7a6a72;margin:12px 0 4px">Produto</label>
+          <select id="ci-produto" style="width:100%;padding:9px 11px;border:1px solid #e0d8dc;border-radius:9px;font-size:14px;background:#fff"></select>
+          <label style="display:block;font-size:.8rem;font-weight:700;color:#7a6a72;margin:12px 0 4px">Quantidade</label>
+          <input type="number" id="ci-qtd" min="1" step="1" value="1" style="width:100%;padding:9px 11px;border:1px solid #e0d8dc;border-radius:9px;font-size:14px">
+          <div id="ci-registros" style="margin-top:14px"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+            <button class="btn btn-ghost" id="ci-cancelar">Fechar</button>
+            <button class="btn btn-primary" id="ci-salvar">Lançar</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  document.body.insertAdjacentHTML('beforeend', html);
+  document.getElementById('ci-close').onclick = fecharModalConsumoInterno;
+  document.getElementById('ci-cancelar').onclick = fecharModalConsumoInterno;
+  document.getElementById('ci-salvar').onclick = salvarConsumoInternoUI;
+  document.getElementById('modal-consumo-interno').onclick = e => {
+    if (e.target.id === 'modal-consumo-interno') fecharModalConsumoInterno();
+  };
+  document.getElementById('ci-data').onchange = () => carregarRegistrosConsumo();
+}
+
+async function abrirModalConsumoInterno() {
+  garantirModalConsumo();
+  _ciHouveLancamento = false;
+
+  // Popula produtos (bebidas)
+  const bebidas = await obterBebidas();
+  const sel = document.getElementById('ci-produto');
+  sel.innerHTML = bebidas
+    .slice()
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
+    .map(b => `<option value="${b.nome.replace(/"/g, '&quot;')}">${b.nome}</option>`)
+    .join('');
+
+  // Default: o dia que está na auditoria
+  const diaAud = document.getElementById('aud-data-principal')?.value || '';
+  document.getElementById('ci-data').value = diaAud;
+  document.getElementById('ci-qtd').value = 1;
+
+  await carregarRegistrosConsumo();
+  document.getElementById('modal-consumo-interno').classList.add('open');
+}
+
+function fecharModalConsumoInterno() {
+  const m = document.getElementById('modal-consumo-interno');
+  if (m) m.classList.remove('open');
+  // Se lançou algo, recalcula a auditoria pra refletir
+  if (_ciHouveLancamento) {
+    _ciHouveLancamento = false;
+    executarAuditoria();
+  }
+}
+
+async function carregarRegistrosConsumo() {
+  const data = document.getElementById('ci-data')?.value;
+  const box = document.getElementById('ci-registros');
+  if (!box) return;
+  if (!data) { box.innerHTML = ''; return; }
+  try {
+    const { registros } = await listarConsumoInternoDia(data);
+    if (!registros.length) {
+      box.innerHTML = `<div style="font-size:.8rem;color:#999">Nenhum consumo interno lançado em ${fmtData(data)}.</div>`;
+      return;
+    }
+    box.innerHTML = `
+      <div style="font-size:.8rem;font-weight:700;color:#7a6a72;margin-bottom:6px">Já lançado em ${fmtData(data)}:</div>
+      ${registros.map(r => `
+        <div style="display:flex;justify-content:space-between;font-size:.85rem;padding:3px 0;border-bottom:1px solid #f0f0f0">
+          <span>${r.nome}</span><span><b>${r.qtd}</b>${r.por ? ' · ' + r.por : ''}</span>
+        </div>`).join('')}`;
+  } catch (e) {
+    box.innerHTML = `<div style="font-size:.8rem;color:var(--vermelho)">Erro ao ler: ${e.message}</div>`;
+  }
+}
+
+async function salvarConsumoInternoUI() {
+  const data = document.getElementById('ci-data').value;
+  const nome = document.getElementById('ci-produto').value;
+  const qtd  = parseInt(document.getElementById('ci-qtd').value, 10);
+
+  if (!data) { mostrarToastAud('Escolha o dia.', 'err'); return; }
+  if (!nome) { mostrarToastAud('Escolha o produto.', 'err'); return; }
+  if (!qtd || qtd < 1) { mostrarToastAud('Quantidade inválida.', 'err'); return; }
+
+  const btn = document.getElementById('ci-salvar');
+  btn.disabled = true;
+  try {
+    const sessao = getSessao();
+    await salvarConsumoInterno(data, slugify(nome), nome, qtd, sessao?.nome || 'Gestor');
+    _ciHouveLancamento = true;
+    document.getElementById('ci-qtd').value = 1;
+    await carregarRegistrosConsumo();
+    mostrarToastAud(`Lançado: ${qtd}× ${nome}`, 'ok');
+  } catch (e) {
+    console.error(e);
+    mostrarToastAud('Erro ao salvar: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function mostrarToastAud(msg, tipo = '') {
+  const t = document.getElementById('toast');
+  if (!t) { alert(msg); return; }
+  t.textContent = msg;
+  t.className = 'toast show ' + tipo;
+  setTimeout(() => t.className = 'toast', 2800);
 }

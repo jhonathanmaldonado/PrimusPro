@@ -13,6 +13,7 @@ const COL_CONTAGENS = 'primus_contagens';
 const COL_VENDAS    = 'primus_vendas';
 const COL_COMPRAS   = 'primus_compras';
 const COL_PRODUTOS  = 'primus_produtos';
+const COL_CONSUMO   = 'primus_consumo_interno';
 
 // ===== CONTAGENS =====
 
@@ -468,4 +469,40 @@ export function formatarData(date) {
 /** Data de hoje (local) como YYYY-MM-DD */
 export function hoje() {
   return formatarData(new Date());
+}
+
+// ============================================================================
+// CONSUMO INTERNO (retiradas de estoque fora do PDV — ex: gestor pega do freezer
+// depois da contagem final). Um documento por DIA (ID = YYYY-MM-DD).
+// Afeta a auditoria de virada/D-1: abate do FIN daquele dia ao comparar com o
+// INI do dia seguinte. NÃO altera o operacional do próprio dia.
+// ============================================================================
+
+/** Lança consumo interno de um produto num dia (soma ao que já houver). */
+export async function salvarConsumoInterno(data, produtoSlug, produtoNome, qtd, por = '') {
+  const ref = doc(db, COL_CONSUMO, data);
+  const snap = await getDoc(ref);
+  const atual = snap.exists() ? snap.data() : { data, itens: {}, registros: [] };
+  atual.itens = atual.itens || {};
+  atual.registros = atual.registros || [];
+  atual.itens[produtoSlug] = (atual.itens[produtoSlug] || 0) + Number(qtd || 0);
+  atual.registros.push({
+    slug: produtoSlug,
+    nome: produtoNome,
+    qtd: Number(qtd || 0),
+    por: por || '',
+    em: new Date().toISOString()
+  });
+  atual.atualizadoEm = new Date().toISOString();
+  await setDoc(ref, atual, { merge: false });
+  return atual;
+}
+
+/** Consumo interno de um dia: { itens: { slug: qtd }, registros: [...] } */
+export async function listarConsumoInternoDia(data) {
+  if (!data) return { itens: {}, registros: [] };
+  const snap = await getDoc(doc(db, COL_CONSUMO, data));
+  if (!snap.exists()) return { itens: {}, registros: [] };
+  const d = snap.data();
+  return { itens: d.itens || {}, registros: d.registros || [] };
 }
