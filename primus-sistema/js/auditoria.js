@@ -22,7 +22,7 @@ import { obterBebidas, obterSorvetes } from './produtos-store.js';
 import { getSessao } from './auth.js';
 
 // ===== ESTADO =====
-let abaAtiva = 'atual';          // 'atual' | 'historico'
+let abaAtiva = 'calendario';    // 'calendario' | 'historico' (detalhe é sub-estado)
 let modoAtual = 'operacional';   // 'operacional' | 'virada'
 let dataInicio = '';
 let dataFim    = '';
@@ -51,11 +51,7 @@ export async function inicializarAuditoria() {
   container.innerHTML = `
     <!-- Sub-abas: Atual vs Histórico -->
     <div class="subabas-wrapper">
-      <button class="subaba ativo" data-subaba="atual">
-        <span class="subaba-ico">⏱️</span>
-        <span class="subaba-txt">Auditoria Atual</span>
-      </button>
-      <button class="subaba" data-subaba="calendario">
+      <button class="subaba ativo" data-subaba="calendario">
         <span class="subaba-ico">📅</span>
         <span class="subaba-txt">Calendário</span>
       </button>
@@ -65,53 +61,44 @@ export async function inicializarAuditoria() {
       </button>
     </div>
 
-    <!-- Aba: Auditoria Atual -->
-    <div class="subaba-conteudo" id="aud-aba-atual">
+    <!-- Tela de DETALHE (aparece ao clicar num dia do calendário) -->
+    <div class="subaba-conteudo" id="aud-aba-atual" style="display:none">
     <div class="card">
-      <div class="grafico-head">
-        <h3>🔍 Auditoria de Estoque</h3>
-        <span class="grafico-sub" id="aud-sub">Selecione o modo e o período</span>
+      <div class="aud-det-topo">
+        <button class="btn btn-ghost btn-sm" id="aud-voltar-cal">‹ Voltar ao calendário</button>
+        <span class="aud-det-data" id="aud-det-data"></span>
       </div>
 
-      <!-- Toggle de modo -->
-      <div class="aud-modo-toggle">
-        <button class="aud-modo-btn ativo" id="aud-modo-op" data-modo="operacional">
-          <span class="aud-modo-ico">📊</span>
-          <span class="aud-modo-txt">
-            <strong>Dia operacional</strong>
-            <small>INI + recebimentos − vendas vs FIN do mesmo dia</small>
-          </span>
-        </button>
-        <button class="aud-modo-btn" id="aud-modo-vir" data-modo="virada">
-          <span class="aud-modo-ico">🌙</span>
-          <span class="aud-modo-txt">
-            <strong>Virada de dia</strong>
-            <small>INI do dia vs FIN do dia operacional anterior</small>
-          </span>
-        </button>
-      </div>
-
-      <!-- Campo único de data (adapta ao modo) -->
-      <div class="aud-periodo" id="aud-periodo">
-        <div class="aud-periodo-campo">
-          <label id="aud-label-principal">📅 Contagem do dia</label>
-          <input type="date" id="aud-data-principal" value="${ontemIso}">
-          <small class="aud-periodo-hint" id="aud-hint">
-            Compara INI + recebimentos − vendas vs FIN do mesmo dia
-          </small>
-        </div>
-        <button class="btn btn-primary" id="aud-executar">🔍 Executar</button>
-      </div>
-
-      <div id="aud-consumo-wrap" style="display:none;margin-top:10px">
+      <div id="aud-consumo-wrap" style="display:none;margin:6px 0 8px">
         <button class="btn btn-ghost btn-sm" id="aud-btn-consumo">🥤 Lançar consumo interno</button>
         <small class="aud-periodo-hint" style="display:block;margin-top:4px">
           Retiradas do estoque fora do PDV (ex: pegou do freezer após a contagem). Corrige a virada para o dia seguinte.
         </small>
       </div>
 
-      <div class="aud-info" id="aud-info"></div>
-
+      <!-- Seleção antiga preservada oculta: o calendário controla a data (sempre modo operacional) -->
+      <div id="aud-selecao-oculta" style="display:none">
+        <span id="aud-sub"></span>
+        <div class="aud-modo-toggle">
+          <button class="aud-modo-btn ativo" id="aud-modo-op" data-modo="operacional">
+            <span class="aud-modo-ico">📊</span>
+            <span class="aud-modo-txt"><strong>Dia operacional</strong><small>INI + recebimentos − vendas vs FIN do mesmo dia</small></span>
+          </button>
+          <button class="aud-modo-btn" id="aud-modo-vir" data-modo="virada">
+            <span class="aud-modo-ico">🌙</span>
+            <span class="aud-modo-txt"><strong>Virada de dia</strong><small>INI do dia vs FIN do dia operacional anterior</small></span>
+          </button>
+        </div>
+        <div class="aud-periodo" id="aud-periodo">
+          <div class="aud-periodo-campo">
+            <label id="aud-label-principal">📅 Contagem do dia</label>
+            <input type="date" id="aud-data-principal" value="${ontemIso}">
+            <small class="aud-periodo-hint" id="aud-hint"></small>
+          </div>
+          <button class="btn btn-primary" id="aud-executar">🔍 Executar</button>
+        </div>
+        <div class="aud-info" id="aud-info"></div>
+      </div>
       <!-- Banner de auditoria já fechada -->
       <div id="aud-fechada-banner" style="display:none"></div>
 
@@ -148,16 +135,18 @@ export async function inicializarAuditoria() {
       </div>
     </div>
 
-    <!-- Aba: Calendário -->
+    <!-- Aba: Calendário (tela principal da auditoria) -->
     <div class="subaba-conteudo" id="aud-aba-calendario" style="display:none">
       <div class="card">
         <div class="aud-cal-nav">
-          <button id="aud-cal-prev" type="button">‹</button>
           <span class="aud-cal-titulo" id="aud-cal-titulo">—</span>
-          <button id="aud-cal-next" type="button">›</button>
+          <div class="aud-cal-nav-btns">
+            <button id="aud-cal-prev" type="button">◀ Anterior</button>
+            <button id="aud-cal-next" type="button">Próximo ▶</button>
+          </div>
         </div>
-        <div class="aud-cal-legenda">🔴 crítico (≥5) · 🟠 atenção (≥2) · 🟡 leve (≥1) · 🟢 ok</div>
         <div id="aud-cal-lista"></div>
+        <div class="aud-cal-legenda">🔴 crítico (≥5) · 🟠 atenção (≥2) · 🟡 leve (≥1) · 🟢 ok · clique num dia para ver o detalhe</div>
       </div>
     </div>
 
@@ -300,7 +289,15 @@ export async function inicializarAuditoria() {
   const calNext = document.getElementById('aud-cal-next');
   if (calPrev) calPrev.onclick = () => calNavegarMes(-1);
   if (calNext) calNext.onclick = () => calNavegarMes(1);
+  const btnVoltar = document.getElementById('aud-voltar-cal');
+  if (btnVoltar) btnVoltar.onclick = voltarAoCalendario;
   injetarEstiloCalendario();
+
+  // Estado inicial: calendário é a tela principal da auditoria
+  document.getElementById('aud-aba-atual').style.display = 'none';
+  document.getElementById('aud-aba-historico').style.display = 'none';
+  document.getElementById('aud-aba-calendario').style.display = 'block';
+  renderCalendarioAuditoria();
 
   // Listeners do modal de PDF
   document.getElementById('aud-btn-pdf').onclick = abrirModalPDF;
@@ -347,10 +344,11 @@ function trocarSubaba(nova) {
   document.querySelectorAll('.subaba').forEach(btn => {
     btn.classList.toggle('ativo', btn.dataset.subaba === nova);
   });
-  document.getElementById('aud-aba-atual').style.display     = nova === 'atual'     ? 'block' : 'none';
+  document.getElementById('aud-aba-atual').style.display     = 'none';
   document.getElementById('aud-aba-historico').style.display = nova === 'historico' ? 'block' : 'none';
   const calEl = document.getElementById('aud-aba-calendario');
   if (calEl) calEl.style.display = nova === 'calendario' ? 'block' : 'none';
+  document.querySelector('.subabas-wrapper').style.display = '';
 
   if (nova === 'historico') {
     carregarHistorico();
@@ -3945,10 +3943,10 @@ function mostrarToastAud(msg, tipo = '') {
 }
 
 // ============================================================================
-// CALENDÁRIO DE AUDITORIA (modo operacional)
-// Mostra, por dia do mês, quantos itens deram crítico/atenção/leve/ok.
-// Calcula os dados em LOTE (1 busca por tipo) e roda cada dia em memória.
-// Clicar num dia abre o detalhado reusando executarAuditoria().
+// CALENDÁRIO DE AUDITORIA — tela principal (modo operacional)
+// Grade mensal (estilo Vendas). Cada dia mostra crítico/atenção/leve/ok.
+// Calcula tudo em LOTE (1 busca por tipo) e roda cada dia em memória.
+// Clicar num dia abre o DETALHE (reusa executarAuditoria).
 // ============================================================================
 
 let _calMes = null; // Date apontando pro 1º dia do mês exibido
@@ -3958,23 +3956,38 @@ function injetarEstiloCalendario() {
   const st = document.createElement('style');
   st.id = 'aud-cal-style';
   st.textContent = `
-    .aud-cal-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
-    .aud-cal-nav button { background:var(--vinho,#7C0047); color:#fff; border:none; width:40px; height:40px; border-radius:10px; font-size:20px; cursor:pointer; line-height:1; }
-    .aud-cal-nav button:active { opacity:.8; }
-    .aud-cal-titulo { font-weight:800; font-size:16px; text-transform:capitalize; color:var(--vinho,#7C0047); }
-    .aud-cal-legenda { font-size:11.5px; color:#888; text-align:center; margin-bottom:14px; }
-    .aud-cal-card { display:flex; align-items:center; gap:12px; padding:12px 14px; background:#fff; border:1px solid #ececec; border-radius:12px; margin-bottom:8px; cursor:pointer; transition:.15s; }
-    .aud-cal-card:hover { border-color:var(--vinho,#7C0047); box-shadow:0 2px 8px rgba(0,0,0,.06); }
-    .aud-cal-data { font-weight:700; font-size:14px; min-width:104px; text-transform:capitalize; color:#333; }
-    .aud-cal-bolas { display:flex; gap:16px; flex:1; }
-    .aud-cal-bola { display:flex; flex-direction:column; align-items:center; line-height:1.15; }
-    .aud-cal-bola span { font-size:15px; }
-    .aud-cal-bola b { font-size:13px; margin-top:1px; color:#444; }
-    .aud-cal-bola.zero { opacity:.28; }
-    .aud-cal-seta { color:#c4c4c4; font-size:22px; font-weight:700; }
-    .aud-cal-card-parcial { cursor:default; background:#f7f7f7; }
-    .aud-cal-card-parcial:hover { border-color:#ececec; box-shadow:none; }
-    .aud-cal-parcial-txt { color:#999; font-size:12.5px; font-style:italic; flex:1; }
+    .aud-cal-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; flex-wrap:wrap; gap:8px; }
+    .aud-cal-titulo { font-weight:800; font-size:17px; text-transform:capitalize; color:var(--vinho,#7C0047); }
+    .aud-cal-nav-btns { display:flex; gap:8px; }
+    .aud-cal-nav-btns button { background:#fff; color:var(--vinho,#7C0047); border:1px solid var(--vinho,#7C0047); padding:7px 12px; border-radius:9px; font-size:13px; font-weight:700; cursor:pointer; }
+    .aud-cal-nav-btns button:active { opacity:.75; }
+    .aud-cal-legenda { font-size:11.5px; color:#888; text-align:center; margin-top:14px; }
+
+    .aud-cal-grade { display:grid; grid-template-columns:repeat(7,1fr); gap:6px; }
+    .aud-cal-wd { text-align:center; font-size:11px; font-weight:700; color:#aaa; padding-bottom:2px; }
+    .aud-cal-cel { min-height:72px; border:1px solid #ececec; border-radius:10px; padding:5px 4px; background:#fff; display:flex; flex-direction:column; }
+    .aud-cal-cel.vazia { border:none; background:transparent; min-height:0; }
+    .aud-cal-cel.sem { background:#fafafa; }
+    .aud-cal-cel.parcial { background:#fafafa; }
+    .aud-cal-cel.tem { cursor:pointer; transition:.12s; }
+    .aud-cal-cel.tem:hover { border-color:var(--vinho,#7C0047); box-shadow:0 2px 8px rgba(0,0,0,.10); }
+    .aud-cal-cel-num { font-size:12.5px; font-weight:700; color:#666; line-height:1; }
+    .aud-cal-cel.sem .aud-cal-cel-num { color:#ccc; }
+    .aud-cal-cel-bolas { display:flex; flex-wrap:wrap; gap:2px 5px; margin-top:auto; padding-top:4px; }
+    .aud-cal-mb { display:inline-flex; align-items:center; gap:1px; font-size:11px; line-height:1; }
+    .aud-cal-mb b { font-size:11px; color:#444; font-weight:700; }
+    .aud-cal-mb.z { opacity:.22; }
+    .aud-cal-cel-inc { font-size:9px; color:#bbb; font-style:italic; margin-top:auto; }
+
+    .aud-det-topo { display:flex; align-items:center; gap:12px; margin-bottom:10px; flex-wrap:wrap; }
+    .aud-det-data { font-weight:800; font-size:16px; color:var(--vinho,#7C0047); text-transform:capitalize; }
+
+    @media (max-width:600px) {
+      .aud-cal-grade { gap:3px; }
+      .aud-cal-cel { min-height:64px; padding:3px; border-radius:8px; }
+      .aud-cal-cel-num { font-size:11px; }
+      .aud-cal-mb, .aud-cal-mb b { font-size:10px; }
+    }
   `;
   document.head.appendChild(st);
 }
@@ -3986,8 +3999,8 @@ function calNavegarMes(delta) {
 }
 
 async function renderCalendarioAuditoria() {
-  const lista = document.getElementById('aud-cal-lista');
-  if (!lista) return;
+  const cont = document.getElementById('aud-cal-lista');
+  if (!cont) return;
 
   if (!_calMes) {
     const h = new Date();
@@ -3999,7 +4012,7 @@ async function renderCalendarioAuditoria() {
   const tituloEl = document.getElementById('aud-cal-titulo');
   if (tituloEl) tituloEl.textContent = _calMes.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
 
-  lista.innerHTML = `<div style="text-align:center;padding:30px">
+  cont.innerHTML = `<div style="text-align:center;padding:30px">
       <span class="spinner"></span>
       <div style="margin-top:8px;color:#999;font-size:13px">Calculando auditoria do mês...</div>
     </div>`;
@@ -4009,7 +4022,6 @@ async function renderCalendarioAuditoria() {
   const ultimoIso = toIso(new Date(ano, mes, ultimoN));
 
   try {
-    // Busca em LOTE (1 vez cada), depois calcula cada dia em memória
     const [todasContagens, vendasLote, recebLote] = await Promise.all([
       listarContagens({ limite: 500 }),
       listarVendas({ dataInicio: primeiroIso, dataFim: ultimoIso, limite: 366 }),
@@ -4017,18 +4029,15 @@ async function renderCalendarioAuditoria() {
     ]);
     await obterBebidas(); // aquece o cache do catálogo
 
-    const cards = [];
-    for (let d = ultimoN; d >= 1; d--) {
+    // Calcula o status de cada dia do mês
+    const dias = {};
+    for (let d = 1; d <= ultimoN; d++) {
       const diaIso = toIso(new Date(ano, mes, d));
       const ini  = todasContagens.find(c => c.tipo === 'ini'  && c.data === diaIso);
       const fin  = todasContagens.find(c => c.tipo === 'fin'  && c.data === diaIso);
       const sorv = todasContagens.find(c => c.tipo === 'sorv' && c.data === diaIso);
 
-      // Dias sem nenhuma contagem não aparecem (dia fechado)
-      if (!ini && !fin && !sorv) continue;
-
-      const dataObj = new Date(ano, mes, d);
-      const label = dataObj.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' });
+      if (!ini && !fin && !sorv) { dias[d] = { tipo: 'vazio' }; continue; }
 
       if (ini && fin) {
         const finAnt = todasContagens
@@ -4038,64 +4047,81 @@ async function renderCalendarioAuditoria() {
         const recebDia  = recebLote.filter(r => r.data === diaIso);
 
         const res = await calcularAuditoriaOperacional(ini, fin, vendasDia, recebDia, finAnt, {});
-        const cont = { critico: 0, atencao: 0, leve: 0, ok: 0 };
-        res.forEach(r => {
-          if (cont[r.status] !== undefined) cont[r.status]++;
-        });
-        cards.push(cardCalCompleto(diaIso, label, cont));
+        const c = { critico: 0, atencao: 0, leve: 0, ok: 0 };
+        res.forEach(r => { if (c[r.status] !== undefined) c[r.status]++; });
+        dias[d] = { tipo: 'completo', cont: c, diaIso };
       } else {
-        const tem = [];
-        if (ini) tem.push('início');
-        if (fin) tem.push('final');
-        if (sorv) tem.push('sorvete');
-        cards.push(cardCalParcial(label, tem));
+        dias[d] = { tipo: 'parcial', diaIso };
       }
     }
 
-    lista.innerHTML = cards.length
-      ? cards.join('')
-      : '<div style="text-align:center;padding:30px;color:#999;font-size:14px">Nenhuma contagem neste mês.</div>';
+    // Monta a grade (7 colunas, semanas em linhas)
+    const primeiroDiaSemana = new Date(ano, mes, 1).getDay(); // 0=Dom
+    let html = '<div class="aud-cal-grade">';
+    ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'].forEach(w => { html += `<div class="aud-cal-wd">${w}</div>`; });
+    for (let i = 0; i < primeiroDiaSemana; i++) html += '<div class="aud-cal-cel vazia"></div>';
 
-    lista.querySelectorAll('.aud-cal-card[data-dia]').forEach(el => {
+    for (let d = 1; d <= ultimoN; d++) {
+      const info = dias[d];
+      if (info.tipo === 'completo') {
+        const c = info.cont;
+        html += `<div class="aud-cal-cel tem" data-dia="${info.diaIso}">
+            <div class="aud-cal-cel-num">${d}</div>
+            <div class="aud-cal-cel-bolas">${miniBola('🔴', c.critico)}${miniBola('🟠', c.atencao)}${miniBola('🟡', c.leve)}${miniBola('🟢', c.ok)}</div>
+          </div>`;
+      } else if (info.tipo === 'parcial') {
+        html += `<div class="aud-cal-cel parcial">
+            <div class="aud-cal-cel-num">${d}</div>
+            <div class="aud-cal-cel-inc">incompleto</div>
+          </div>`;
+      } else {
+        html += `<div class="aud-cal-cel sem"><div class="aud-cal-cel-num">${d}</div></div>`;
+      }
+    }
+    html += '</div>';
+    cont.innerHTML = html;
+
+    cont.querySelectorAll('.aud-cal-cel[data-dia]').forEach(el => {
       el.onclick = () => irParaDetalheAuditoria(el.dataset.dia);
     });
   } catch (e) {
     console.error('[calendario auditoria]', e);
-    lista.innerHTML = `<div style="text-align:center;padding:30px;color:var(--vermelho,#c0392b);font-size:14px">Erro ao carregar: ${e.message}</div>`;
+    cont.innerHTML = `<div style="text-align:center;padding:30px;color:var(--vermelho,#c0392b);font-size:14px">Erro ao carregar: ${e.message}</div>`;
   }
 }
 
-function cardCalCompleto(diaIso, label, c) {
-  const bola = (emoji, n) => `<div class="aud-cal-bola${n === 0 ? ' zero' : ''}"><span>${emoji}</span><b>${n}</b></div>`;
-  return `
-    <div class="aud-cal-card" data-dia="${diaIso}">
-      <div class="aud-cal-data">${label}</div>
-      <div class="aud-cal-bolas">
-        ${bola('🔴', c.critico)}
-        ${bola('🟠', c.atencao)}
-        ${bola('🟡', c.leve)}
-        ${bola('🟢', c.ok)}
-      </div>
-      <div class="aud-cal-seta">›</div>
-    </div>`;
+function miniBola(emoji, n) {
+  return `<span class="aud-cal-mb${n === 0 ? ' z' : ''}">${emoji}<b>${n}</b></span>`;
 }
 
-function cardCalParcial(label, tem) {
-  const txt = tem.length ? `Contagem incompleta (só ${tem.join(', ')})` : 'Contagem incompleta';
-  return `
-    <div class="aud-cal-card aud-cal-card-parcial">
-      <div class="aud-cal-data">${label}</div>
-      <div class="aud-cal-parcial-txt">${txt}</div>
-    </div>`;
-}
-
+// ===== navegação grade <-> detalhe =====
 function irParaDetalheAuditoria(diaIso) {
   const inp = document.getElementById('aud-data-principal');
   if (inp) inp.value = diaIso;
-  if (modoAtual !== 'operacional') {
-    modoAtual = 'operacional';
-    aplicarModo();
+  modoAtual = 'operacional';
+
+  const dataEl = document.getElementById('aud-det-data');
+  if (dataEl) {
+    const [y, m, d] = diaIso.split('-');
+    const dt = new Date(Number(y), Number(m) - 1, Number(d));
+    dataEl.textContent = dt.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long' });
   }
-  trocarSubaba('atual');
+
+  // Mostra a tela de detalhe, esconde a barra de sub-abas e as outras abas
+  document.querySelector('.subabas-wrapper').style.display = 'none';
+  document.getElementById('aud-aba-calendario').style.display = 'none';
+  document.getElementById('aud-aba-historico').style.display = 'none';
+  document.getElementById('aud-aba-atual').style.display = 'block';
+
   executarAuditoria();
+}
+
+function voltarAoCalendario() {
+  document.getElementById('aud-aba-atual').style.display = 'none';
+  document.querySelector('.subabas-wrapper').style.display = '';
+  abaAtiva = 'calendario';
+  document.querySelectorAll('.subaba').forEach(b => b.classList.toggle('ativo', b.dataset.subaba === 'calendario'));
+  document.getElementById('aud-aba-calendario').style.display = 'block';
+  document.getElementById('aud-aba-historico').style.display = 'none';
+  renderCalendarioAuditoria();
 }
