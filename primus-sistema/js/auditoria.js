@@ -55,6 +55,10 @@ export async function inicializarAuditoria() {
         <span class="subaba-ico">⏱️</span>
         <span class="subaba-txt">Auditoria Atual</span>
       </button>
+      <button class="subaba" data-subaba="calendario">
+        <span class="subaba-ico">📅</span>
+        <span class="subaba-txt">Calendário</span>
+      </button>
       <button class="subaba" data-subaba="historico">
         <span class="subaba-ico">📈</span>
         <span class="subaba-txt">Histórico</span>
@@ -141,6 +145,19 @@ export async function inicializarAuditoria() {
             <div style="margin-top:10px;color:var(--cinza-texto);font-size:13px">Carregando histórico...</div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Aba: Calendário -->
+    <div class="subaba-conteudo" id="aud-aba-calendario" style="display:none">
+      <div class="card">
+        <div class="aud-cal-nav">
+          <button id="aud-cal-prev" type="button">‹</button>
+          <span class="aud-cal-titulo" id="aud-cal-titulo">—</span>
+          <button id="aud-cal-next" type="button">›</button>
+        </div>
+        <div class="aud-cal-legenda">🔴 crítico (≥5) · 🟠 atenção (≥2) · 🟡 leve (≥1) · 🟢 ok</div>
+        <div id="aud-cal-lista"></div>
       </div>
     </div>
 
@@ -278,6 +295,13 @@ export async function inicializarAuditoria() {
     btn.onclick = () => trocarSubaba(btn.dataset.subaba);
   });
 
+  // Calendário de auditoria: navegação de mês + estilo
+  const calPrev = document.getElementById('aud-cal-prev');
+  const calNext = document.getElementById('aud-cal-next');
+  if (calPrev) calPrev.onclick = () => calNavegarMes(-1);
+  if (calNext) calNext.onclick = () => calNavegarMes(1);
+  injetarEstiloCalendario();
+
   // Listeners do modal de PDF
   document.getElementById('aud-btn-pdf').onclick = abrirModalPDF;
   document.getElementById('aud-modal-pdf-close').onclick = fecharModalPDF;
@@ -325,9 +349,13 @@ function trocarSubaba(nova) {
   });
   document.getElementById('aud-aba-atual').style.display     = nova === 'atual'     ? 'block' : 'none';
   document.getElementById('aud-aba-historico').style.display = nova === 'historico' ? 'block' : 'none';
+  const calEl = document.getElementById('aud-aba-calendario');
+  if (calEl) calEl.style.display = nova === 'calendario' ? 'block' : 'none';
 
   if (nova === 'historico') {
     carregarHistorico();
+  } else if (nova === 'calendario') {
+    renderCalendarioAuditoria();
   }
 }
 
@@ -3914,4 +3942,160 @@ function mostrarToastAud(msg, tipo = '') {
   t.textContent = msg;
   t.className = 'toast show ' + tipo;
   setTimeout(() => t.className = 'toast', 2800);
+}
+
+// ============================================================================
+// CALENDÁRIO DE AUDITORIA (modo operacional)
+// Mostra, por dia do mês, quantos itens deram crítico/atenção/leve/ok.
+// Calcula os dados em LOTE (1 busca por tipo) e roda cada dia em memória.
+// Clicar num dia abre o detalhado reusando executarAuditoria().
+// ============================================================================
+
+let _calMes = null; // Date apontando pro 1º dia do mês exibido
+
+function injetarEstiloCalendario() {
+  if (document.getElementById('aud-cal-style')) return;
+  const st = document.createElement('style');
+  st.id = 'aud-cal-style';
+  st.textContent = `
+    .aud-cal-nav { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+    .aud-cal-nav button { background:var(--vinho,#7C0047); color:#fff; border:none; width:40px; height:40px; border-radius:10px; font-size:20px; cursor:pointer; line-height:1; }
+    .aud-cal-nav button:active { opacity:.8; }
+    .aud-cal-titulo { font-weight:800; font-size:16px; text-transform:capitalize; color:var(--vinho,#7C0047); }
+    .aud-cal-legenda { font-size:11.5px; color:#888; text-align:center; margin-bottom:14px; }
+    .aud-cal-card { display:flex; align-items:center; gap:12px; padding:12px 14px; background:#fff; border:1px solid #ececec; border-radius:12px; margin-bottom:8px; cursor:pointer; transition:.15s; }
+    .aud-cal-card:hover { border-color:var(--vinho,#7C0047); box-shadow:0 2px 8px rgba(0,0,0,.06); }
+    .aud-cal-data { font-weight:700; font-size:14px; min-width:104px; text-transform:capitalize; color:#333; }
+    .aud-cal-bolas { display:flex; gap:16px; flex:1; }
+    .aud-cal-bola { display:flex; flex-direction:column; align-items:center; line-height:1.15; }
+    .aud-cal-bola span { font-size:15px; }
+    .aud-cal-bola b { font-size:13px; margin-top:1px; color:#444; }
+    .aud-cal-bola.zero { opacity:.28; }
+    .aud-cal-seta { color:#c4c4c4; font-size:22px; font-weight:700; }
+    .aud-cal-card-parcial { cursor:default; background:#f7f7f7; }
+    .aud-cal-card-parcial:hover { border-color:#ececec; box-shadow:none; }
+    .aud-cal-parcial-txt { color:#999; font-size:12.5px; font-style:italic; flex:1; }
+  `;
+  document.head.appendChild(st);
+}
+
+function calNavegarMes(delta) {
+  if (!_calMes) return;
+  _calMes = new Date(_calMes.getFullYear(), _calMes.getMonth() + delta, 1);
+  renderCalendarioAuditoria();
+}
+
+async function renderCalendarioAuditoria() {
+  const lista = document.getElementById('aud-cal-lista');
+  if (!lista) return;
+
+  if (!_calMes) {
+    const h = new Date();
+    _calMes = new Date(h.getFullYear(), h.getMonth(), 1);
+  }
+
+  const ano = _calMes.getFullYear();
+  const mes = _calMes.getMonth(); // 0-11
+  const tituloEl = document.getElementById('aud-cal-titulo');
+  if (tituloEl) tituloEl.textContent = _calMes.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+
+  lista.innerHTML = `<div style="text-align:center;padding:30px">
+      <span class="spinner"></span>
+      <div style="margin-top:8px;color:#999;font-size:13px">Calculando auditoria do mês...</div>
+    </div>`;
+
+  const ultimoN = new Date(ano, mes + 1, 0).getDate();
+  const primeiroIso = toIso(new Date(ano, mes, 1));
+  const ultimoIso = toIso(new Date(ano, mes, ultimoN));
+
+  try {
+    // Busca em LOTE (1 vez cada), depois calcula cada dia em memória
+    const [todasContagens, vendasLote, recebLote] = await Promise.all([
+      listarContagens({ limite: 500 }),
+      listarVendas({ dataInicio: primeiroIso, dataFim: ultimoIso, limite: 366 }),
+      listarRecebimentos(primeiroIso, ultimoIso),
+    ]);
+    await obterBebidas(); // aquece o cache do catálogo
+
+    const cards = [];
+    for (let d = ultimoN; d >= 1; d--) {
+      const diaIso = toIso(new Date(ano, mes, d));
+      const ini  = todasContagens.find(c => c.tipo === 'ini'  && c.data === diaIso);
+      const fin  = todasContagens.find(c => c.tipo === 'fin'  && c.data === diaIso);
+      const sorv = todasContagens.find(c => c.tipo === 'sorv' && c.data === diaIso);
+
+      // Dias sem nenhuma contagem não aparecem (dia fechado)
+      if (!ini && !fin && !sorv) continue;
+
+      const dataObj = new Date(ano, mes, d);
+      const label = dataObj.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' });
+
+      if (ini && fin) {
+        const finAnt = todasContagens
+          .filter(c => c.tipo === 'fin' && c.data < diaIso)
+          .sort((a, b) => b.data.localeCompare(a.data))[0] || null;
+        const vendasDia = vendasLote.filter(v => (v.data || v.id) === diaIso);
+        const recebDia  = recebLote.filter(r => r.data === diaIso);
+
+        const res = await calcularAuditoriaOperacional(ini, fin, vendasDia, recebDia, finAnt, {});
+        const cont = { critico: 0, atencao: 0, leve: 0, ok: 0 };
+        res.forEach(r => {
+          if (cont[r.status] !== undefined) cont[r.status]++;
+        });
+        cards.push(cardCalCompleto(diaIso, label, cont));
+      } else {
+        const tem = [];
+        if (ini) tem.push('início');
+        if (fin) tem.push('final');
+        if (sorv) tem.push('sorvete');
+        cards.push(cardCalParcial(label, tem));
+      }
+    }
+
+    lista.innerHTML = cards.length
+      ? cards.join('')
+      : '<div style="text-align:center;padding:30px;color:#999;font-size:14px">Nenhuma contagem neste mês.</div>';
+
+    lista.querySelectorAll('.aud-cal-card[data-dia]').forEach(el => {
+      el.onclick = () => irParaDetalheAuditoria(el.dataset.dia);
+    });
+  } catch (e) {
+    console.error('[calendario auditoria]', e);
+    lista.innerHTML = `<div style="text-align:center;padding:30px;color:var(--vermelho,#c0392b);font-size:14px">Erro ao carregar: ${e.message}</div>`;
+  }
+}
+
+function cardCalCompleto(diaIso, label, c) {
+  const bola = (emoji, n) => `<div class="aud-cal-bola${n === 0 ? ' zero' : ''}"><span>${emoji}</span><b>${n}</b></div>`;
+  return `
+    <div class="aud-cal-card" data-dia="${diaIso}">
+      <div class="aud-cal-data">${label}</div>
+      <div class="aud-cal-bolas">
+        ${bola('🔴', c.critico)}
+        ${bola('🟠', c.atencao)}
+        ${bola('🟡', c.leve)}
+        ${bola('🟢', c.ok)}
+      </div>
+      <div class="aud-cal-seta">›</div>
+    </div>`;
+}
+
+function cardCalParcial(label, tem) {
+  const txt = tem.length ? `Contagem incompleta (só ${tem.join(', ')})` : 'Contagem incompleta';
+  return `
+    <div class="aud-cal-card aud-cal-card-parcial">
+      <div class="aud-cal-data">${label}</div>
+      <div class="aud-cal-parcial-txt">${txt}</div>
+    </div>`;
+}
+
+function irParaDetalheAuditoria(diaIso) {
+  const inp = document.getElementById('aud-data-principal');
+  if (inp) inp.value = diaIso;
+  if (modoAtual !== 'operacional') {
+    modoAtual = 'operacional';
+    aplicarModo();
+  }
+  trocarSubaba('atual');
+  executarAuditoria();
 }
