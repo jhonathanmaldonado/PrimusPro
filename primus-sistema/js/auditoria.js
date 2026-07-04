@@ -987,6 +987,20 @@ async function calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSorvAnter
       d1 = ini - finAnt;
     }
 
+    // DIAGNÓSTICO (cruzamento DIF x D-1) — mesma lógica das bebidas
+    let diagnostico = null;
+    if (diferenca !== 0 && d1 !== null) {
+      const d1_relevante  = Math.abs(d1) >= 1;
+      const dif_relevante = Math.abs(diferenca) >= 1;
+      if (d1_relevante && dif_relevante && Math.sign(diferenca) !== Math.sign(d1)) {
+        if (Math.abs(diferenca + d1) <= 2) diagnostico = 'erro_contagem';
+      } else if (d1 !== 0 && dif_relevante && Math.sign(diferenca) === Math.sign(d1)) {
+        diagnostico = 'recorrente';
+      } else if (d1 === 0 && Math.abs(diferenca) >= 2) {
+        diagnostico = 'isolado';
+      }
+    }
+
     // Status pela magnitude da diferença (mesma régua das bebidas)
     const abs = Math.abs(diferenca);
     let status;
@@ -1008,6 +1022,7 @@ async function calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSorvAnter
       real,
       diferenca,
       d1,
+      diagnostico,
       // campos legados mantidos p/ histórico/PDF/snapshot não quebrarem
       abast,
       fin,
@@ -1639,17 +1654,89 @@ function renderLinhaSorvetesOperacional(r) {
   const difClasse = r.diferenca < 0 ? 'aud-dif-neg' :
                     r.diferenca > 0 ? 'aud-dif-pos' : 'aud-dif-zero';
 
-  const d1Txt = (r.d1 === null || r.d1 === undefined) ? 'n/c' : fmtSgn(r.d1);
-  const d1Classe = (r.d1 === null || r.d1 === undefined) ? 'aud-dif-zero'
-                 : r.d1 < 0 ? 'aud-dif-neg' : r.d1 > 0 ? 'aud-dif-pos' : 'aud-dif-zero';
+  // Diagnóstico cruzado (D-1 vs DIF) — mesmo texto das bebidas
+  const diagMap = {
+    erro_contagem: {
+      txt: `🔍 Provável erro de contagem (D-1 = ${fmtSgn(r.d1)})`,
+      cls: 'aud-diag-erro',
+      titulo: 'A diferença do dia é oposta à variação D-1 (um faltou, o outro sobrou em quantidades parecidas). Isso sugere que alguém contou errado em uma das contagens — o que "sumiu" numa, "reapareceu" na outra.'
+    },
+    recorrente: {
+      txt: `⚠️ Problema recorrente (D-1 = ${fmtSgn(r.d1)})`,
+      cls: 'aud-diag-rec',
+      titulo: 'A mesma direção de divergência (falta ou sobra) aparece na virada E na auditoria do dia. Indica problema contínuo — pode ser vazamento de estoque ou consumo não registrado sistemático.'
+    },
+    isolado: {
+      txt: `🎯 Problema isolado (D-1 = 0)`,
+      cls: 'aud-diag-iso',
+      titulo: 'A virada foi perfeita (sem divergência entre fechamento anterior e abertura), mas a operação de hoje gerou divergência. Algo aconteceu só hoje.'
+    }
+  };
+  const diag = diagMap[r.diagnostico];
+  const diagHtml = diag
+    ? `<div class="aud-diag-cell ${diag.cls}" title="${diag.titulo}">${diag.txt}</div>`
+    : '';
+
+  // Área de correção — só quando o diagnóstico é "erro_contagem"
+  let areaCorrecaoHtml = '';
+  if (r.diagnostico === 'erro_contagem') {
+    const novoIni = r.ini - r.d1;          // alinha INI com FIN anterior
+    const novoFin = r.real - r.diferenca;  // zera a divergência
+    areaCorrecaoHtml = `
+      <div class="aud-corrigir-manual">
+        <button class="btn btn-ghost btn-sm aud-btn-toggle-manual"
+                id="aud-btn-toggle-op-sorv-${r.slug}"
+                onclick="window.__aud_toggleCorrigirManualOpSorv('${r.slug}')">
+          💡 Aceitar sugestão e corrigir
+        </button>
+        <div class="aud-corrigir-manual-box" id="aud-corr-manual-op-sorv-${r.slug}" style="display:none">
+          <div class="aud-corr-aviso">
+            <strong>📊 Análise:</strong> na virada (D-1) deu <strong>${fmtSgn(r.d1)}</strong> e hoje deu <strong>${fmtSgn(r.diferenca)}</strong>. Os sinais opostos sugerem erro de contagem em uma das duas contagens deste dia.
+            <br><br>
+            <strong>⚠️ Atenção:</strong> a correção abaixo é uma sugestão matemática. Se houver dúvida sobre qual contagem está errada, investigue antes de aplicar.
+          </div>
+          <div class="aud-corrigir-botoes">
+            <button class="btn btn-primary btn-sm"
+                    onclick="window.__aud_corrigirSorvErro('${r.slug}', 'ini')"
+                    title="Ajusta INI de ${fmtInt(r.ini)} pra ${fmtInt(novoIni)} (alinha com FIN do dia anterior — recomendado)">
+              🔄 Corrigir INI (${fmtInt(r.ini)} → ${fmtInt(novoIni)})
+            </button>
+            <button class="btn btn-ghost btn-sm"
+                    onclick="window.__aud_corrigirSorvErro('${r.slug}', 'fin')"
+                    title="Ajusta FIN de ${fmtInt(r.real)} pra ${fmtInt(novoFin)} (zera a divergência mas D-1 permanece)">
+              🔄 Corrigir FIN (${fmtInt(r.real)} → ${fmtInt(novoFin)})
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // Célula D-1: null→n/c, 0→✓, ≠0→valor com sinal
+  let cellD1Html;
+  if (r.d1 === null || r.d1 === undefined) {
+    cellD1Html = '<div class="aud-num aud-d1-nc" title="Sem contagem de sorvete no dia anterior pra comparar">n/c</div>';
+  } else if (r.d1 === 0) {
+    cellD1Html = '<div class="aud-num aud-d1-ok" title="Virada perfeita (INI de hoje = FIN do dia anterior)">✓</div>';
+  } else {
+    const d1Cls = r.d1 < 0 ? 'aud-d1-neg' : 'aud-d1-pos';
+    const d1Title = r.d1 < 0
+      ? `Sumiu ${Math.abs(r.d1)} entre o fechamento anterior e a abertura de hoje`
+      : `Apareceu ${r.d1} entre o fechamento anterior e a abertura de hoje`;
+    cellD1Html = `<div class="aud-num ${d1Cls}" title="${d1Title}">${fmtSgn(r.d1)}</div>`;
+  }
 
   return `
-    <div class="aud-linha aud-linha-${r.status}">
-      <div class="aud-nome">${r.nome}</div>
-      <div class="aud-num ${d1Classe}">${d1Txt}</div>
+    <div class="aud-linha aud-linha-${r.status}${diag ? ' aud-linha-com-diag' : ''}">
+      <div class="aud-nome">
+        <span class="aud-nome-texto">${r.nome}</span>
+        ${diagHtml}
+        ${areaCorrecaoHtml}
+      </div>
+      ${cellD1Html}
       <div class="aud-num">${fmtInt(r.ini)}</div>
       <div class="aud-num aud-num-pos">${r.recebido > 0 ? '+' + fmtInt(r.recebido) : '—'}</div>
-      <div class="aud-num">${r.vendido > 0 ? '−' + fmtInt(r.vendido) : '—'}</div>
+      <div class="aud-num aud-num-neg">${r.vendido > 0 ? '−' + fmtInt(r.vendido) : '—'}</div>
       <div class="aud-num aud-num-esp">${fmtInt(r.esperado)}</div>
       <div class="aud-num aud-num-real">${fmtInt(r.real)}</div>
       <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}</div>
@@ -2718,6 +2805,101 @@ window.__aud_corrigirOpErro = async function(slug, alvo) {
     alert(`✅ Correção aplicada!\n\n${descricao}\n\nRecalculando auditoria...`);
 
     // Re-executa a auditoria pra atualizar a tela
+    await executarAuditoria();
+
+  } catch (e) {
+    console.error(e);
+    alert(`❌ Erro ao corrigir: ${e.message}`);
+  }
+};
+
+// ========================================================================
+// CORREÇÃO OPERACIONAL — SORVETES / EMBALAGENS (gêmea da de bebidas)
+// A contagem de sorvete é ÚNICA (contagemSorv), com os campos do produto em
+// "<slug>__ini" { qtd } e "<slug>__fin" { final, abast, vendeu }.
+// ========================================================================
+window.__aud_toggleCorrigirManualOpSorv = function(slug) {
+  const box = document.getElementById(`aud-corr-manual-op-sorv-${slug}`);
+  const btn = document.getElementById(`aud-btn-toggle-op-sorv-${slug}`);
+  if (!box) return;
+  const aberto = box.style.display !== 'none';
+  box.style.display = aberto ? 'none' : 'block';
+  if (btn) btn.textContent = aberto ? '💡 Aceitar sugestão e corrigir' : '✕ Cancelar';
+};
+
+window.__aud_corrigirSorvErro = async function(slug, alvo) {
+  const item = resultadoSorvetes.find(r => r.slug === slug);
+  if (!item) { alert('Item não encontrado.'); return; }
+
+  if (modoAtual !== 'operacional') {
+    alert('Esta correção só é válida no modo operacional.');
+    return;
+  }
+
+  const { contagemSorv } = contextoAuditoria;
+  if (!contagemSorv) { alert('Contagem de sorvetes não disponível.'); return; }
+
+  let valorAtual, valorNovo, sufixo, descricao;
+  if (alvo === 'ini') {
+    valorAtual = item.ini;
+    valorNovo  = item.ini - (item.d1 || 0);   // alinha INI com FIN do dia anterior
+    sufixo = '__ini';
+    descricao = `INI (sorvete) de ${item.nome}: ${valorAtual} → ${valorNovo}`;
+  } else if (alvo === 'fin') {
+    valorAtual = item.real;
+    valorNovo  = item.real - item.diferenca;   // zera a divergência
+    sufixo = '__fin';
+    descricao = `FIN (sorvete) de ${item.nome}: ${valorAtual} → ${valorNovo}`;
+  } else {
+    alert('Alvo inválido (use "ini" ou "fin").');
+    return;
+  }
+
+  const confirmado = confirm(
+    `🔄 CORRIGIR CONTAGEM DE SORVETE\n\n` +
+    `Produto: ${item.nome}\n` +
+    `Alvo: ${alvo === 'ini' ? 'INI (abertura)' : 'FIN (fechamento)'}\n\n` +
+    `Valor atual: ${valorAtual}\n` +
+    `Novo valor: ${valorNovo}\n\n` +
+    `📊 Análise: D-1 = ${fmtSgn(item.d1)} / DIF = ${fmtSgn(item.diferenca)}\n` +
+    `${alvo === 'ini'
+        ? '✅ Esta opção (INI) resolve a divergência E elimina o D-1.'
+        : '⚠️ Esta opção (FIN) zera a DIF mas o D-1 permanece.'}\n\n` +
+    `A correção fica registrada no histórico. Confirmar?`
+  );
+  if (!confirmado) return;
+
+  try {
+    const novosItens = { ...contagemSorv.itens };
+    const chaveAtual = Object.keys(novosItens).find(k => k === `${slug}${sufixo}`);
+
+    if (!chaveAtual) {
+      alert(`Não encontrei a contagem ${alvo.toUpperCase()} deste produto na folha de sorvetes.`);
+      return;
+    }
+    const valorObj = novosItens[chaveAtual];
+    if (!valorObj || typeof valorObj !== 'object') {
+      alert('Estrutura da contagem de sorvete não reconhecida.');
+      return;
+    }
+    // Clona o objeto do item pra preservar os outros campos (abast/vendeu no __fin)
+    novosItens[chaveAtual] = { ...valorObj };
+    if (sufixo === '__ini') {
+      novosItens[chaveAtual].qtd = valorNovo;
+    } else {
+      novosItens[chaveAtual].final = valorNovo;
+    }
+
+    const sessao = getSessao();
+    await corrigirItemContagem(contagemSorv.id, novosItens, {
+      responsavel: sessao?.nome || 'Gestor',
+      motivo: `Correção operacional sorvete via D-1: ${descricao}`,
+      itemSlug: slug,
+      valorAntigo: valorAtual,
+      valorNovo: valorNovo
+    });
+
+    alert(`✅ Correção aplicada!\n\n${descricao}\n\nRecalculando auditoria...`);
     await executarAuditoria();
 
   } catch (e) {
