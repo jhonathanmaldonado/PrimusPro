@@ -589,6 +589,10 @@ async function executarModoOperacional() {
   const contagemFinAnterior = todasContagens.find(c =>
     c.tipo === 'fin' && c.data < dataInicio
   );
+  // Contagem de SORVETES do dia operacional anterior (pro D-1 dos sorvetes)
+  const contagemSorvAnteriorOp = todasContagens
+    .filter(c => c.tipo === 'sorv' && c.data < dataInicio)
+    .sort((a, b) => b.data.localeCompare(a.data))[0] || null;
 
   // 3) Busca vendas no período
   const vendas = await listarVendas({
@@ -609,7 +613,7 @@ async function executarModoOperacional() {
 
   // 5b) Calcula auditoria de sorvetes (se houver contagem)
   if (contagemSorv) {
-    resultadoSorvetes = await calcularAuditoriaSorvetes(contagemSorv, vendas);
+    resultadoSorvetes = await calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSorvAnteriorOp);
   } else {
     resultadoSorvetes = [];
   }
@@ -942,12 +946,13 @@ async function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, au
 // - Compara com vendas do PDV
 // - Embalagens (categoria 📦) têm a mesma estrutura, mas geralmente o "vendeu"
 //   no PDV é o consumo de embalagem (ex: "EMBALAGEM M" no relatório de produtos).
-async function calcularAuditoriaSorvetes(contagemSorv, vendas) {
+async function calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSorvAnterior = null) {
   // Carrega catálogo efetivo de sorvetes (inclui embalagens — todos vão na mesma folha)
   const sorvetes = await obterSorvetes();
 
-  // Extrai os campos da contagem
+  // Extrai os campos da contagem (e da anterior, pro D-1)
   const camposSorv = extrairCamposSorvetes(contagemSorv);
+  const camposAnt  = extrairCamposSorvetes(contagemSorvAnterior);
 
   // Soma vendas do PDV por slug
   const vendidoPorSlug = {};
@@ -959,46 +964,64 @@ async function calcularAuditoriaSorvetes(contagemSorv, vendas) {
     });
   });
 
-  // Monta linha por sorvete cadastrado
+  const temAnterior = !!contagemSorvAnterior;
+
+  // Monta linha por sorvete cadastrado — MESMO formato das bebidas
   return sorvetes.map(sorv => {
     const slug = slugify(sorv.nome);
     const c = camposSorv[slug] || { ini: 0, abast: 0, fin: 0 };
     const ini   = c.ini   || 0;
-    const abast = c.abast || 0;
+    const abast = c.abast || 0;   // reabastecimento durante o dia = "recebido"
     const fin   = c.fin   || 0;
-    const vendeuCalc = ini + abast - fin;            // Quanto saiu fisicamente
-    const vendeuPDV  = vendidoPorSlug[slug] || 0;    // Quanto o PDV registrou
-    const diferenca  = vendeuCalc - vendeuPDV;       // Positivo = saiu mais que vendeu (sumiço/cortesia/quebra)
-                                                     // Negativo = vendeu mais que saiu (erro de contagem ou contou menos)
+    const vendido = vendidoPorSlug[slug] || 0;   // vendeu no PDV
 
-    // Classifica o status pela magnitude da divergência (igual bebidas)
+    // Formato bebidas: esperado = ini + recebido − vendido ; real = fin ; dif = real − esperado
+    const esperado  = ini + abast - vendido;
+    const real      = fin;
+    const diferenca = real - esperado;
+
+    // D-1: INI de hoje − FIN do dia operacional anterior (mesma lógica das bebidas)
+    let d1 = null;
+    if (temAnterior) {
+      const finAnt = (camposAnt[slug] && camposAnt[slug].fin) || 0;
+      d1 = ini - finAnt;
+    }
+
+    // Status pela magnitude da diferença (mesma régua das bebidas)
     const abs = Math.abs(diferenca);
     let status;
-    if (vendeuCalc === 0 && vendeuPDV === 0)        status = 'sem_dados';
-    else if (abs === 0)                              status = 'ok';
-    else if (abs === 1)                              status = 'leve';
-    else if (abs >= 2 && abs <= 4)                   status = 'atencao';
-    else                                             status = 'critico';
+    if (ini === 0 && fin === 0 && abast === 0 && vendido === 0) status = 'sem_dados';
+    else if (abs >= 5) status = 'critico';
+    else if (abs >= 2) status = 'atencao';
+    else if (abs >= 1) status = 'leve';
+    else                status = 'ok';
 
     return {
       slug,
       nome: sorv.nome,
       grupo: sorv.grupo || '',
       ini,
+      // campos no padrão bebidas (usados no render novo)
+      recebido: abast,
+      vendido,
+      esperado,
+      real,
+      diferenca,
+      d1,
+      // campos legados mantidos p/ histórico/PDF/snapshot não quebrarem
       abast,
       fin,
-      vendeuCalc,
-      vendeuPDV,
-      diferenca,
-      vendeuAnotado: c.vendeuAnotado,  // pode ser undefined
+      vendeuCalc: ini + abast - fin,
+      vendeuPDV: vendido,
+      vendeuAnotado: c.vendeuAnotado,
       status,
       _origem: 'cadastrado'
     };
   });
+}
   // OBS: produtos vendidos no PDV que NÃO estão no catálogo de sorvetes
   // são tratados pela função detectarSorvetesNaoCadastrados (para não poluir
   // a tabela principal — vão pra um aviso separado).
-}
 
 /**
  * Detecta produtos vendidos no PDV que se parecem com sorvete/embalagem
@@ -1502,18 +1525,17 @@ async function renderizarSecaoSorvetesOperacional(vendas) {
   const ok       = resultadoSorvetes.filter(r => r.status === 'ok').length;
   const semdados = resultadoSorvetes.filter(r => r.status === 'sem_dados').length;
 
-  // Totais
-  const totalIni    = resultadoSorvetes.reduce((s, r) => s + r.ini, 0);
-  const totalAbast  = resultadoSorvetes.reduce((s, r) => s + r.abast, 0);
-  const totalFin    = resultadoSorvetes.reduce((s, r) => s + r.fin, 0);
-  const totalVCalc  = resultadoSorvetes.reduce((s, r) => s + r.vendeuCalc, 0);
-  const totalVPdv   = resultadoSorvetes.reduce((s, r) => s + r.vendeuPDV, 0);
-  const totalDif    = resultadoSorvetes.reduce((s, r) => s + r.diferenca, 0);
+  // Totais (formato bebidas)
+  const totalIni    = resultadoSorvetes.reduce((s, r) => s + (r.ini || 0), 0);
+  const totalRec    = resultadoSorvetes.reduce((s, r) => s + (r.recebido || 0), 0);
+  const totalVen    = resultadoSorvetes.reduce((s, r) => s + (r.vendido || 0), 0);
+  const totalEsp    = resultadoSorvetes.reduce((s, r) => s + (r.esperado || 0), 0);
+  const totalReal   = resultadoSorvetes.reduce((s, r) => s + (r.real || 0), 0);
+  const totalDif    = resultadoSorvetes.reduce((s, r) => s + (r.diferenca || 0), 0);
 
-  // Agrupa por grupo (Sorbets / Gelatos / Embalagens)
+  // Agrupa por grupo (Sorbets / Gelatos / Embalagens) — MOSTRA TODOS os produtos
   const grupos = {};
   resultadoSorvetes.forEach(r => {
-    if (r.status === 'sem_dados' && r.vendeuPDV === 0) return;  // pula totalmente vazio
     const g = r.grupo || '— Sem grupo —';
     if (!grupos[g]) grupos[g] = [];
     grupos[g].push(r);
@@ -1538,7 +1560,7 @@ async function renderizarSecaoSorvetesOperacional(vendas) {
   secao.innerHTML = `
     <div class="aud-sorv-titulo">
       <h3>🍨 Sorvetes &amp; Embalagens</h3>
-      <span class="aud-sorv-sub">Comparação: estoque físico vs PDV</span>
+      <span class="aud-sorv-sub">Mesmo cálculo das bebidas: esperado (INI+REC−VEN) vs contagem real</span>
     </div>
 
     <div class="aud-kpis aud-kpis-sorv">
@@ -1558,23 +1580,23 @@ async function renderizarSecaoSorvetesOperacional(vendas) {
       </div>
       <div class="aud-eq-op">+</div>
       <div class="aud-eq-card">
-        <div class="aud-eq-label">ABAST.</div>
-        <div class="aud-eq-val">${fmtInt(totalAbast)}</div>
+        <div class="aud-eq-label">RECEBIDO</div>
+        <div class="aud-eq-val">${fmtInt(totalRec)}</div>
       </div>
       <div class="aud-eq-op">−</div>
       <div class="aud-eq-card">
-        <div class="aud-eq-label">FINAL</div>
-        <div class="aud-eq-val">${fmtInt(totalFin)}</div>
+        <div class="aud-eq-label">VENDIDO</div>
+        <div class="aud-eq-val">${fmtInt(totalVen)}</div>
       </div>
       <div class="aud-eq-op">=</div>
       <div class="aud-eq-card aud-eq-card-esp">
-        <div class="aud-eq-label">VENDEU CALC.</div>
-        <div class="aud-eq-val">${fmtInt(totalVCalc)}</div>
+        <div class="aud-eq-label">ESPERADO</div>
+        <div class="aud-eq-val">${fmtInt(totalEsp)}</div>
       </div>
       <div class="aud-eq-op">vs</div>
       <div class="aud-eq-card aud-eq-card-real">
-        <div class="aud-eq-label">VENDEU PDV</div>
-        <div class="aud-eq-val">${fmtInt(totalVPdv)}</div>
+        <div class="aud-eq-label">REAL (FIN)</div>
+        <div class="aud-eq-val">${fmtInt(totalReal)}</div>
       </div>
       <div class="aud-eq-op">=</div>
       <div class="aud-eq-card aud-eq-card-dif">
@@ -1583,21 +1605,20 @@ async function renderizarSecaoSorvetesOperacional(vendas) {
       </div>
     </div>
 
-    <div class="aud-tabela-wrapper">
-      <div class="aud-cabecalho aud-cabecalho-sorv">
+    <div class="aud-lista">
+      <div class="aud-linha aud-cab">
         <div>Produto</div>
-        <div class="aud-num">INI</div>
-        <div class="aud-num">+ABAST</div>
-        <div class="aud-num">−FIN</div>
-        <div class="aud-num">=CALC</div>
-        <div class="aud-num">PDV</div>
-        <div class="aud-num">DIF</div>
+        <div title="INI atual − FIN do dia anterior">D-1</div>
+        <div title="Contagem inicial">INI</div>
+        <div title="Reabastecido no dia">+REC</div>
+        <div title="Vendido no PDV">−VEN</div>
+        <div title="Estoque esperado ao final">=ESP</div>
+        <div title="Contagem real ao final">REAL</div>
+        <div title="Diferença (Real − Esperado)">DIF</div>
         <div>Status</div>
       </div>
       ${Object.entries(grupos).map(([grupo, itens]) => `
-        <div class="aud-grupo-sep">
-          <span class="aud-grupo-icon">◆</span> ${grupo}
-        </div>
+        <div class="aud-grupo-header">${grupo}</div>
         ${itens.map(r => renderLinhaSorvetesOperacional(r)).join('')}
       `).join('')}
     </div>
@@ -1618,14 +1639,19 @@ function renderLinhaSorvetesOperacional(r) {
   const difClasse = r.diferenca < 0 ? 'aud-dif-neg' :
                     r.diferenca > 0 ? 'aud-dif-pos' : 'aud-dif-zero';
 
+  const d1Txt = (r.d1 === null || r.d1 === undefined) ? 'n/c' : fmtSgn(r.d1);
+  const d1Classe = (r.d1 === null || r.d1 === undefined) ? 'aud-dif-zero'
+                 : r.d1 < 0 ? 'aud-dif-neg' : r.d1 > 0 ? 'aud-dif-pos' : 'aud-dif-zero';
+
   return `
-    <div class="aud-linha aud-linha-sorv aud-linha-${r.status}">
+    <div class="aud-linha aud-linha-${r.status}">
       <div class="aud-nome">${r.nome}</div>
+      <div class="aud-num ${d1Classe}">${d1Txt}</div>
       <div class="aud-num">${fmtInt(r.ini)}</div>
-      <div class="aud-num aud-num-pos">${r.abast > 0 ? '+' + fmtInt(r.abast) : '—'}</div>
-      <div class="aud-num">${fmtInt(r.fin)}</div>
-      <div class="aud-num aud-num-esp">${fmtInt(r.vendeuCalc)}</div>
-      <div class="aud-num aud-num-real">${fmtInt(r.vendeuPDV)}</div>
+      <div class="aud-num aud-num-pos">${r.recebido > 0 ? '+' + fmtInt(r.recebido) : '—'}</div>
+      <div class="aud-num">${r.vendido > 0 ? '−' + fmtInt(r.vendido) : '—'}</div>
+      <div class="aud-num aud-num-esp">${fmtInt(r.esperado)}</div>
+      <div class="aud-num aud-num-real">${fmtInt(r.real)}</div>
       <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}</div>
       <div>${statusBadge}</div>
     </div>
