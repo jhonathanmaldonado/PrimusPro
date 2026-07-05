@@ -100,7 +100,10 @@ export async function corrigirItemContagem(idContagem, novosItens, correcao) {
   }
   const dados = contagemOriginal.data();
 
-  // Cria nova contagem com os itens corrigidos
+  // Cria nova contagem com os itens corrigidos.
+  // MARCADA como correção: preserva quem fez a contagem original (autorNome),
+  // registra quem corrigiu (corrigidoPor) e sinaliza origem='correcao' pra que
+  // a Cloud Function de push NÃO dispare notificação (não é contagem nova).
   const novaRef = await addDoc(collection(db, COL_CONTAGENS), {
     tipo: dados.tipo,
     data: dados.data,
@@ -108,6 +111,13 @@ export async function corrigirItemContagem(idContagem, novosItens, correcao) {
     autorNome: dados.autorNome,
     autorPerfil: dados.autorPerfil,
     itens: novosItens,
+    origem: 'correcao',
+    corrigidoPor: (correcao && correcao.responsavel) || 'Gestor',
+    corrigidoEm: serverTimestamp(),
+    motivoCorrecao: (correcao && correcao.motivo) || '',
+    correcaoItem: (correcao && correcao.itemSlug) || null,
+    correcaoValorAntigo: (correcao && correcao.valorAntigo != null) ? correcao.valorAntigo : null,
+    correcaoValorNovo: (correcao && correcao.valorNovo != null) ? correcao.valorNovo : null,
     criadoEm: serverTimestamp()
   });
 
