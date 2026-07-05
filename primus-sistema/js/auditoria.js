@@ -59,6 +59,10 @@ export async function inicializarAuditoria() {
         <span class="subaba-ico">📈</span>
         <span class="subaba-txt">Histórico</span>
       </button>
+      <button class="subaba" data-subaba="semana">
+        <span class="subaba-ico">📊</span>
+        <span class="subaba-txt">Semana</span>
+      </button>
     </div>
 
     <!-- Tela de DETALHE (aparece ao clicar num dia do calendário) -->
@@ -132,6 +136,20 @@ export async function inicializarAuditoria() {
             <div style="margin-top:10px;color:var(--cinza-texto);font-size:13px">Carregando histórico...</div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Aba: Semana (compensação de diferenças SEG→DOM) -->
+    <div class="subaba-conteudo" id="aud-aba-semana" style="display:none">
+      <div class="card">
+        <div class="aud-cal-nav">
+          <span class="aud-cal-titulo" id="aud-sem-titulo">—</span>
+          <div class="aud-cal-nav-btns">
+            <button id="aud-sem-prev" type="button">◀ Semana anterior</button>
+            <button id="aud-sem-next" type="button">Próxima ▶</button>
+          </div>
+        </div>
+        <div id="aud-sem-lista"></div>
       </div>
     </div>
 
@@ -289,9 +307,14 @@ export async function inicializarAuditoria() {
   const calNext = document.getElementById('aud-cal-next');
   if (calPrev) calPrev.onclick = () => calNavegarMes(-1);
   if (calNext) calNext.onclick = () => calNavegarMes(1);
+  const semPrev = document.getElementById('aud-sem-prev');
+  const semNext = document.getElementById('aud-sem-next');
+  if (semPrev) semPrev.onclick = () => semanaNavegar(-1);
+  if (semNext) semNext.onclick = () => semanaNavegar(1);
   const btnVoltar = document.getElementById('aud-voltar-cal');
   if (btnVoltar) btnVoltar.onclick = voltarAoCalendario;
   injetarEstiloCalendario();
+  injetarEstiloSemana();
 
   // Estado inicial: calendário é a tela principal da auditoria
   document.getElementById('aud-aba-atual').style.display = 'none';
@@ -346,12 +369,16 @@ function trocarSubaba(nova) {
   });
   document.getElementById('aud-aba-atual').style.display     = 'none';
   document.getElementById('aud-aba-historico').style.display = nova === 'historico' ? 'block' : 'none';
+  const semEl = document.getElementById('aud-aba-semana');
+  if (semEl) semEl.style.display = nova === 'semana' ? 'block' : 'none';
   const calEl = document.getElementById('aud-aba-calendario');
   if (calEl) calEl.style.display = nova === 'calendario' ? 'block' : 'none';
   document.querySelector('.subabas-wrapper').style.display = '';
 
   if (nova === 'historico') {
     carregarHistorico();
+  } else if (nova === 'semana') {
+    renderSemanaAuditoria();
   } else if (nova === 'calendario') {
     renderCalendarioAuditoria();
   }
@@ -4360,6 +4387,184 @@ function calNavegarMes(delta) {
   _calMes = new Date(_calMes.getFullYear(), _calMes.getMonth() + delta, 1);
   renderCalendarioAuditoria();
 }
+
+// ============================================================================
+// ABA SEMANAL — visão Segunda→Domingo de diferença + venda por produto.
+// Objetivo: ver se a diferença de um dia foi COMPENSADA em outro (timing)
+// ou se PERSISTE a semana toda (problema real). Reusa os mesmos motores do
+// calendário: calcularAuditoriaOperacional + calcularAuditoriaSorvetes.
+// ============================================================================
+
+let _semanaRef = null; // Date = SEGUNDA da semana exibida
+
+function segundaDaSemana(d) {
+  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dow = x.getDay();                  // 0=Dom .. 6=Sáb
+  const diff = (dow === 0 ? -6 : 1 - dow); // recua até a segunda
+  x.setDate(x.getDate() + diff);
+  return x;
+}
+
+function injetarEstiloSemana() {
+  if (document.getElementById('aud-sem-style')) return;
+  const st = document.createElement('style');
+  st.id = 'aud-sem-style';
+  st.textContent = `
+    .aud-sem-wrap { overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .aud-sem-tab { border-collapse:separate; border-spacing:0; width:100%; min-width:720px; font-size:12.5px; }
+    .aud-sem-tab th, .aud-sem-tab td { padding:5px 4px; text-align:center; border-bottom:1px solid #f0eef0; }
+    .aud-sem-tab thead th { position:sticky; top:0; background:#fff; font-size:11px; color:#888; font-weight:800; padding-bottom:6px; z-index:2; }
+    .aud-sem-tab thead th small { display:block; font-weight:600; color:#bbb; font-size:9.5px; }
+    .aud-sem-prod { text-align:left !important; font-weight:600; color:#333; position:sticky; left:0; background:#fff; z-index:1; min-width:150px; box-shadow:1px 0 0 #eee; }
+    .aud-sem-grupo td { background:#faf6f8; font-weight:800; color:var(--vinho,#7C0047); text-align:left !important; font-size:11.5px; text-transform:uppercase; letter-spacing:.3px; }
+    .aud-sem-cel { line-height:1.15; }
+    .aud-sem-dif { font-weight:800; font-size:13px; }
+    .aud-sem-ven { display:block; font-size:9.5px; color:#aaa; }
+    .dif-faltou .aud-sem-dif { color:#c0392b; }
+    .dif-sobrou .aud-sem-dif { color:#1e8449; }
+    .dif-zero   .aud-sem-dif { color:#bbb; }
+    .aud-sem-nd { color:#ddd; font-size:12px; }
+    .aud-sem-semana { background:#fff8ec; font-weight:800; }
+    .aud-sem-semana.st-compensou { background:#eafaf0; }
+    .aud-sem-semana.st-critico   { background:#fdecea; }
+    .aud-sem-semana.st-atencao   { background:#fef5e7; }
+    .aud-sem-semana.st-leve      { background:#fefbe7; }
+    .aud-sem-tag { display:block; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.3px; margin-top:1px; }
+    .st-compensou .aud-sem-tag { color:#1e8449; }
+    .st-critico .aud-sem-tag, .st-atencao .aud-sem-tag, .st-leve .aud-sem-tag { color:#c0392b; }
+    .aud-sem-legenda { font-size:11.5px; color:#888; margin-top:14px; line-height:1.5; }
+    @media (max-width:600px){ .aud-sem-tab { min-width:680px; } }
+  `;
+  document.head.appendChild(st);
+}
+
+function semanaNavegar(delta) {
+  if (!_semanaRef) _semanaRef = segundaDaSemana(new Date());
+  _semanaRef = new Date(_semanaRef.getFullYear(), _semanaRef.getMonth(), _semanaRef.getDate() + delta * 7);
+  renderSemanaAuditoria();
+}
+
+async function renderSemanaAuditoria() {
+  const cont = document.getElementById('aud-sem-lista');
+  if (!cont) return;
+
+  if (!_semanaRef) _semanaRef = segundaDaSemana(new Date());
+  const seg = new Date(_semanaRef);
+  const dom = new Date(seg.getFullYear(), seg.getMonth(), seg.getDate() + 6);
+
+  const tituloEl = document.getElementById('aud-sem-titulo');
+  if (tituloEl) tituloEl.textContent = `${seg.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})} — ${dom.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})}`;
+
+  cont.innerHTML = `<div style="text-align:center;padding:30px"><span class="spinner"></span><div style="margin-top:8px;color:#999;font-size:13px">Calculando a semana...</div></div>`;
+
+  const diasIso = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(seg.getFullYear(), seg.getMonth(), seg.getDate() + i);
+    diasIso.push(toIso(d));
+  }
+  const dataInicio = diasIso[0], dataFim = diasIso[6];
+
+  try {
+    const [todasContagens, vendasLote, recebLote] = await Promise.all([
+      listarContagens({ limite: 500 }),
+      listarVendas({ dataInicio, dataFim, limite: 90 }),
+      listarRecebimentos(dataInicio, dataFim),
+    ]);
+    await obterBebidas();
+    await obterSorvetes();
+
+    // prodMap[slug] = { nome, grupo, dias: Array(7) de {dif,ven}|null }
+    const prodMap = {};
+    function registrar(slug, nome, grupo, idxDia, dif, ven) {
+      if (!prodMap[slug]) prodMap[slug] = { nome, grupo: grupo || '—', dias: Array(7).fill(null) };
+      prodMap[slug].dias[idxDia] = { dif, ven };
+    }
+
+    for (let i = 0; i < 7; i++) {
+      const diaIso = diasIso[i];
+      const ini  = todasContagens.find(c => c.tipo === 'ini'  && c.data === diaIso);
+      const fin  = todasContagens.find(c => c.tipo === 'fin'  && c.data === diaIso);
+      const sorv = todasContagens.find(c => c.tipo === 'sorv' && c.data === diaIso);
+      const vendasDia = vendasLote.filter(v => (v.data || v.id) === diaIso);
+      const recebDia  = recebLote.filter(r => r.data === diaIso);
+
+      if (ini && fin) {
+        const finAnt = todasContagens.filter(c => c.tipo === 'fin' && c.data < diaIso).sort((a, b) => b.data.localeCompare(a.data))[0] || null;
+        const res = await calcularAuditoriaOperacional(ini, fin, vendasDia, recebDia, finAnt, {});
+        res.forEach(r => { if (r.status !== 'semdados') registrar(r.slug, r.nome, r.grupo, i, r.diferenca, r.vendido); });
+      }
+      if (sorv) {
+        const sorvAnt = todasContagens.filter(c => c.tipo === 'sorv' && c.data < diaIso).sort((a, b) => b.data.localeCompare(a.data))[0] || null;
+        const resS = await calcularAuditoriaSorvetes(sorv, vendasDia, sorvAnt);
+        resS.forEach(r => { if (r.status !== 'sem_dados') registrar(r.slug, r.nome, r.grupo, i, r.diferenca, r.vendido); });
+      }
+    }
+
+    const slugs = Object.keys(prodMap);
+    if (!slugs.length) {
+      cont.innerHTML = `<div style="text-align:center;padding:30px;color:#999;font-size:14px">Nenhuma contagem nesta semana.</div>`;
+      return;
+    }
+
+    // Agrupa por grupo e ordena
+    const porGrupo = {};
+    slugs.forEach(s => {
+      const g = prodMap[s].grupo;
+      if (!porGrupo[g]) porGrupo[g] = [];
+      porGrupo[g].push(s);
+    });
+    Object.values(porGrupo).forEach(arr => arr.sort((a, b) => prodMap[a].nome.localeCompare(prodMap[b].nome, 'pt-BR')));
+    const gruposOrd = Object.keys(porGrupo).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+    const wd = ['SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB', 'DOM'];
+    let html = '<div class="aud-sem-wrap"><table class="aud-sem-tab"><thead><tr><th class="aud-sem-prod">Produto</th>';
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(seg.getFullYear(), seg.getMonth(), seg.getDate() + i);
+      html += `<th>${wd[i]}<small>${d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</small></th>`;
+    }
+    html += '<th class="aud-sem-semana">SEMANA</th></tr></thead><tbody>';
+
+    gruposOrd.forEach(g => {
+      html += `<tr class="aud-sem-grupo"><td colspan="9">${g}</td></tr>`;
+      porGrupo[g].forEach(s => {
+        const p = prodMap[s];
+        html += `<tr><td class="aud-sem-prod">${p.nome}</td>`;
+        let somaDif = 0, somaAbsDia = 0, somaVen = 0;
+        for (let i = 0; i < 7; i++) {
+          const c = p.dias[i];
+          if (!c) { html += `<td class="aud-sem-nd">·</td>`; continue; }
+          somaDif += c.dif; somaAbsDia += Math.abs(c.dif); somaVen += c.ven;
+          const cls = c.dif < 0 ? 'dif-faltou' : (c.dif > 0 ? 'dif-sobrou' : 'dif-zero');
+          html += `<td class="aud-sem-cel ${cls}"><span class="aud-sem-dif">${fmtSgn(c.dif)}</span><span class="aud-sem-ven">v ${c.ven}</span></td>`;
+        }
+        // Coluna SEMANA — compensou vs. problema real
+        const absSoma = Math.abs(somaDif);
+        let st;
+        if (somaAbsDia === 0) st = 'ok';
+        else if (absSoma <= 1 && somaAbsDia >= 2) st = 'compensou';
+        else if (absSoma >= 5) st = 'critico';
+        else if (absSoma >= 2) st = 'atencao';
+        else if (absSoma >= 1) st = 'leve';
+        else st = 'ok';
+        const tag = st === 'compensou' ? 'compensou' : (st === 'ok' ? '' : 'problema');
+        const difCls = somaDif < 0 ? 'dif-faltou' : (somaDif > 0 ? 'dif-sobrou' : 'dif-zero');
+        html += `<td class="aud-sem-semana st-${st} ${difCls}"><span class="aud-sem-dif">${fmtSgn(somaDif)}</span><span class="aud-sem-ven">v ${somaVen}</span>${tag ? `<span class="aud-sem-tag">${tag}</span>` : ''}</td>`;
+        html += '</tr>';
+      });
+    });
+
+    html += '</tbody></table></div>';
+    html += `<div class="aud-sem-legenda">
+      Cada célula: <b>diferença</b> (vermelho = faltou · verde = sobrou) e <b>v</b> = venda do dia.<br>
+      Coluna <b>SEMANA</b>: soma da semana. <span style="color:#1e8449;font-weight:700">compensou</span> = teve balanço nos dias mas fechou ≈0 (provável timing, não sumiço). <span style="color:#c0392b;font-weight:700">problema</span> = diferença que persistiu na semana.
+    </div>`;
+    cont.innerHTML = html;
+  } catch (e) {
+    console.error('[semana auditoria]', e);
+    cont.innerHTML = `<div style="text-align:center;padding:30px;color:var(--vermelho,#c0392b);font-size:14px">Erro ao carregar: ${e.message}</div>`;
+  }
+}
+
 
 async function renderCalendarioAuditoria() {
   const cont = document.getElementById('aud-cal-lista');
