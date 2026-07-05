@@ -4424,14 +4424,14 @@ function injetarEstiloSemana() {
     .dif-sobrou .aud-sem-dif { color:#1e8449; }
     .dif-zero   .aud-sem-dif { color:#bbb; }
     .aud-sem-nd { color:#ddd; font-size:12px; }
-    .aud-sem-semana { background:#fff8ec; font-weight:800; }
-    .aud-sem-semana.st-compensou { background:#eafaf0; }
-    .aud-sem-semana.st-critico   { background:#fdecea; }
-    .aud-sem-semana.st-atencao   { background:#fef5e7; }
-    .aud-sem-semana.st-leve      { background:#fefbe7; }
-    .aud-sem-tag { display:block; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.3px; margin-top:1px; }
-    .st-compensou .aud-sem-tag { color:#1e8449; }
-    .st-critico .aud-sem-tag, .st-atencao .aud-sem-tag, .st-leve .aud-sem-tag { color:#c0392b; }
+    .aud-sem-semana { font-weight:800; }
+    .aud-sem-semana.sem-falta  { background:#fdecea; }
+    .aud-sem-semana.sem-sobra  { background:#fef9e7; }
+    .aud-sem-semana.sem-batido { background:#eafaf0; }
+    .aud-sem-semana.sem-falta  .aud-sem-dif { color:#c0392b; }
+    .aud-sem-semana.sem-sobra  .aud-sem-dif { color:#b7791f; }
+    .aud-sem-semana.sem-batido .aud-sem-dif { color:#1e8449; }
+    .aud-sem-tag { display:block; font-size:9px; font-weight:800; text-transform:uppercase; letter-spacing:.3px; margin-top:1px; color:#1e8449; }
     .aud-sem-legenda { font-size:11.5px; color:#888; margin-top:14px; line-height:1.5; }
     @media (max-width:600px){ .aud-sem-tab { min-width:680px; } }
   `;
@@ -4537,18 +4537,14 @@ async function renderSemanaAuditoria() {
           const cls = c.dif < 0 ? 'dif-faltou' : (c.dif > 0 ? 'dif-sobrou' : 'dif-zero');
           html += `<td class="aud-sem-cel ${cls}"><span class="aud-sem-dif">${fmtSgn(c.dif)}</span><span class="aud-sem-ven">v ${c.ven}</span></td>`;
         }
-        // Coluna SEMANA — compensou vs. problema real
-        const absSoma = Math.abs(somaDif);
-        let st;
-        if (somaAbsDia === 0) st = 'ok';
-        else if (absSoma <= 1 && somaAbsDia >= 2) st = 'compensou';
-        else if (absSoma >= 5) st = 'critico';
-        else if (absSoma >= 2) st = 'atencao';
-        else if (absSoma >= 1) st = 'leve';
-        else st = 'ok';
-        const tag = st === 'compensou' ? 'compensou' : (st === 'ok' ? '' : 'problema');
-        const difCls = somaDif < 0 ? 'dif-faltou' : (somaDif > 0 ? 'dif-sobrou' : 'dif-zero');
-        html += `<td class="aud-sem-semana st-${st} ${difCls}"><span class="aud-sem-dif">${fmtSgn(somaDif)}</span><span class="aud-sem-ven">v ${somaVen}</span>${tag ? `<span class="aud-sem-tag">${tag}</span>` : ''}</td>`;
+        // Coluna SEMANA — cor por sinal: vermelho=falta, amarelo=sobra, verde=bateu
+        let semCor;
+        if (somaDif < 0) semCor = 'sem-falta';
+        else if (somaDif > 0) semCor = 'sem-sobra';
+        else semCor = 'sem-batido';
+        // "compensou": fechou em ZERO mas houve balanço nos dias (timing, não ausência de movimento)
+        const tag = (somaDif === 0 && somaAbsDia >= 2) ? 'compensou' : '';
+        html += `<td class="aud-sem-semana ${semCor}"><span class="aud-sem-dif">${fmtSgn(somaDif)}</span><span class="aud-sem-ven">v ${somaVen}</span>${tag ? `<span class="aud-sem-tag">${tag}</span>` : ''}</td>`;
         html += '</tr>';
       });
     });
@@ -4556,7 +4552,7 @@ async function renderSemanaAuditoria() {
     html += '</tbody></table></div>';
     html += `<div class="aud-sem-legenda">
       Cada célula: <b>diferença</b> (vermelho = faltou · verde = sobrou) e <b>v</b> = venda do dia.<br>
-      Coluna <b>SEMANA</b>: soma da semana. <span style="color:#1e8449;font-weight:700">compensou</span> = teve balanço nos dias mas fechou ≈0 (provável timing, não sumiço). <span style="color:#c0392b;font-weight:700">problema</span> = diferença que persistiu na semana.
+      Coluna <b>SEMANA</b> (soma da semana): <span style="color:#c0392b;font-weight:700">vermelho</span> = faltou · <span style="color:#b7791f;font-weight:700">amarelo</span> = sobrou · <span style="color:#1e8449;font-weight:700">verde</span> = bateu. Etiqueta <b>compensou</b> = fechou no zero por balanço entre os dias (timing, não ausência de movimento).
     </div>`;
     cont.innerHTML = html;
   } catch (e) {
