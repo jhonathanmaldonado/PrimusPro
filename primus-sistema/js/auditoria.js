@@ -3280,6 +3280,9 @@ async function confirmarEdicaoSorv() {
     alert(`❌ Erro ao salvar edição: ${e.message}`);
   }
 }
+
+/**
+ * Aplica edição num documento de contagem (INI ou FIN).
  * Atualiza a chave do slug com o novo valor preservando a estrutura
  * (compatível com bebidas { fr, est, total } e sorvetes { qtd } / { final, abast, vendeu }).
  */
