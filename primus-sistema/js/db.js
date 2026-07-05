@@ -118,7 +118,9 @@ export async function corrigirItemContagem(idContagem, novosItens, correcao) {
     correcaoItem: (correcao && correcao.itemSlug) || null,
     correcaoValorAntigo: (correcao && correcao.valorAntigo != null) ? correcao.valorAntigo : null,
     correcaoValorNovo: (correcao && correcao.valorNovo != null) ? correcao.valorNovo : null,
-    criadoEm: serverTimestamp()
+    // Preserva a data/hora REAIS da contagem original (nao carimba a hora do ajuste).
+    // A hora do ajuste fica em corrigidoEm; o card mostra a original como principal.
+    criadoEm: dados.criadoEm || serverTimestamp()
   });
 
   // Deleta a contagem original
