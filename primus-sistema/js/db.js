@@ -1,5 +1,5 @@
-// ===== DB — PRIMUS =====
-// Funções de alto nível para salvar/buscar contagens, vendas, etc.
+﻿// ===== DB ÔÇö PRIMUS =====
+// Fun├º├Áes de alto n├¡vel para salvar/buscar contagens, vendas, etc.
 
 import {
   db,
@@ -7,12 +7,13 @@ import {
   query, where, orderBy, limit, serverTimestamp, Timestamp
 } from './firebase-config.js';
 
-// ===== NOMES DAS COLEÇÕES =====
-// Todas prefixadas com 'primus_' para não conflitar com outros sistemas.
+// ===== NOMES DAS COLE├ç├òES =====
+// Todas prefixadas com 'primus_' para n├úo conflitar com outros sistemas.
 const COL_CONTAGENS = 'primus_contagens';
 const COL_VENDAS    = 'primus_vendas';
 const COL_COMPRAS   = 'primus_compras';
 const COL_PRODUTOS  = 'primus_produtos';
+const COL_CONSUMO   = 'primus_consumo_interno';
 
 // ===== CONTAGENS =====
 
@@ -36,8 +37,8 @@ export async function salvarContagem(contagem) {
 /**
  * Lista contagens com filtros opcionais.
  * NOTA: busca todos os documentos e filtra/ordena em JS para evitar
- * necessidade de índices compostos. Em volume normal (até ~5000 contagens),
- * isso é perfeitamente aceitável.
+ * necessidade de ├¡ndices compostos. Em volume normal (at├® ~5000 contagens),
+ * isso ├® perfeitamente aceit├ível.
  */
 export async function listarContagens({ tipo, dataInicio, dataFim, limite = 500 } = {}) {
   const snap = await getDocs(collection(db, COL_CONTAGENS));
@@ -60,10 +61,10 @@ export async function listarContagens({ tipo, dataInicio, dataFim, limite = 500 
 }
 
 /**
- * Busca a contagem mais recente de um tipo e data (pra usar de "última contagem").
+ * Busca a contagem mais recente de um tipo e data (pra usar de "├║ltima contagem").
  */
 export async function ultimaContagem({ tipo, data }) {
-  // Busca todas e filtra em JS para evitar precisar de índice composto
+  // Busca todas e filtra em JS para evitar precisar de ├¡ndice composto
   const snap = await getDocs(collection(db, COL_CONTAGENS));
   const arr = [];
   snap.forEach(d => {
@@ -82,10 +83,10 @@ export async function excluirContagem(id) {
 }
 
 /**
- * Corrige um item específico de uma contagem existente.
- * Como a regra do Firestore não permite update em contagens (imutabilidade),
- * a estratégia é: deletar a antiga e criar uma nova com o item corrigido.
- * Registra também quem corrigiu pra auditoria.
+ * Corrige um item espec├¡fico de uma contagem existente.
+ * Como a regra do Firestore n├úo permite update em contagens (imutabilidade),
+ * a estrat├®gia ├®: deletar a antiga e criar uma nova com o item corrigido.
+ * Registra tamb├®m quem corrigiu pra auditoria.
  *
  * @param {string} idContagem - ID da contagem original
  * @param {object} novosItens - Novos valores de itens (substitui os antigos)
@@ -95,14 +96,11 @@ export async function excluirContagem(id) {
 export async function corrigirItemContagem(idContagem, novosItens, correcao) {
   const contagemOriginal = await getDoc(doc(db, COL_CONTAGENS, idContagem));
   if (!contagemOriginal.exists()) {
-    throw new Error('Contagem original não encontrada');
+    throw new Error('Contagem original n├úo encontrada');
   }
   const dados = contagemOriginal.data();
 
-  // Cria nova contagem com os itens corrigidos.
-  // MARCADA como correção: preserva quem fez a contagem original (autorNome),
-  // registra quem corrigiu (corrigidoPor) e sinaliza origem='correcao' pra que
-  // a Cloud Function de push NÃO dispare notificação (não é contagem nova).
+  // Cria nova contagem com os itens corrigidos
   const novaRef = await addDoc(collection(db, COL_CONTAGENS), {
     tipo: dados.tipo,
     data: dados.data,
@@ -110,13 +108,6 @@ export async function corrigirItemContagem(idContagem, novosItens, correcao) {
     autorNome: dados.autorNome,
     autorPerfil: dados.autorPerfil,
     itens: novosItens,
-    origem: 'correcao',
-    corrigidoPor: (correcao && correcao.responsavel) || 'Gestor',
-    corrigidoEm: serverTimestamp(),
-    motivoCorrecao: (correcao && correcao.motivo) || '',
-    correcaoItem: (correcao && correcao.itemSlug) || null,
-    correcaoValorAntigo: (correcao && correcao.valorAntigo != null) ? correcao.valorAntigo : null,
-    correcaoValorNovo: (correcao && correcao.valorNovo != null) ? correcao.valorNovo : null,
     criadoEm: serverTimestamp()
   });
 
@@ -129,7 +120,7 @@ export async function corrigirItemContagem(idContagem, novosItens, correcao) {
 // ===== VENDAS (parseadas do TXT do PDV) =====
 
 /**
- * Salva vendas de um dia. Sobrescreve se já existir.
+ * Salva vendas de um dia. Sobrescreve se j├í existir.
  * @param {string} dia - 'YYYY-MM-DD'
  * @param {object} dados - { totais, vendedores, grupos, subgrupos, produtos, horas, operadores }
  */
@@ -147,7 +138,7 @@ export async function buscarVendasDia(dia) {
 }
 
 /**
- * Salva o detalhamento Vendedor × Produto num dia que já tem vendas importadas.
+ * Salva o detalhamento Vendedor ├ù Produto num dia que j├í tem vendas importadas.
  * Mescla com o documento existente (preserva todos os outros campos).
  * @param {string} dia - 'YYYY-MM-DD'
  * @param {array} detalhado - array de { nome, totalQtd, total, produtos }
@@ -155,7 +146,7 @@ export async function buscarVendasDia(dia) {
 export async function salvarDetalhadoVxP(dia, detalhado) {
   const existente = await buscarVendasDia(dia);
   if (!existente) {
-    throw new Error(`Não há vendas importadas pro dia ${dia}. Suba primeiro o relatório geral.`);
+    throw new Error(`N├úo h├í vendas importadas pro dia ${dia}. Suba primeiro o relat├│rio geral.`);
   }
   // Remove o campo "id" que vem da leitura antes de gravar
   const { id, ...dados } = existente;
@@ -168,18 +159,18 @@ export async function salvarDetalhadoVxP(dia, detalhado) {
 
 /**
  * Lista vendas ordenadas por data (mais recente primeiro).
- * Pode filtrar por período.
+ * Pode filtrar por per├¡odo.
  * NOTA: busca todos os documentos e filtra/ordena em JS para evitar
- * necessidade de índices compostos no Firestore. Como cada doc é um dia,
- * em 1 ano são no máximo ~365 docs — perfeitamente aceitável.
+ * necessidade de ├¡ndices compostos no Firestore. Como cada doc ├® um dia,
+ * em 1 ano s├úo no m├íximo ~365 docs ÔÇö perfeitamente aceit├ível.
  */
 export async function listarVendas({ dataInicio, dataFim, limite = 365 } = {}) {
   const snap = await getDocs(collection(db, COL_VENDAS));
   const arr = [];
   snap.forEach(d => arr.push({ id: d.id, ...d.data() }));
-  // Ordena por ID (que é a data YYYY-MM-DD), mais recente primeiro
+  // Ordena por ID (que ├® a data YYYY-MM-DD), mais recente primeiro
   arr.sort((a, b) => b.id.localeCompare(a.id));
-  // Filtra período se especificado
+  // Filtra per├¡odo se especificado
   let filtrado = arr;
   if (dataInicio) filtrado = filtrado.filter(v => v.id >= dataInicio);
   if (dataFim)    filtrado = filtrado.filter(v => v.id <= dataFim);
@@ -188,7 +179,7 @@ export async function listarVendas({ dataInicio, dataFim, limite = 365 } = {}) {
 }
 
 /**
- * Lista apenas os IDs (datas) de vendas já importadas - útil pra detectar duplicatas.
+ * Lista apenas os IDs (datas) de vendas j├í importadas - ├║til pra detectar duplicatas.
  */
 export async function listarDatasVendas() {
   const snap = await getDocs(collection(db, COL_VENDAS));
@@ -213,7 +204,7 @@ export async function buscarListaCompras(id) {
 }
 
 // ===== FORNECEDORES =====
-// Armazenados em primus_compras com ID fixo 'fornecedores' (um único documento)
+// Armazenados em primus_compras com ID fixo 'fornecedores' (um ├║nico documento)
 // contendo um array de { id, nome, telefone?, produtos: [slug1, slug2...] }
 
 const DOC_FORNECEDORES = 'fornecedores';
@@ -233,14 +224,14 @@ export async function salvarFornecedores(lista) {
   });
 }
 
-// ===== HISTÓRICO DE PREÇOS =====
-// Armazenado em primus_compras com ID fixo 'precos' (um único documento)
+// ===== HIST├ôRICO DE PRE├çOS =====
+// Armazenado em primus_compras com ID fixo 'precos' (um ├║nico documento)
 // Estrutura: { precos: { slug1: { valor, data, fornecedor }, slug2: {...} } }
-// Guardamos apenas o ÚLTIMO preço de cada produto (mais recente sobrescreve).
+// Guardamos apenas o ├ÜLTIMO pre├ºo de cada produto (mais recente sobrescreve).
 
 const DOC_PRECOS = 'precos';
 
-/** Busca o último preço pago de cada produto. Retorna objeto { slug: { valor, data, fornecedor } } */
+/** Busca o ├║ltimo pre├ºo pago de cada produto. Retorna objeto { slug: { valor, data, fornecedor } } */
 export async function buscarUltimosPrecos() {
   const snap = await getDoc(doc(db, COL_COMPRAS, DOC_PRECOS));
   if (!snap.exists()) return {};
@@ -248,8 +239,8 @@ export async function buscarUltimosPrecos() {
 }
 
 /**
- * Salva os preços pagos numa compra + registra como recebimento.
- * Sobrescreve o último preço de cada item e adiciona um recebimento no histórico.
+ * Salva os pre├ºos pagos numa compra + registra como recebimento.
+ * Sobrescreve o ├║ltimo pre├ºo de cada item e adiciona um recebimento no hist├│rico.
  * @param {array} itens - [{ slug, nome, qtd, precoUnit }]
  * @param {string} fornecedor - nome do fornecedor (opcional, usado como metadado)
  */
@@ -275,13 +266,13 @@ export async function salvarPrecosCompra(itens, fornecedor = '') {
 
   if (gravados === 0) return 0;
 
-  // Salva os preços
+  // Salva os pre├ºos
   await setDoc(ref, {
     precos,
     atualizadoEm: serverTimestamp()
   });
 
-  // Registra também como recebimento (pra Auditoria usar depois)
+  // Registra tamb├®m como recebimento (pra Auditoria usar depois)
   await registrarRecebimento({
     data: hoje,
     fornecedor,
@@ -298,7 +289,7 @@ export async function salvarPrecosCompra(itens, fornecedor = '') {
 }
 
 // ===== RECEBIMENTOS =====
-// Cada recebimento é um documento em primus_compras com ID "receb_YYYY-MM-DD_timestamp"
+// Cada recebimento ├® um documento em primus_compras com ID "receb_YYYY-MM-DD_timestamp"
 // Estrutura: { tipo: 'recebimento', data, fornecedor, itens: [...], criadoEm }
 
 /**
@@ -343,26 +334,26 @@ export async function excluirRecebimento(id) {
 }
 
 // ===== OVERRIDES DE PRODUTOS =====
-// O catálogo base fica em produtos.js (versionado no Git).
-// Os "overrides" ficam aqui no Firestore num único documento, e permitem ao
-// gestor: editar campos de produtos existentes, ocultar produtos do catálogo,
-// marcar como "saindo", adicionar produtos novos e criar grupos novos —
-// tudo SEM precisar mexer no código.
+// O cat├ílogo base fica em produtos.js (versionado no Git).
+// Os "overrides" ficam aqui no Firestore num ├║nico documento, e permitem ao
+// gestor: editar campos de produtos existentes, ocultar produtos do cat├ílogo,
+// marcar como "saindo", adicionar produtos novos e criar grupos novos ÔÇö
+// tudo SEM precisar mexer no c├│digo.
 //
 // Estrutura do documento `primus_produtos/overrides`:
 // {
 //   editados:    { "<slug>": { porCaixa?, fornecedor?, grupo?, ... } },
 //   ocultos:     [ "<slug>", ... ],     // somem completamente da contagem
-//   saindo:      [ "<slug>", ... ],     // ficam visíveis mas marcados como "saindo"
+//   saindo:      [ "<slug>", ... ],     // ficam vis├¡veis mas marcados como "saindo"
 //   novos:       [ { nome, grupo, fornecedor?, unidCompra?, porCaixa?, ks? }, ... ],
-//   gruposNovos: [ "🥃 Destilados", ... ]
+//   gruposNovos: [ "­ƒÑâ Destilados", ... ]
 // }
 //
-// O merge final (catálogo base + overrides) é feito por produtos-store.js.
+// O merge final (cat├ílogo base + overrides) ├® feito por produtos-store.js.
 
 const DOC_OVERRIDES = 'overrides';
 
-/** Lê o documento de overrides. Retorna estrutura vazia se não existir. */
+/** L├¬ o documento de overrides. Retorna estrutura vazia se n├úo existir. */
 export async function lerProdutosOverrides() {
   const snap = await getDoc(doc(db, COL_PRODUTOS, DOC_OVERRIDES));
   if (!snap.exists()) {
@@ -375,7 +366,7 @@ export async function lerProdutosOverrides() {
     };
   }
   const dados = snap.data();
-  // Garante todos os campos (proteção contra docs antigos sem algum campo)
+  // Garante todos os campos (prote├º├úo contra docs antigos sem algum campo)
   return {
     editados:    dados.editados    || {},
     ocultos:     dados.ocultos     || [],
@@ -387,7 +378,7 @@ export async function lerProdutosOverrides() {
 
 /**
  * Sobrescreve o documento de overrides inteiro. O `produtos-store.js`
- * faz a leitura, modifica em memória, e chama esta função pra persistir.
+ * faz a leitura, modifica em mem├│ria, e chama esta fun├º├úo pra persistir.
  */
 export async function salvarProdutosOverrides(overrides) {
   await setDoc(doc(db, COL_PRODUTOS, DOC_OVERRIDES), {
@@ -428,7 +419,7 @@ export async function salvarAuditoriaFechada(dados) {
   return id;
 }
 
-/** Busca uma auditoria fechada específica. Retorna null se não existir. */
+/** Busca uma auditoria fechada espec├¡fica. Retorna null se n├úo existir. */
 export async function buscarAuditoriaFechada(modo, dataInicio, dataFim) {
   const id = `${modo}_${dataInicio}_${dataFim}`;
   const snap = await getDoc(doc(db, COL_AUDITORIAS, id));
@@ -436,7 +427,7 @@ export async function buscarAuditoriaFechada(modo, dataInicio, dataFim) {
 }
 
 /**
- * Lista todas as auditorias fechadas (opcional: filtra por modo e/ou período).
+ * Lista todas as auditorias fechadas (opcional: filtra por modo e/ou per├¡odo).
  * Retorna ordenadas por data desc.
  */
 export async function listarAuditoriasFechadas({ modo = null, dataInicio = null, dataFim = null } = {}) {
@@ -461,7 +452,7 @@ export async function excluirAuditoriaFechada(id) {
 
 // ===== UTIL =====
 
-/** Converte YYYY-MM-DD para objeto Date (local, não UTC) */
+/** Converte YYYY-MM-DD para objeto Date (local, n├úo UTC) */
 export function parseData(yyyymmdd) {
   const [y, m, d] = yyyymmdd.split('-').map(Number);
   return new Date(y, m - 1, d);
@@ -478,4 +469,40 @@ export function formatarData(date) {
 /** Data de hoje (local) como YYYY-MM-DD */
 export function hoje() {
   return formatarData(new Date());
+}
+
+// ============================================================================
+// CONSUMO INTERNO (retiradas de estoque fora do PDV ÔÇö ex: gestor pega do freezer
+// depois da contagem final). Um documento por DIA (ID = YYYY-MM-DD).
+// Afeta a auditoria de virada/D-1: abate do FIN daquele dia ao comparar com o
+// INI do dia seguinte. N├âO altera o operacional do pr├│prio dia.
+// ============================================================================
+
+/** Lan├ºa consumo interno de um produto num dia (soma ao que j├í houver). */
+export async function salvarConsumoInterno(data, produtoSlug, produtoNome, qtd, por = '') {
+  const ref = doc(db, COL_CONSUMO, data);
+  const snap = await getDoc(ref);
+  const atual = snap.exists() ? snap.data() : { data, itens: {}, registros: [] };
+  atual.itens = atual.itens || {};
+  atual.registros = atual.registros || [];
+  atual.itens[produtoSlug] = (atual.itens[produtoSlug] || 0) + Number(qtd || 0);
+  atual.registros.push({
+    slug: produtoSlug,
+    nome: produtoNome,
+    qtd: Number(qtd || 0),
+    por: por || '',
+    em: new Date().toISOString()
+  });
+  atual.atualizadoEm = new Date().toISOString();
+  await setDoc(ref, atual, { merge: false });
+  return atual;
+}
+
+/** Consumo interno de um dia: { itens: { slug: qtd }, registros: [...] } */
+export async function listarConsumoInternoDia(data) {
+  if (!data) return { itens: {}, registros: [] };
+  const snap = await getDoc(doc(db, COL_CONSUMO, data));
+  if (!snap.exists()) return { itens: {}, registros: [] };
+  const d = snap.data();
+  return { itens: d.itens || {}, registros: d.registros || [] };
 }
