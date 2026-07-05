@@ -227,7 +227,7 @@ export async function inicializarAuditoria() {
               <span class="aud-edit-original" id="aud-edit-ini-orig"></span>
             </div>
             <div class="aud-edit-linha">
-              <label>REC <small>(recebimentos)</small></label>
+              <label id="aud-edit-rec-label">REC <small>(recebimentos)</small></label>
               <input type="number" id="aud-edit-rec" min="0" step="1">
               <span class="aud-edit-original" id="aud-edit-rec-orig"></span>
             </div>
@@ -1730,6 +1730,9 @@ function renderLinhaSorvetesOperacional(r) {
     <div class="aud-linha aud-linha-${r.status}${diag ? ' aud-linha-com-diag' : ''}">
       <div class="aud-nome">
         <span class="aud-nome-texto">${r.nome}</span>
+        <button class="aud-btn-editar"
+                onclick="window.__aud_abrirEdicaoSorv('${r.slug}')"
+                title="Editar valores INI / ABAST / FIN deste sorvete">✏️</button>
         ${diagHtml}
         ${areaCorrecaoHtml}
       </div>
@@ -2941,6 +2944,8 @@ window.__aud_abrirEdicao = function(slug) {
   };
 
   // Preenche o modal
+  const lblRec = document.getElementById('aud-edit-rec-label');
+  if (lblRec) lblRec.innerHTML = 'REC <small>(recebimentos)</small>';
   document.getElementById('aud-editar-produto-nome').textContent =
     `${item.nome} · ${fmtData(dataInicio)}`;
   document.getElementById('aud-edit-ini').value  = item.ini || 0;
@@ -2962,6 +2967,52 @@ function fecharModalEditar() {
   document.getElementById('aud-modal-editar').classList.remove('open');
   _edicaoEmAndamento = null;
 }
+
+/**
+ * Abre a edição manual de um SORVETE/EMBALAGEM.
+ * Diferente das bebidas, INI/ABAST/FIN moram todos na MESMA contagem (contagemSorv),
+ * nas chaves "<slug>__ini" { qtd } e "<slug>__fin" { final, abast, vendeu }.
+ * Reusa o mesmo modal; o salvamento é tratado por confirmarEdicaoSorv (via tipo).
+ */
+window.__aud_abrirEdicaoSorv = function(slug) {
+  const item = resultadoSorvetes.find(r => r.slug === slug);
+  if (!item) { alert('Item não encontrado.'); return; }
+  if (modoAtual !== 'operacional') {
+    alert('A edição de valores está disponível apenas no modo operacional.');
+    return;
+  }
+
+  _edicaoEmAndamento = {
+    slug,
+    tipo: 'sorv',
+    valoresOriginais: {
+      ini: item.ini || 0,
+      recebido: item.recebido || 0,   // abast do sorvete
+      vendido: item.vendido || 0,     // só leitura (vem do PDV)
+      real: item.real || 0
+    }
+  };
+
+  // Ajusta o label REC → ABAST (nos sorvetes é reabastecimento)
+  const lblRec = document.getElementById('aud-edit-rec-label');
+  if (lblRec) lblRec.innerHTML = 'ABAST <small>(reabastecimento)</small>';
+
+  document.getElementById('aud-editar-produto-nome').textContent =
+    `${item.nome} · ${fmtData(dataInicio)}`;
+  document.getElementById('aud-edit-ini').value = item.ini || 0;
+  document.getElementById('aud-edit-rec').value = item.recebido || 0;
+  document.getElementById('aud-edit-fin').value = item.real || 0;
+
+  document.getElementById('aud-edit-ini-orig').textContent = `original: ${item.ini || 0}`;
+  document.getElementById('aud-edit-rec-orig').textContent = `original: ${item.recebido || 0}`;
+  document.getElementById('aud-edit-fin-orig').textContent = `original: ${item.real || 0}`;
+
+  document.getElementById('aud-edit-motivo').value = '';
+
+  atualizarPreviewEdicao();
+
+  document.getElementById('aud-modal-editar').classList.add('open');
+};
 
 /**
  * Recalcula o preview ao vivo conforme o usuário muda os valores no modal.
@@ -3030,6 +3081,11 @@ async function confirmarEdicao() {
   if (!_edicaoEmAndamento) {
     alert('Edição não inicializada.');
     return;
+  }
+
+  // Sorvetes têm fluxo próprio (tudo na mesma contagem)
+  if (_edicaoEmAndamento.tipo === 'sorv') {
+    return confirmarEdicaoSorv();
   }
 
   const slug = _edicaoEmAndamento.slug;
@@ -3127,7 +3183,103 @@ async function confirmarEdicao() {
 }
 
 /**
- * Aplica edição num documento de contagem (INI ou FIN).
+ * Salva a edição manual de um SORVETE/EMBALAGEM.
+ * INI (__ini.qtd), ABAST (__fin.abast) e FIN (__fin.final) estão TODOS na mesma
+ * contagem (contagemSorv) — por isso montamos os itens uma vez e gravamos numa
+ * única chamada (recriar a contagem 3x quebraria: a 1ª já apaga a original).
+ */
+async function confirmarEdicaoSorv() {
+  const slug = _edicaoEmAndamento.slug;
+  const item = resultadoSorvetes.find(r => r.slug === slug);
+  if (!item) { alert('Item não encontrado.'); return; }
+
+  const ini = parseInt(document.getElementById('aud-edit-ini').value, 10);
+  const abast = parseInt(document.getElementById('aud-edit-rec').value, 10);
+  const fin = parseInt(document.getElementById('aud-edit-fin').value, 10);
+  const motivo = document.getElementById('aud-edit-motivo').value.trim();
+
+  if (isNaN(ini) || isNaN(abast) || isNaN(fin)) {
+    alert('Todos os campos devem ser números válidos.');
+    return;
+  }
+  if (ini < 0 || abast < 0 || fin < 0) {
+    alert('Valores não podem ser negativos.');
+    return;
+  }
+  if (!motivo) {
+    alert('O motivo da edição é obrigatório.');
+    document.getElementById('aud-edit-motivo').focus();
+    return;
+  }
+
+  const { contagemSorv } = contextoAuditoria;
+  if (!contagemSorv) {
+    alert('Contagem de sorvetes não disponível no contexto. Recarregue a auditoria.');
+    return;
+  }
+
+  const orig = _edicaoEmAndamento.valoresOriginais;
+  const mudouIni   = ini   !== orig.ini;
+  const mudouAbast = abast !== orig.recebido;
+  const mudouFin   = fin   !== orig.real;
+
+  if (!mudouIni && !mudouAbast && !mudouFin) {
+    alert('Nenhum valor foi alterado.');
+    return;
+  }
+
+  const partes = [];
+  if (mudouIni)   partes.push(`INI: ${orig.ini} → ${ini}`);
+  if (mudouAbast) partes.push(`ABAST: ${orig.recebido} → ${abast}`);
+  if (mudouFin)   partes.push(`FIN: ${orig.real} → ${fin}`);
+
+  const confirmado = confirm(
+    `💾 SALVAR EDIÇÃO (SORVETE)\n\n` +
+    `Produto: ${item.nome}\n` +
+    `Data: ${fmtData(dataInicio)}\n\n` +
+    `Mudanças:\n  • ${partes.join('\n  • ')}\n\n` +
+    `Motivo: ${motivo}\n\n` +
+    `Confirmar?`
+  );
+  if (!confirmado) return;
+
+  try {
+    const novosItens = { ...contagemSorv.itens };
+    const chaveIni = `${slug}__ini`;
+    const chaveFin = `${slug}__fin`;
+
+    // INI → __ini.qtd (cria a chave se não existir)
+    if (mudouIni) {
+      const obj = (typeof novosItens[chaveIni] === 'object' && novosItens[chaveIni]) ? { ...novosItens[chaveIni] } : {};
+      obj.qtd = ini;
+      novosItens[chaveIni] = obj;
+    }
+    // ABAST e FIN → __fin.abast / __fin.final (mesma chave, clona uma vez)
+    if (mudouAbast || mudouFin) {
+      const obj = (typeof novosItens[chaveFin] === 'object' && novosItens[chaveFin]) ? { ...novosItens[chaveFin] } : {};
+      if (mudouAbast) obj.abast = abast;
+      if (mudouFin)   obj.final = fin;
+      novosItens[chaveFin] = obj;
+    }
+
+    const sessao = getSessao();
+    await corrigirItemContagem(contagemSorv.id, novosItens, {
+      responsavel: sessao?.nome || 'Gestor',
+      motivo: `Edição manual sorvete: ${partes.join(' / ')}. Motivo: ${motivo}`,
+      itemSlug: slug,
+      valorAntigo: `INI ${orig.ini}/ABAST ${orig.recebido}/FIN ${orig.real}`,
+      valorNovo: `INI ${ini}/ABAST ${abast}/FIN ${fin}`
+    });
+
+    alert(`✅ Edição salva!\n\nRecalculando auditoria...`);
+    fecharModalEditar();
+    await executarAuditoria();
+
+  } catch (e) {
+    console.error(e);
+    alert(`❌ Erro ao salvar edição: ${e.message}`);
+  }
+}
  * Atualiza a chave do slug com o novo valor preservando a estrutura
  * (compatível com bebidas { fr, est, total } e sorvetes { qtd } / { final, abast, vendeu }).
  */
