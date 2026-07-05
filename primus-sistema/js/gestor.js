@@ -317,6 +317,20 @@ function cardContagemHTML(c) {
   const qtdItens = Object.keys(c.itens || {}).length;
   const dataFmt = formatarDataPtBr(c.data);
   const hora = c.criadoEm?.toDate ? formatarHora(c.criadoEm.toDate()) : '';
+  // Se a contagem foi corrigida por um gestor, mostra a hora REAL do funcionario
+  // como principal (acima) e uma faixa de ajuste embaixo com quem/quando corrigiu.
+  let ajusteHTML = '';
+  if (c.origem === 'correcao') {
+    const dtAj = c.corrigidoEm?.toDate ? c.corrigidoEm.toDate() : null;
+    const quandoAj = dtAj
+      ? `${String(dtAj.getDate()).padStart(2,'0')}/${String(dtAj.getMonth()+1).padStart(2,'0')} ${formatarHora(dtAj)}`
+      : '';
+    const quemAj = c.corrigidoPor || 'Gestor';
+    ajusteHTML = `
+        <div style="margin:8px 16px 0;padding:6px 10px;background:#FFF4E0;border-left:3px solid #FAB900;border-radius:6px;font-size:12px;color:#8a5a00;line-height:1.4;">
+          &#9999;&#65039; Ajuste feito por ${quemAj}${quandoAj ? ' &middot; ' + quandoAj : ''}
+        </div>`;
+  }
   return `
       <div class="contagem-card" data-id="${c.id}">
         <div class="contagem-card-head">
@@ -339,7 +353,7 @@ function cardContagemHTML(c) {
               <div class="stat-label">itens</div>
             </div>
           </div>
-        </div>
+        </div>${ajusteHTML}
         <div class="contagem-acoes">
           <button class="btn btn-ghost btn-ver" onclick="verDetalheContagem('${c.id}')" style="flex:1">
             Ver detalhes →
