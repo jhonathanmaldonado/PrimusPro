@@ -48,6 +48,7 @@ import {
   atualizarCompradoListaAtual,
   atualizarQtdListaAtual,
   removerItemListaAtual,
+  cancelarListaAtual,
   adicionarItemListaAtual,
   finalizarCompra,
   deletarHistorico,
@@ -3336,6 +3337,41 @@ async function tratarSalvar(comPdf) {
   }
 }
 
+// Cancela a lista atual inteira (sem finalizar). Resolve o "item fantasma"
+// que trava a criação de uma nova lista.
+async function tratarCancelarListaAtual() {
+  const total = Object.keys(listaAtualMap).length;
+  if (total === 0) {
+    showToast('⚠ Não há lista atual para cancelar', 'error');
+    return;
+  }
+
+  // Detecta "itens fantasma": presentes na lista atual mas ausentes do catálogo
+  const idsCatalogo = new Set(itens.map(i => i.id));
+  const fantasmas = Object.keys(listaAtualMap).filter(id => !idsCatalogo.has(id));
+
+  let msg = `Cancelar a lista atual?
+
+Isso remove os ${total} item(ns) da lista SEM finalizar a compra.`;
+  if (fantasmas.length > 0) {
+    msg += `
+
+⚠ ${fantasmas.length} item(ns) fantasma detectado(s) (apagado(s) do catálogo mas preso(s) na lista). Cancelar destrava a criação de uma nova lista.`;
+  }
+  msg += `
+
+Esta ação não pode ser desfeita.`;
+
+  if (!confirm(msg)) return;
+
+  try {
+    const n = await cancelarListaAtual();
+    showToast(`✓ Lista cancelada (${n} item(ns) removido(s))`, 'success');
+  } catch (e) {
+    showToast('⚠ ' + e.message, 'error');
+  }
+}
+
 // ============================================================================
 // REIMPRIMIR
 // ============================================================================
@@ -5281,6 +5317,7 @@ function setupEventos() {
   $('btn-reimprimir').addEventListener('click', tratarReimprimir);
   $('btn-add-item-atual').addEventListener('click', abrirModalAddAtual);
   $('btn-finalizar').addEventListener('click', tratarFinalizarCompra);
+  $('btn-cancelar-lista-atual').addEventListener('click', tratarCancelarListaAtual);
   $('search-atual').addEventListener('input', e => {
     searchAtual = e.target.value.trim();
     renderListaAtual();

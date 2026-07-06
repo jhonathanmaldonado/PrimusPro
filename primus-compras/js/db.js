@@ -380,6 +380,19 @@ export async function removerItemListaAtual(itemId) {
   await deleteDoc(doc(LISTA_ATUAL(), itemId));
 }
 
+// Cancela/limpa a lista atual inteira sem finalizar a compra.
+// Resolve o "item fantasma" (item apagado do catálogo que sobra na lista_atual
+// e trava salvarListaParaAtual, impedindo criar uma nova lista).
+// Retorna a quantidade de itens removidos.
+export async function cancelarListaAtual() {
+  const snap = await getDocs(LISTA_ATUAL());
+  if (snap.size === 0) return 0;
+  const batch = writeBatch(db);
+  snap.docs.forEach(d => batch.delete(d.ref));
+  await batch.commit();
+  return snap.size;
+}
+
 export async function adicionarItemListaAtual(itemId, qtdInicial = 0) {
   const ref = doc(LISTA_ATUAL(), itemId);
   const existing = await getDoc(ref);
