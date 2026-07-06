@@ -2550,7 +2550,10 @@
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <div class="form-field" style="flex:1;min-width:120px">
           <label>Rendimento total</label>
-          <input type="number" inputmode="decimal" id="ficha-rendimento" min="0.01" step="0.01" placeholder="1.0">
+          <div style="display:flex;gap:6px;align-items:stretch">
+            <input type="number" inputmode="decimal" id="ficha-rendimento" min="0" step="any" placeholder="1000" style="flex:1;min-width:0">
+            <select id="ficha-rendimento-display" style="max-width:74px"></select>
+          </div>
         </div>
         <div class="form-field" style="flex:1;min-width:120px">
           <label>Unidade rendimento</label>
@@ -2572,9 +2575,9 @@
         <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
           <div class="form-field" style="flex:1;min-width:120px;margin-bottom:0">
             <label>Tamanho de 1 porção</label>
-            <input type="number" inputmode="decimal" id="ficha-tamanho-porcao" min="0" step="0.001" placeholder="0">
+            <input type="number" inputmode="decimal" id="ficha-tamanho-porcao" min="0" step="any" placeholder="0">
           </div>
-          <div style="font-size:13px;color:var(--muted);padding-bottom:8px" id="ficha-tamanho-porcao-unidade">KG</div>
+          <select id="ficha-tamanho-porcao-display" style="max-width:80px;margin-bottom:0;align-self:flex-end"></select>
           <div style="font-size:12px;color:var(--wine);padding-bottom:8px;font-weight:600" id="ficha-rende-info">—</div>
         </div>
       </div>

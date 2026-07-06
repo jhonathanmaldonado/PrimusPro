@@ -182,6 +182,88 @@ function showToast(msg, tipo = '') {
   showToast._timer = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
+// ============================================================================
+// CONVERSAO DE UNIDADES (display g/ml <-> base kg/L)
+// ============================================================================
+// A base persistida no Firestore e SEMPRE kg / L / und / porcoes.
+// O "display" e so a preferencia de digitacao/exibicao (g, ml, kg, L, un, porcoes).
+
+// Fator multiplicador: valorBase = valorDisplay * fator
+function fatorUnidadeBase(unidadeDisplay) {
+  return (unidadeDisplay === 'g' || unidadeDisplay === 'ml') ? 0.001 : 1;
+}
+
+// Unidade display padrao pra cada unidade base
+function unidadeDisplayPadrao(unidadeBase) {
+  switch (unidadeBase) {
+    case 'KG': return 'g';
+    case 'LITRO': return 'ml';
+    case 'UND': return 'un';
+    case 'PORCOES': return 'porcoes';
+    default: return 'g';
+  }
+}
+
+// Opcoes validas de display pra cada unidade base
+function opcoesUnidadeDisplay(unidadeBase) {
+  switch (unidadeBase) {
+    case 'KG': return [{ v: 'g', t: 'g' }, { v: 'kg', t: 'kg' }];
+    case 'LITRO': return [{ v: 'ml', t: 'ml' }, { v: 'L', t: 'L' }];
+    case 'UND': return [{ v: 'un', t: 'un' }];
+    case 'PORCOES': return [{ v: 'porcoes', t: 'porcoes' }];
+    default: return [{ v: 'g', t: 'g' }, { v: 'kg', t: 'kg' }];
+  }
+}
+
+// Valida se um display e compativel com a unidade base
+function displayValidoPara(unidadeBase, display) {
+  return opcoesUnidadeDisplay(unidadeBase).some(o => o.v === display);
+}
+
+// display -> base (ex: 170 'g' -> 0.17)
+function converterParaBase(valorDisplay, unidadeDisplay) {
+  const n = parseFloat(valorDisplay);
+  if (isNaN(n)) return 0;
+  return n * fatorUnidadeBase(unidadeDisplay);
+}
+
+// base -> display (ex: 0.17 'g' -> 170), arredondado pra exibicao limpa
+function converterParaDisplay(valorBase, unidadeDisplay) {
+  const n = parseFloat(valorBase);
+  if (isNaN(n)) return 0;
+  const bruto = n / fatorUnidadeBase(unidadeDisplay);
+  const casas = (unidadeDisplay === 'g' || unidadeDisplay === 'ml') ? 2 : 3;
+  const fator = Math.pow(10, casas);
+  return Math.round(bruto * fator) / fator;
+}
+
+// Preenche um <select> de unidade display; retorna o display efetivamente selecionado
+function popularSelectUnidadeDisplay(selectEl, unidadeBase, preferida) {
+  if (!selectEl) return null;
+  const opts = opcoesUnidadeDisplay(unidadeBase);
+  const escolhida = (preferida && displayValidoPara(unidadeBase, preferida))
+    ? preferida
+    : unidadeDisplayPadrao(unidadeBase);
+  selectEl.innerHTML = opts
+    .map(o => `<option value="${o.v}"${o.v === escolhida ? ' selected' : ''}>${o.t}</option>`)
+    .join('');
+  selectEl.value = escolhida;
+  return escolhida;
+}
+
+// Decide o display inicial de um campo:
+// - preferencia salva valida -> usa ela
+// - senao, se ja tem valor salvo (edicao) -> unidade BASE (retrocompat: mostra como foi digitado)
+// - senao (campo novo/vazio) -> padrao natural (g/ml)
+function displayInicial(unidadeBase, prefSalva, temValor) {
+  if (prefSalva && displayValidoPara(unidadeBase, prefSalva)) return prefSalva;
+  if (temValor) {
+    const map = { KG: 'kg', LITRO: 'L', UND: 'un', PORCOES: 'porcoes' };
+    return map[unidadeBase] || 'kg';
+  }
+  return unidadeDisplayPadrao(unidadeBase);
+}
+
 function matchesSearch(item, term) {
   if (!term) return true;
   const t = term.toLowerCase();
@@ -1028,6 +1110,8 @@ function abrirModalFicha(fichaId = null) {
       rendimento: f.rendimento ?? 1,
       unidadeRendimento: f.unidadeRendimento || 'KG',
       tamanhoPorcao: f.tamanhoPorcao ?? null,
+      rendimentoUnidadeDisplay: f.rendimentoUnidadeDisplay || null,
+      tamanhoPorcaoUnidadeDisplay: f.tamanhoPorcaoUnidadeDisplay || null,
       precoVenda: f.precoVenda ?? 0,
       cmvAlvoCustom: f.cmvAlvoCustom ?? null,
       ehPrePreparo: !!f.ehPrePreparo,
@@ -1045,6 +1129,8 @@ function abrirModalFicha(fichaId = null) {
       rendimento: 1,
       unidadeRendimento: 'KG',
       tamanhoPorcao: null,
+      rendimentoUnidadeDisplay: null,
+      tamanhoPorcaoUnidadeDisplay: null,
       precoVenda: 0,
       cmvAlvoCustom: null,
       ehPrePreparo: false,
@@ -1059,10 +1145,24 @@ function abrirModalFicha(fichaId = null) {
   // Popular UI com dados
   $('ficha-nome').value = fichaEmEdicao.nome;
   $('ficha-nome-pdv').value = fichaEmEdicao.nomeNoPDV;
-  $('ficha-rendimento').value = fichaEmEdicao.rendimento;
   $('ficha-unidade-rendimento').value = fichaEmEdicao.unidadeRendimento;
-  $('ficha-tamanho-porcao').value = (fichaEmEdicao.tamanhoPorcao != null && fichaEmEdicao.tamanhoPorcao > 0)
-    ? fichaEmEdicao.tamanhoPorcao
+
+  // Rendimento total: converte base -> display conforme preferencia
+  const unidBaseRend = fichaEmEdicao.unidadeRendimento || 'KG';
+  const dispRend = displayInicial(unidBaseRend, fichaEmEdicao.rendimentoUnidadeDisplay, fichaEmEdicao.rendimento > 0);
+  popularSelectUnidadeDisplay($('ficha-rendimento-display'), unidBaseRend, dispRend);
+  fichaEmEdicao.rendimentoUnidadeDisplay = dispRend;
+  $('ficha-rendimento').value = (fichaEmEdicao.rendimento > 0)
+    ? converterParaDisplay(fichaEmEdicao.rendimento, dispRend)
+    : '';
+
+  // Tamanho da porcao: converte base -> display conforme preferencia
+  // (o <select> de tamanho e populado por atualizarVisibilidadeTamanhoPorcao, logo abaixo)
+  const temTam = (fichaEmEdicao.tamanhoPorcao != null && fichaEmEdicao.tamanhoPorcao > 0);
+  const dispTam = displayInicial(unidBaseRend, fichaEmEdicao.tamanhoPorcaoUnidadeDisplay, temTam);
+  fichaEmEdicao.tamanhoPorcaoUnidadeDisplay = dispTam;
+  $('ficha-tamanho-porcao').value = temTam
+    ? converterParaDisplay(fichaEmEdicao.tamanhoPorcao, dispTam)
     : '';
   $('ficha-preco-venda').value = fichaEmEdicao.precoVenda || '';
   $('ficha-cmv-custom').value = fichaEmEdicao.cmvAlvoCustom != null ? Math.round(fichaEmEdicao.cmvAlvoCustom * 100) : '';
@@ -1092,7 +1192,6 @@ function fecharModalFicha() {
 function atualizarVisibilidadeTamanhoPorcao() {
   if (!fichaEmEdicao) return;
   const bloco = $('bloco-tamanho-porcao');
-  const labelUnid = $('ficha-tamanho-porcao-unidade');
   const rendeInfo = $('ficha-rende-info');
   const unidade = fichaEmEdicao.unidadeRendimento || 'KG';
 
@@ -1104,9 +1203,12 @@ function atualizarVisibilidadeTamanhoPorcao() {
 
   bloco.style.display = 'block';
 
-  // Label da unidade ao lado do input
-  const labels = { KG: 'KG', LITRO: 'L', UND: 'unidades' };
-  labelUnid.textContent = labels[unidade] || 'KG';
+  // Select de unidade de exibicao ao lado do input (g/kg, ml/L, un)
+  const prefTam = (fichaEmEdicao.tamanhoPorcaoUnidadeDisplay && displayValidoPara(unidade, fichaEmEdicao.tamanhoPorcaoUnidadeDisplay))
+    ? fichaEmEdicao.tamanhoPorcaoUnidadeDisplay
+    : displayInicial(unidade, null, (fichaEmEdicao.tamanhoPorcao != null && fichaEmEdicao.tamanhoPorcao > 0));
+  const dispTamEfetivo = popularSelectUnidadeDisplay($('ficha-tamanho-porcao-display'), unidade, prefTam);
+  fichaEmEdicao.tamanhoPorcaoUnidadeDisplay = dispTamEfetivo;
 
   // Calcula e exibe "Rende ≈ N porções"
   const rendimento = parseFloat(fichaEmEdicao.rendimento) || 0;
@@ -1207,10 +1309,30 @@ function renderIngredientesModal() {
 
     html += `</select></div>`;
 
-    // Peso líquido
-    html += `<div class="field" style="max-width:140px"><label>Peso líquido</label>`;
-    html += `<input type="number" inputmode="decimal" min="0" step="0.001" value="${ing.pesoLiquido || ''}" placeholder="0" data-action="update-ing-peso" data-idx="${i}">`;
+    // Peso líquido + unidade de exibição (g/kg, ml/L, un)
+    const unidadeBaseIng = calc.encontrado ? calc.unidade : null;
+    let dispIng = ing.pesoLiquidoUnidadeDisplay;
+    if (unidadeBaseIng) {
+      if (!dispIng || !displayValidoPara(unidadeBaseIng, dispIng)) {
+        dispIng = displayInicial(unidadeBaseIng, null, (parseFloat(ing.pesoLiquido) || 0) > 0);
+      }
+      ing.pesoLiquidoUnidadeDisplay = dispIng; // estabiliza no objeto
+    }
+    const pesoVal = (unidadeBaseIng && (parseFloat(ing.pesoLiquido) || 0) > 0)
+      ? converterParaDisplay(ing.pesoLiquido, dispIng)
+      : ((parseFloat(ing.pesoLiquido) || 0) > 0 ? ing.pesoLiquido : '');
+
+    html += `<div class="field" style="max-width:120px"><label>Peso líquido</label>`;
+    html += `<input type="number" inputmode="decimal" min="0" step="any" value="${pesoVal}" placeholder="0" data-action="update-ing-peso" data-idx="${i}">`;
     html += `</div>`;
+
+    if (unidadeBaseIng) {
+      const optsIng = opcoesUnidadeDisplay(unidadeBaseIng);
+      html += `<div class="field" style="max-width:72px"><label>Un.</label>`;
+      html += `<select data-action="update-ing-unidade" data-idx="${i}">`;
+      html += optsIng.map(o => `<option value="${o.v}"${o.v === dispIng ? ' selected' : ''}>${o.t}</option>`).join('');
+      html += `</select></div>`;
+    }
     html += `</div>`;
 
     if (calc.encontrado) {
@@ -1232,7 +1354,7 @@ function adicionarIngrediente() {
   if (!fichaEmEdicao) return;
   // Insere no topo (unshift) ao invés de no fim (push)
   // Agiliza criar fichas grandes: o botão "+ Adicionar" fica sempre acima do último adicionado
-  fichaEmEdicao.ingredientes.unshift({ tipo: 'insumo', insumoId: '', fichaId: '', pesoLiquido: 0 });
+  fichaEmEdicao.ingredientes.unshift({ tipo: 'insumo', insumoId: '', fichaId: '', pesoLiquido: 0, pesoLiquidoUnidadeDisplay: null });
   renderIngredientesModal();
   atualizarPainelPrecificacao();
 }
@@ -1273,13 +1395,40 @@ function atualizarIngredienteSelecionado(idx, valorSelecionado) {
     fichaEmEdicao.ingredientes[idx].insumoId = '';
   }
 
+  // Ao (re)selecionar insumo/pré-preparo, reseta a unidade de exibição pro padrão
+  // da nova unidade base (ex: trocar KG->LITRO faz g virar ml). Peso base é mantido.
+  const calcSel = calcularCustoIngrediente(fichaEmEdicao.ingredientes[idx], insumos, fichas);
+  fichaEmEdicao.ingredientes[idx].pesoLiquidoUnidadeDisplay = calcSel.encontrado
+    ? unidadeDisplayPadrao(calcSel.unidade)
+    : null;
+
   renderIngredientesModal();
   atualizarPainelPrecificacao();
 }
 
-function atualizarIngredientePeso(idx, peso) {
+// Muda só a unidade de exibição de um ingrediente (peso base é mantido).
+// Reconverte o valor visível do input sem re-renderizar o card inteiro.
+function atualizarIngredienteUnidadeDisplay(idx, novoDisplay) {
   if (!fichaEmEdicao || !fichaEmEdicao.ingredientes[idx]) return;
-  fichaEmEdicao.ingredientes[idx].pesoLiquido = parseFloat(peso) || 0;
+  const ing = fichaEmEdicao.ingredientes[idx];
+  ing.pesoLiquidoUnidadeDisplay = novoDisplay;
+  const card = document.querySelector(`.ingrediente-card[data-idx="${idx}"]`);
+  if (card) {
+    const inp = card.querySelector('[data-action="update-ing-peso"]');
+    if (inp) {
+      inp.value = (parseFloat(ing.pesoLiquido) || 0) > 0
+        ? converterParaDisplay(ing.pesoLiquido, novoDisplay)
+        : '';
+    }
+  }
+  atualizarPainelPrecificacao();
+}
+
+function atualizarIngredientePeso(idx, pesoDisplay) {
+  if (!fichaEmEdicao || !fichaEmEdicao.ingredientes[idx]) return;
+  const ing = fichaEmEdicao.ingredientes[idx];
+  const disp = ing.pesoLiquidoUnidadeDisplay || 'g';
+  ing.pesoLiquido = converterParaBase(pesoDisplay, disp);
   // Não re-renderiza tudo (preserva foco), só recalcula
   const card = document.querySelector(`.ingrediente-card[data-idx="${idx}"]`);
   if (card) {
@@ -1418,17 +1567,32 @@ async function salvarFicha() {
   // Lê o estado atual da UI
   fichaEmEdicao.nome = $('ficha-nome').value.trim();
   fichaEmEdicao.nomeNoPDV = $('ficha-nome-pdv').value.trim();
-  fichaEmEdicao.rendimento = parseFloat($('ficha-rendimento').value) || 1;
   fichaEmEdicao.unidadeRendimento = $('ficha-unidade-rendimento').value;
   fichaEmEdicao.precoVenda = parseFloat($('ficha-preco-venda').value) || 0;
+
+  // Rendimento total: converte da unidade de exibição pra base (kg/L/und)
+  const dispRendSalvar = $('ficha-rendimento-display')
+    ? $('ficha-rendimento-display').value
+    : unidadeDisplayPadrao(fichaEmEdicao.unidadeRendimento);
+  fichaEmEdicao.rendimentoUnidadeDisplay = dispRendSalvar;
+  const rendDispVal = parseFloat($('ficha-rendimento').value);
+  fichaEmEdicao.rendimento = (!isNaN(rendDispVal) && rendDispVal > 0)
+    ? converterParaBase(rendDispVal, dispRendSalvar)
+    : 1;
 
   // Tamanho da porção: só se aplica quando unidade NÃO é PORCOES
   if (fichaEmEdicao.unidadeRendimento === 'PORCOES') {
     fichaEmEdicao.tamanhoPorcao = null;
+    fichaEmEdicao.tamanhoPorcaoUnidadeDisplay = null;
   } else {
-    const tamPorcaoStr = $('ficha-tamanho-porcao').value;
-    const tamPorcao = parseFloat(tamPorcaoStr);
-    fichaEmEdicao.tamanhoPorcao = (!isNaN(tamPorcao) && tamPorcao > 0) ? tamPorcao : null;
+    const dispTamSalvar = $('ficha-tamanho-porcao-display')
+      ? $('ficha-tamanho-porcao-display').value
+      : unidadeDisplayPadrao(fichaEmEdicao.unidadeRendimento);
+    fichaEmEdicao.tamanhoPorcaoUnidadeDisplay = dispTamSalvar;
+    const tamDispVal = parseFloat($('ficha-tamanho-porcao').value);
+    fichaEmEdicao.tamanhoPorcao = (!isNaN(tamDispVal) && tamDispVal > 0)
+      ? converterParaBase(tamDispVal, dispTamSalvar)
+      : null;
   }
 
   const cmvCustomPct = parseFloat($('ficha-cmv-custom').value);
@@ -1469,12 +1633,13 @@ async function salvarFicha() {
       return !!i.insumoId;
     })
     .map(i => {
-      // Garante consistência dos campos por tipo
+      // Garante consistência dos campos por tipo (pesoLiquido já está em base kg/L/und)
       const tipo = i.tipo || 'insumo';
+      const disp = i.pesoLiquidoUnidadeDisplay || null;
       if (tipo === 'ficha') {
-        return { tipo: 'ficha', fichaId: i.fichaId, pesoLiquido: parseFloat(i.pesoLiquido) || 0 };
+        return { tipo: 'ficha', fichaId: i.fichaId, pesoLiquido: parseFloat(i.pesoLiquido) || 0, pesoLiquidoUnidadeDisplay: disp };
       }
-      return { tipo: 'insumo', insumoId: i.insumoId, pesoLiquido: parseFloat(i.pesoLiquido) || 0 };
+      return { tipo: 'insumo', insumoId: i.insumoId, pesoLiquido: parseFloat(i.pesoLiquido) || 0, pesoLiquidoUnidadeDisplay: disp };
     });
 
   err.classList.remove('show');
@@ -5212,15 +5377,26 @@ function setupEventos() {
   // Função única: lê todos os campos da UI e atualiza fichaEmEdicao + painel
   function sincronizarCamposFicha() {
     if (!fichaEmEdicao) return;
-    fichaEmEdicao.rendimento = parseFloat($('ficha-rendimento').value) || 1;
     fichaEmEdicao.unidadeRendimento = $('ficha-unidade-rendimento').value;
+
+    // Rendimento: lê valor na unidade de exibição e converte pra base
+    const dispR = $('ficha-rendimento-display')
+      ? $('ficha-rendimento-display').value
+      : unidadeDisplayPadrao(fichaEmEdicao.unidadeRendimento);
+    fichaEmEdicao.rendimentoUnidadeDisplay = dispR;
+    const rDisp = parseFloat($('ficha-rendimento').value);
+    fichaEmEdicao.rendimento = (!isNaN(rDisp) && rDisp > 0) ? converterParaBase(rDisp, dispR) : 1;
 
     // Tamanho da porção (null se unidade for PORCOES ou vazio)
     if (fichaEmEdicao.unidadeRendimento === 'PORCOES') {
       fichaEmEdicao.tamanhoPorcao = null;
     } else {
-      const tam = parseFloat($('ficha-tamanho-porcao').value);
-      fichaEmEdicao.tamanhoPorcao = (!isNaN(tam) && tam > 0) ? tam : null;
+      const dispT = $('ficha-tamanho-porcao-display')
+        ? $('ficha-tamanho-porcao-display').value
+        : unidadeDisplayPadrao(fichaEmEdicao.unidadeRendimento);
+      fichaEmEdicao.tamanhoPorcaoUnidadeDisplay = dispT;
+      const tDisp = parseFloat($('ficha-tamanho-porcao').value);
+      fichaEmEdicao.tamanhoPorcao = (!isNaN(tDisp) && tDisp > 0) ? converterParaBase(tDisp, dispT) : null;
     }
 
     fichaEmEdicao.precoVenda = parseFloat($('ficha-preco-venda').value) || 0;
@@ -5231,13 +5407,61 @@ function setupEventos() {
     atualizarPainelPrecificacao();
   }
 
-  ['ficha-rendimento', 'ficha-unidade-rendimento', 'ficha-tamanho-porcao', 'ficha-preco-venda', 'ficha-cmv-custom'].forEach(id => {
+  // Trocar a UNIDADE DE RENDIMENTO (KG/LITRO/UND/PORCOES): mantém o número digitado
+  // e reinterpreta na nova unidade base (ex: 2 kg -> 2 L), resetando o display pra base.
+  function onTrocarUnidadeRendimento() {
+    if (!fichaEmEdicao) return;
+    const novaBase = $('ficha-unidade-rendimento').value;
+    fichaEmEdicao.unidadeRendimento = novaBase;
+    const dispBase = displayInicial(novaBase, null, true); // força unidade base (kg/L/un/porções)
+    fichaEmEdicao.rendimentoUnidadeDisplay = dispBase;
+    fichaEmEdicao.tamanhoPorcaoUnidadeDisplay = dispBase;
+    popularSelectUnidadeDisplay($('ficha-rendimento-display'), novaBase, dispBase);
+    if (fichaEmEdicao.rendimento > 0) {
+      $('ficha-rendimento').value = converterParaDisplay(fichaEmEdicao.rendimento, dispBase);
+    }
+    if (fichaEmEdicao.tamanhoPorcao != null && fichaEmEdicao.tamanhoPorcao > 0) {
+      $('ficha-tamanho-porcao').value = converterParaDisplay(fichaEmEdicao.tamanhoPorcao, dispBase);
+    }
+    atualizarVisibilidadeTamanhoPorcao();
+    atualizarPainelPrecificacao();
+  }
+
+  // Trocar só a EXIBIÇÃO do rendimento (g<->kg): base intacta, reconverte o input.
+  function onTrocarDisplayRendimento() {
+    if (!fichaEmEdicao) return;
+    const novoDisp = $('ficha-rendimento-display').value;
+    fichaEmEdicao.rendimentoUnidadeDisplay = novoDisp;
+    if (fichaEmEdicao.rendimento > 0) {
+      $('ficha-rendimento').value = converterParaDisplay(fichaEmEdicao.rendimento, novoDisp);
+    }
+    atualizarPainelPrecificacao();
+  }
+
+  // Trocar só a EXIBIÇÃO do tamanho da porção (g<->kg): base intacta, reconverte o input.
+  function onTrocarDisplayTamanho() {
+    if (!fichaEmEdicao) return;
+    const novoDisp = $('ficha-tamanho-porcao-display').value;
+    fichaEmEdicao.tamanhoPorcaoUnidadeDisplay = novoDisp;
+    if (fichaEmEdicao.tamanhoPorcao != null && fichaEmEdicao.tamanhoPorcao > 0) {
+      $('ficha-tamanho-porcao').value = converterParaDisplay(fichaEmEdicao.tamanhoPorcao, novoDisp);
+    }
+    atualizarPainelPrecificacao();
+  }
+
+  // Inputs de VALOR (não os selects de unidade): converte display->base ao vivo
+  ['ficha-rendimento', 'ficha-tamanho-porcao', 'ficha-preco-venda', 'ficha-cmv-custom'].forEach(id => {
     const el = $(id);
     if (el) {
       el.addEventListener('input', sincronizarCamposFicha);
       el.addEventListener('change', sincronizarCamposFicha);
     }
   });
+
+  // Selects de unidade: handlers dedicados (fora do sincronizador genérico)
+  if ($('ficha-unidade-rendimento')) $('ficha-unidade-rendimento').addEventListener('change', onTrocarUnidadeRendimento);
+  if ($('ficha-rendimento-display')) $('ficha-rendimento-display').addEventListener('change', onTrocarDisplayRendimento);
+  if ($('ficha-tamanho-porcao-display')) $('ficha-tamanho-porcao-display').addEventListener('change', onTrocarDisplayTamanho);
 
   // Modal de ficha - container de ingredientes (delegação)
   $('ingredientes-container').addEventListener('click', e => {
@@ -5256,6 +5480,8 @@ function setupEventos() {
       atualizarIngredienteSelecionado(idx, target.value);
     } else if (target.dataset.action === 'update-ing-peso') {
       atualizarIngredientePeso(idx, target.value);
+    } else if (target.dataset.action === 'update-ing-unidade') {
+      atualizarIngredienteUnidadeDisplay(idx, target.value);
     }
   });
 

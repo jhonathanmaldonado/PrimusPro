@@ -538,6 +538,8 @@ export async function criarFicha(dados) {
     rendimento: parseFloat(dados.rendimento) || 1,
     unidadeRendimento: dados.unidadeRendimento || 'KG',  // KG | LITRO | UND | PORCOES
     tamanhoPorcao: dados.tamanhoPorcao != null ? parseFloat(dados.tamanhoPorcao) : null,
+    rendimentoUnidadeDisplay: dados.rendimentoUnidadeDisplay || null,
+    tamanhoPorcaoUnidadeDisplay: dados.tamanhoPorcaoUnidadeDisplay || null,
     precoVenda: parseFloat(dados.precoVenda) || 0,
     cmvAlvoCustom: dados.cmvAlvoCustom ?? null,
     ehPrePreparo: !!dados.ehPrePreparo,
