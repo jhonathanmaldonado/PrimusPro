@@ -1507,6 +1507,7 @@
         <button class="btn" id="btn-reimprimir">📄 Reimprimir</button>
         <button class="btn btn-gold" id="btn-add-item-atual">+ Adicionar Item</button>
         <button class="btn btn-primary" id="btn-finalizar">✓ Finalizar Compra</button>
+        <button class="btn" id="btn-cancelar-lista-atual" style="color:#791F1F;border-color:#fca5a5" title="Cancela a lista atual sem finalizar. Use se ela ficou em estado inválido.">🗑️ Cancelar Lista</button>
       </div>
 
       <div class="summary">
@@ -2550,7 +2551,10 @@
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <div class="form-field" style="flex:1;min-width:120px">
           <label>Rendimento total</label>
-          <input type="number" inputmode="decimal" id="ficha-rendimento" min="0.01" step="0.01" placeholder="1.0">
+          <div style="display:flex;gap:6px">
+            <input type="number" inputmode="decimal" id="ficha-rendimento" min="0.01" step="0.01" placeholder="1.0" style="flex:1">
+            <select id="ficha-rendimento-display" style="max-width:80px;padding:8px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:13px"></select>
+          </div>
         </div>
         <div class="form-field" style="flex:1;min-width:120px">
           <label>Unidade rendimento</label>
@@ -2572,9 +2576,11 @@
         <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap">
           <div class="form-field" style="flex:1;min-width:120px;margin-bottom:0">
             <label>Tamanho de 1 porção</label>
-            <input type="number" inputmode="decimal" id="ficha-tamanho-porcao" min="0" step="0.001" placeholder="0">
+            <div style="display:flex;gap:6px">
+              <input type="number" inputmode="decimal" id="ficha-tamanho-porcao" min="0" step="0.001" placeholder="0" style="flex:1">
+              <select id="ficha-tamanho-porcao-display" style="max-width:80px;padding:8px;border:1px solid var(--line);border-radius:6px;background:#fff;font-size:13px"></select>
+            </div>
           </div>
-          <div style="font-size:13px;color:var(--muted);padding-bottom:8px" id="ficha-tamanho-porcao-unidade">KG</div>
           <div style="font-size:12px;color:var(--wine);padding-bottom:8px;font-weight:600" id="ficha-rende-info">—</div>
         </div>
       </div>
