@@ -14,7 +14,7 @@ import {
   salvarAuditoriaFechada, buscarAuditoriaFechada,
   listarAuditoriasFechadas, excluirAuditoriaFechada,
   corrigirItemContagem,
-  registrarRecebimento, excluirRecebimento,
+  registrarRecebimento, excluirRecebimento, atualizarRecebimento,
   salvarConsumoInterno, listarConsumoInternoDia
 } from './db.js';
 import { slugify } from './produtos.js';
@@ -3391,10 +3391,14 @@ async function aplicarEdicaoRecebimento(slug, nomeProduto, novoValor, motivo, re
     if (r.itens.length === 1 && r.itens[0].slug === slug) {
       await excluirRecebimento(r.id);
     } else {
-      // Se tem outros produtos, deletar todo o doc seria perigoso (perderia
-      // os outros). Por enquanto, alertamos e seguimos — gestor deve resolver
-      // pela Lista de Compras nesse caso raro.
-      console.warn(`Recebimento ${r.id} tem múltiplos produtos. Edição manual necessária na Lista de Compras.`);
+      // Doc com vários produtos (entrega lançada pela Lista de Compras):
+      // remove SÓ o item errado e preserva os demais, reescrevendo os itens.
+      const itensRestantes = r.itens.filter(i => i.slug !== slug);
+      if (itensRestantes.length === 0) {
+        await excluirRecebimento(r.id);
+      } else {
+        await atualizarRecebimento(r.id, itensRestantes);
+      }
     }
   }
 

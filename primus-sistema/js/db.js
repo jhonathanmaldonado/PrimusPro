@@ -118,9 +118,7 @@ export async function corrigirItemContagem(idContagem, novosItens, correcao) {
     correcaoItem: (correcao && correcao.itemSlug) || null,
     correcaoValorAntigo: (correcao && correcao.valorAntigo != null) ? correcao.valorAntigo : null,
     correcaoValorNovo: (correcao && correcao.valorNovo != null) ? correcao.valorNovo : null,
-    // Preserva a data/hora REAIS da contagem original (nao carimba a hora do ajuste).
-    // A hora do ajuste fica em corrigidoEm; o card mostra a original como principal.
-    criadoEm: dados.criadoEm || serverTimestamp()
+    criadoEm: serverTimestamp()
   });
 
   // Deleta a contagem original
@@ -343,6 +341,15 @@ export async function listarRecebimentos(dataInicio, dataFim) {
  */
 export async function excluirRecebimento(id) {
   await deleteDoc(doc(db, COL_COMPRAS, id));
+}
+
+/**
+ * Atualiza os itens de um recebimento existente. Usado para remover um
+ * produto lançado por engano preservando os demais itens do mesmo documento
+ * (edição de REC pela Auditoria quando a entrega tem vários produtos).
+ */
+export async function atualizarRecebimento(id, itens) {
+  await updateDoc(doc(db, COL_COMPRAS, id), { itens });
 }
 
 // ===== OVERRIDES DE PRODUTOS =====
