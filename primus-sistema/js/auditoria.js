@@ -636,7 +636,10 @@ async function executarModoOperacional() {
   const consumoInternoAnt = contagemFinAnterior
     ? (await listarConsumoInternoDia(contagemFinAnterior.data)).itens
     : {};
-  resultadoAuditoria = await calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior, consumoInternoAnt);
+  // Consumo interno do PRÓPRIO dia (abatido do esperado — retiradas fora do PDV
+  // no mesmo dia; sem isso, o consumo do dia aparece como falta na contagem).
+  const consumoInternoDia = (await listarConsumoInternoDia(dataInicio)).itens;
+  resultadoAuditoria = await calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior, consumoInternoAnt, consumoInternoDia);
 
   // 5b) Calcula auditoria de sorvetes (se houver contagem)
   if (contagemSorv) {
@@ -731,7 +734,7 @@ function mostrarErro(msg) {
 }
 
 // ===== MOTOR DO CÁLCULO — MODO OPERACIONAL =====
-async function calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior, consumoInternoAnt = {}) {
+async function calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior, consumoInternoAnt = {}, consumoInternoDia = {}) {
   // Carrega catálogo efetivo de bebidas (base + overrides do gestor)
   const bebidas = await obterBebidas();
 
@@ -782,8 +785,11 @@ async function calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, re
     const fin  = estoqueFin[slug] || 0;
     const recebido = recebidoPorSlug[slug] || 0;
     const vendido  = vendidoPorSlug[slug] || 0;
+    const consumo  = consumoInternoDia[slug] || 0;
 
-    const esperado = ini + recebido - vendido;
+    // Consumo interno do dia é saída legítima fora do PDV: abate do esperado
+    // pra não virar falsa "falta" na contagem do barman.
+    const esperado = ini + recebido - vendido - consumo;
     const real     = fin;
     const diferenca = real - esperado;
 
@@ -841,6 +847,7 @@ async function calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, re
       ini,
       recebido,
       vendido,
+      consumo,
       esperado,
       real,
       diferenca,
@@ -1365,7 +1372,7 @@ function renderLinhaOperacional(r) {
       ${cellD1Html}
       <div class="aud-num">${fmtInt(r.ini)}</div>
       <div class="aud-num aud-num-pos">${r.recebido > 0 ? '+' + fmtInt(r.recebido) : '—'}</div>
-      <div class="aud-num aud-num-neg">${r.vendido > 0 ? '−' + fmtInt(r.vendido) : '—'}</div>
+      <div class="aud-num aud-num-neg">${r.vendido > 0 ? '−' + fmtInt(r.vendido) : '—'}${r.consumo > 0 ? `<span style="display:block;font-size:9.5px;font-weight:700;color:#c47a1a;line-height:1;margin-top:1px">cons ${fmtInt(r.consumo)}</span>` : ''}</div>
       <div class="aud-num aud-num-esp">${fmtInt(r.esperado)}</div>
       <div class="aud-num aud-num-real">${fmtInt(r.real)}</div>
       <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}</div>
