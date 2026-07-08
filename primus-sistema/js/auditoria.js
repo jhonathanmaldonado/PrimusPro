@@ -4501,7 +4501,8 @@ async function renderSemanaAuditoria() {
 
       if (ini && fin) {
         const finAnt = todasContagens.filter(c => c.tipo === 'fin' && c.data < diaIso).sort((a, b) => b.data.localeCompare(a.data))[0] || null;
-        const res = await calcularAuditoriaOperacional(ini, fin, vendasDia, recebDia, finAnt, {});
+        const consumoDia = (await listarConsumoInternoDia(diaIso)).itens;
+        const res = await calcularAuditoriaOperacional(ini, fin, vendasDia, recebDia, finAnt, {}, consumoDia);
         res.forEach(r => { if (r.status !== 'semdados') registrar(r.slug, r.nome, r.grupo, i, r.diferenca, r.vendido); });
       }
       if (sorv) {
@@ -4621,7 +4622,8 @@ async function renderCalendarioAuditoria() {
         const vendasDia = vendasLote.filter(v => (v.data || v.id) === diaIso);
         const recebDia  = recebLote.filter(r => r.data === diaIso);
 
-        const res = await calcularAuditoriaOperacional(ini, fin, vendasDia, recebDia, finAnt, {});
+        const consumoDia = (await listarConsumoInternoDia(diaIso)).itens;
+        const res = await calcularAuditoriaOperacional(ini, fin, vendasDia, recebDia, finAnt, {}, consumoDia);
         const c = { critico: 0, atencao: 0, leve: 0, ok: 0 };
         res.forEach(r => { if (c[r.status] !== undefined) c[r.status]++; });
         dias[d] = { tipo: 'completo', cont: c, diaIso };
