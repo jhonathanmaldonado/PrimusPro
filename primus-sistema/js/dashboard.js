@@ -1,12 +1,17 @@
 // ===== DASHBOARD — PRIMUS =====
 // Carrega vendas do Firestore, calcula KPIs e renderiza gráficos com Chart.js
 
-import { listarVendas, ultimaContagem, listarContagens } from './db.js';
+import { listarVendas, ultimaContagem, listarContagens, listarRecebimentos, listarConsumoInternoDia } from './db.js';
 import { buscarSubgrupoOficial } from './produto-subgrupo-map.js';
+// Motores de cálculo da Auditoria — reusados aqui pra o ranking de diferenças
+// usar exatamente a mesma conta da tela de Auditoria (sem duplicar matemática).
+import { calcularAuditoriaOperacional, calcularAuditoriaSorvetes } from './auditoria.js';
 
 // Cache em memória das vendas carregadas (evita consultas repetidas)
 let vendasCache = [];
 let chartsAtivos = {};
+// Período atualmente filtrado (null = sem limite). Usado pelo ranking de diferenças.
+let periodoAtual = { inicio: null, fim: null };
 
 // ===== CONFIGURAÇÃO DE CORES (identidade Primus) =====
 const cores = {
@@ -91,11 +96,11 @@ export async function inicializarDashboard() {
       <div class="graficos-grid">
         <div class="card grafico-card">
           <div class="grafico-head">
-            <h3>🕐 Vendas por hora</h3>
-            <span class="grafico-sub" id="sub-horas"></span>
+            <h3>📉 Ranking de diferenças</h3>
+            <span class="grafico-sub" id="sub-diferencas"></span>
           </div>
           <div class="grafico-wrap">
-            <canvas id="chart-horas"></canvas>
+            <canvas id="chart-diferencas"></canvas>
           </div>
         </div>
 
@@ -267,6 +272,11 @@ function aplicarPeriodo(tipo, de = null, ate = null) {
     fim = '9999-99-99';
   }
 
+  periodoAtual = {
+    inicio: (inicio === '0000-00-00') ? null : inicio,
+    fim:    (fim    === '9999-99-99') ? null : fim
+  };
+
   const vendasFiltradas = vendasCache.filter(v => v.id >= inicio && v.id <= fim);
   renderizarDashboard(vendasFiltradas);
 }
@@ -290,7 +300,7 @@ function renderizarDashboard(vendas) {
   renderKPIs(vendas);
   renderGraficoDiario(vendas);
   renderComposicao(vendas);
-  renderGraficoHoras(vendas);
+  renderRankingDiferencas();
   renderGraficoProdutos(vendas);
   renderGraficoPratos(vendas);
   renderGraficoEntradas(vendas);
@@ -584,68 +594,130 @@ function inferirSubgruposPorGrupo(vendas) {
   };
 }
 
-// ===== GRÁFICO: HORAS =====
-function renderGraficoHoras(vendas) {
-  chartsAtivos.horas?.destroy?.();
-  // Soma por faixa de hora
-  const soma = {};
-  vendas.forEach(v => {
-    (v.horas || []).forEach(h => {
-      // Normaliza a faixa (o PDV usa "ás" ou "às")
-      const chave = h.faixa.replace(/\s+/g, ' ').trim();
-      if (!soma[chave]) soma[chave] = { total: 0, horaInicio: null };
-      soma[chave].total += h.total || 0;
-      // Extrai hora para ordenar
-      const m = chave.match(/^(\d{1,2}):(\d{2})/);
-      if (m) soma[chave].horaInicio = parseInt(m[1]);
-    });
-  });
-  const entries = Object.entries(soma).sort((a,b) => (a[1].horaInicio||0) - (b[1].horaInicio||0));
-  const labels = entries.map(e => {
-    const m = e[0].match(/^(\d{1,2}):/);
-    return m ? m[1] + 'h' : e[0];
-  });
-  const valores = entries.map(e => e[1].total);
+// ===== GRÁFICO: RANKING DE DIFERENÇAS (auditoria) =====
+// Reusa os motores da Auditoria pra somar a diferença de cada produto no período
+// e ranquear o que mais SUMIU. Mesma conta da tela de Auditoria (já abate consumo
+// interno) — nada de matemática duplicada aqui.
+// Critério: soma LÍQUIDA do período; só entra quem fechou negativo (falta real).
+// Sobra que compensou falta de outro dia se anula e não polui o ranking.
+const RANKING_MAX_DIAS = 90;
 
-  const ctx = document.getElementById('chart-horas');
+async function renderRankingDiferencas() {
+  const ctx = document.getElementById('chart-diferencas');
+  const sub = document.getElementById('sub-diferencas');
   if (!ctx) return;
+  chartsAtivos.diferencas?.destroy?.();
+  if (sub) sub.textContent = 'calculando...';
 
-  chartsAtivos.horas = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels,
-      datasets: [{
-        label: 'Faturamento',
-        data: valores,
-        backgroundColor: cores.amarelo,
-        borderColor: cores.vinho,
-        borderWidth: 1,
-        borderRadius: 6,
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: { label: ctx => fmtMoeda(ctx.parsed.y) }
-        }
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-          ticks: { callback: v => 'R$ ' + (v >= 1000 ? (v/1000).toFixed(0) + 'k' : v) }
-        }
+  try {
+    // Normaliza o período (o filtro "Tudo" usa sentinelas, não datas reais)
+    const hojeIso = toIso(new Date());
+    let fim = (!periodoAtual.fim || periodoAtual.fim > hojeIso) ? hojeIso : periodoAtual.fim;
+    let inicio = periodoAtual.inicio;
+
+    // Teto de dias: o motor roda dia a dia, então períodos longos ficam pesados
+    const limiteIso = toIso(new Date(new Date(fim + 'T12:00:00').getTime() - (RANKING_MAX_DIAS - 1) * 86400000));
+    let limitado = false;
+    if (!inicio || inicio < limiteIso) { inicio = limiteIso; limitado = true; }
+
+    const [todasContagens, recebLote] = await Promise.all([
+      listarContagens({ limite: 500 }),
+      listarRecebimentos(inicio, fim),
+    ]);
+
+    const dias = [...new Set(
+      todasContagens.filter(c => c.data >= inicio && c.data <= fim).map(c => c.data)
+    )].sort();
+
+    // acc[slug] = { nome, soma, diasFalta }
+    const acc = {};
+    const somar = (slug, nome, dif) => {
+      if (!acc[slug]) acc[slug] = { nome, soma: 0, diasFalta: 0 };
+      acc[slug].soma += dif;
+      if (dif < 0) acc[slug].diasFalta++;
+    };
+
+    for (const dia of dias) {
+      const cIni  = todasContagens.find(c => c.tipo === 'ini'  && c.data === dia);
+      const cFin  = todasContagens.find(c => c.tipo === 'fin'  && c.data === dia);
+      const cSorv = todasContagens.find(c => c.tipo === 'sorv' && c.data === dia);
+      const vendasDia = vendasCache.filter(v => (v.data || v.id) === dia);
+      const recebDia  = recebLote.filter(r => r.data === dia);
+      const consumoDia = (await listarConsumoInternoDia(dia)).itens;
+
+      if (cIni && cFin) {
+        const finAnt = todasContagens
+          .filter(c => c.tipo === 'fin' && c.data < dia)
+          .sort((a, b) => b.data.localeCompare(a.data))[0] || null;
+        const res = await calcularAuditoriaOperacional(cIni, cFin, vendasDia, recebDia, finAnt, {}, consumoDia);
+        res.forEach(r => { if (r.status !== 'semdados') somar(r.slug, r.nome, r.diferenca); });
+      }
+      if (cSorv) {
+        const sorvAnt = todasContagens
+          .filter(c => c.tipo === 'sorv' && c.data < dia)
+          .sort((a, b) => b.data.localeCompare(a.data))[0] || null;
+        const resS = await calcularAuditoriaSorvetes(cSorv, vendasDia, sorvAnt);
+        resS.forEach(r => { if (r.status !== 'sem_dados') somar(r.slug, r.nome, r.diferenca); });
       }
     }
-  });
 
-  if (entries.length) {
-    const pico = entries.slice().sort((a,b) => b[1].total - a[1].total)[0];
-    document.getElementById('sub-horas').textContent = `pico: ${pico[0]} (${fmtMoeda(pico[1].total)})`;
-  } else {
-    document.getElementById('sub-horas').textContent = '';
+    const periodoTxt = `${fmtDataCurta(inicio)} a ${fmtDataCurta(fim)}`;
+    const top = Object.values(acc)
+      .filter(p => p.soma < 0)
+      .sort((a, b) => a.soma - b.soma)
+      .slice(0, 10);
+
+    if (!top.length) {
+      if (sub) sub.textContent = dias.length
+        ? `${periodoTxt} · nenhuma falta no período`
+        : 'sem contagens no período';
+      return;
+    }
+
+    const labels = top.map(p => p.nome.length > 28 ? p.nome.slice(0, 26) + '…' : p.nome);
+    const faltas = top.map(p => Math.abs(p.soma));
+
+    chartsAtivos.diferencas = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Unidades faltando',
+          data: faltas,
+          backgroundColor: cores.vermelho,
+          borderRadius: 6,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: c => {
+                const p = top[c.dataIndex];
+                return `faltaram ${fmtInt(Math.abs(p.soma))} un · ${p.diasFalta} dia(s) com falta`;
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            ticks: { callback: v => fmtInt(v) + ' un', precision: 0 }
+          }
+        }
+      }
+    });
+
+    if (sub) {
+      sub.textContent = `${periodoTxt} · ${dias.length} dia(s) auditado(s)` + (limitado ? ` · máx ${RANKING_MAX_DIAS} dias` : '');
+    }
+  } catch (e) {
+    console.error('[ranking diferencas]', e);
+    if (sub) sub.textContent = 'erro ao calcular';
   }
 }
 

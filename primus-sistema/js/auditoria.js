@@ -734,7 +734,7 @@ function mostrarErro(msg) {
 }
 
 // ===== MOTOR DO CÁLCULO — MODO OPERACIONAL =====
-async function calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior, consumoInternoAnt = {}, consumoInternoDia = {}) {
+export async function calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior, consumoInternoAnt = {}, consumoInternoDia = {}) {
   // Carrega catálogo efetivo de bebidas (base + overrides do gestor)
   const bebidas = await obterBebidas();
 
@@ -980,7 +980,7 @@ async function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, au
 // - Compara com vendas do PDV
 // - Embalagens (categoria 📦) têm a mesma estrutura, mas geralmente o "vendeu"
 //   no PDV é o consumo de embalagem (ex: "EMBALAGEM M" no relatório de produtos).
-async function calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSorvAnterior = null) {
+export async function calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSorvAnterior = null) {
   // Carrega catálogo efetivo de sorvetes (inclui embalagens — todos vão na mesma folha)
   const sorvetes = await obterSorvetes();
 
