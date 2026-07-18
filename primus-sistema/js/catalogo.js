@@ -16,6 +16,7 @@ import {
   invalidarCache
 } from './produtos-store.js';
 import { FORNECEDORES_PADRAO } from './produtos.js';
+import { listarVendas } from './db.js';
 
 // ===== ESTADO =====
 let tipoAtual = 'bebidas';        // 'bebidas' | 'sorvetes'
@@ -23,6 +24,7 @@ let mostrarOcultos = false;
 let busca = '';
 let listaCache = [];              // catálogo efetivo do tipo atual
 let editandoSlug = null;          // slug do produto sendo editado no modal
+let nomesPdvCache = null;         // nomes de produtos vistos nas vendas (autocomplete dos vínculos)
 
 // ===== INICIALIZAÇÃO =====
 export async function inicializarCatalogo() {
@@ -105,6 +107,16 @@ export async function inicializarCatalogo() {
               <input type="checkbox" id="cat-f-ks">
               <span>É produto KS (lata pequena)</span>
             </label>
+
+            <label class="cat-form-label" style="margin-top:16px">🔗 Produtos do PDV que consomem este item
+              <span style="display:block;font-weight:400;font-size:11px;color:#888;margin-top:3px;line-height:1.4">
+                Use quando a venda sai com outro nome (ex: polpa que vira caipirinha).
+                O &quot;×&quot; é quanto cada venda baixa do estoque — deixe 1 se for um por um.
+              </span>
+            </label>
+            <div id="cat-f-vinculos"></div>
+            <button type="button" class="btn btn-ghost btn-sm" id="cat-btn-add-vinculo" style="margin-top:8px">+ Adicionar produto do PDV</button>
+            <datalist id="cat-pdv-nomes"></datalist>
           </div>
 
           <div class="cat-modal-acoes">
@@ -151,6 +163,7 @@ export async function inicializarCatalogo() {
 
   document.getElementById('cat-modal-prod-close').onclick = fecharModalProd;
   document.getElementById('cat-btn-cancelar').onclick = fecharModalProd;
+  document.getElementById('cat-btn-add-vinculo').onclick = () => addLinhaVinculo();
   document.getElementById('cat-btn-salvar').onclick = salvarProduto;
 
   document.getElementById('cat-modal-grupo-close').onclick = fecharModalGrupo;
@@ -261,6 +274,7 @@ function renderLinha(p) {
   if (p._origem === 'editado') badges.push('<span class="cat-badge cat-badge-editado">editado</span>');
   if (p._origem === 'novo')    badges.push('<span class="cat-badge cat-badge-novo">novo</span>');
   if (p.ks)                    badges.push('<span class="cat-badge cat-badge-ks">KS</span>');
+  if (p.vinculos?.length)      badges.push(`<span class="cat-badge" style="background:#e8f1fb;color:#1a5276" title="Produtos do PDV vinculados">🔗 ${p.vinculos.length}</span>`);
   if (p._status === 'saindo')  badges.push('<span class="cat-badge cat-badge-saindo">saindo</span>');
   if (p._status === 'oculto')  badges.push('<span class="cat-badge cat-badge-oculto">oculto</span>');
 
@@ -330,6 +344,8 @@ async function abrirModalEditar(slug) {
   document.getElementById('cat-f-unid').value = p.unidCompra || '';
   document.getElementById('cat-f-porcaixa').value = p.porCaixa || '';
   document.getElementById('cat-f-ks').checked = !!p.ks;
+  preencherVinculos(p.vinculos);
+  carregarNomesPdv();
 
   document.getElementById('cat-modal-prod').classList.add('open');
 }
@@ -352,6 +368,8 @@ async function abrirModalNovo() {
   document.getElementById('cat-f-unid').value = '';
   document.getElementById('cat-f-porcaixa').value = '';
   document.getElementById('cat-f-ks').checked = false;
+  preencherVinculos([]);
+  carregarNomesPdv();
 
   document.getElementById('cat-modal-prod').classList.add('open');
   inputNome.focus();
@@ -408,6 +426,8 @@ async function salvarProduto() {
   if (unidCompra !== null) dados.unidCompra = unidCompra;
   if (porCaixa !== null)   dados.porCaixa = porCaixa;
   if (ks)                  dados.ks = true;
+  // Sempre persiste (array vazio serve pra LIMPAR vínculos antigos no merge)
+  dados.vinculos = coletarVinculos();
 
   try {
     if (editandoSlug) {
@@ -563,4 +583,69 @@ function mostrarToast(msg, tipo = '') {
   t.textContent = msg;
   t.className = 'toast show ' + tipo;
   setTimeout(() => t.className = 'toast', 2800);
+}
+
+// ===== VÍNCULOS DE VENDA (produtos do PDV que consomem um item de estoque) =====
+// Ex: a polpa "Frutas vermelhas" nunca é vendida com esse nome — sai como
+// CAIPIRINHA/CAIPIROSKA/GIN FRUTAS VERMELHAS. Sem vínculo, o VEN fica 0 e a
+// saída real vira falso "sumiço" na auditoria.
+
+function addLinhaVinculo(nome = '', fator = 1) {
+  const cont = document.getElementById('cat-f-vinculos');
+  if (!cont) return null;
+  const div = document.createElement('div');
+  div.className = 'cat-vinculo-row';
+  div.style.cssText = 'display:flex;gap:6px;align-items:center;margin-top:6px';
+  div.innerHTML = `
+    <input type="text" class="cat-form-input cat-vinculo-nome" list="cat-pdv-nomes"
+           placeholder="Nome exato no PDV" style="flex:1;margin:0">
+    <span style="color:#888;font-size:13px">×</span>
+    <input type="number" class="cat-form-input cat-vinculo-fator" value="1" min="0.01" step="0.5"
+           title="Quanto cada venda baixa do estoque" style="width:74px;margin:0">
+    <button type="button" class="cat-btn-acao cat-vinculo-del" title="Remover vínculo">🗑️</button>`;
+  div.querySelector('.cat-vinculo-nome').value = nome;
+  div.querySelector('.cat-vinculo-fator').value = fator;
+  div.querySelector('.cat-vinculo-del').onclick = () => div.remove();
+  cont.appendChild(div);
+  return div;
+}
+
+function preencherVinculos(lista) {
+  const cont = document.getElementById('cat-f-vinculos');
+  if (!cont) return;
+  cont.innerHTML = '';
+  (lista || []).forEach(v => addLinhaVinculo(v.nome || '', v.fator != null ? v.fator : 1));
+}
+
+function coletarVinculos() {
+  const out = [];
+  document.querySelectorAll('#cat-f-vinculos .cat-vinculo-row').forEach(row => {
+    const nome = row.querySelector('.cat-vinculo-nome').value.trim();
+    if (!nome) return;
+    let fator = parseFloat(String(row.querySelector('.cat-vinculo-fator').value).replace(',', '.'));
+    if (!isFinite(fator) || fator <= 0) fator = 1;
+    out.push({ nome, fator });
+  });
+  return out;
+}
+
+/** Carrega nomes reais de produtos das vendas recentes pro autocomplete (1x por sessão). */
+async function carregarNomesPdv() {
+  const dl = document.getElementById('cat-pdv-nomes');
+  if (!dl) return;
+  if (nomesPdvCache) {
+    dl.innerHTML = nomesPdvCache.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+    return;
+  }
+  try {
+    const vendas = await listarVendas({ limite: 60 });
+    const set = new Set();
+    vendas.forEach(v => (v.produtos || []).forEach(p => {
+      if (p && p.nome) set.add(String(p.nome).trim());
+    }));
+    nomesPdvCache = [...set].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    dl.innerHTML = nomesPdvCache.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
+  } catch (err) {
+    console.error('[catalogo] não consegui carregar nomes do PDV:', err);
+  }
 }
