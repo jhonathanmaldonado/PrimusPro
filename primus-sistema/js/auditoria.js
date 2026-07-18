@@ -734,6 +734,36 @@ function mostrarErro(msg) {
 }
 
 // ===== MOTOR DO CÁLCULO — MODO OPERACIONAL =====
+// ===== VÍNCULOS DE VENDA =====
+// Um item de estoque pode ser consumido por produtos vendidos com OUTRO nome
+// no PDV (ex: a polpa "Frutas vermelhas" sai como CAIPIRINHA/GIN FRUTAS VERMELHAS).
+// Sem isso o VEN fica 0 e a saída real vira falso "sumiço" na auditoria.
+// Cadastro: Catálogo → editar produto → "Produtos do PDV que consomem este item".
+// Retorna { slug: qtdVinculada } e JÁ soma essa quantidade no vendidoPorSlug.
+function somarVinculosDeVenda(catalogo, vendidoPorSlug) {
+  const extras = {};
+  (catalogo || []).forEach(item => {
+    const vincs = item && item.vinculos;
+    if (!Array.isArray(vincs) || !vincs.length) return;
+    const slugItem = slugify(item.nome);
+    let soma = 0;
+    vincs.forEach(v => {
+      if (!v || !v.nome) return;
+      const slugV = slugify(v.nome);
+      if (slugV === slugItem) return; // o próprio nome já entra no match direto
+      const f = Number(v.fator);
+      const fator = (isFinite(f) && f > 0) ? f : 1;
+      soma += (vendidoPorSlug[slugV] || 0) * fator;
+    });
+    if (soma > 0) extras[slugItem] = Math.round(soma);
+  });
+  // Aplica só depois de calcular tudo, pra um vínculo não ler valor já somado
+  Object.entries(extras).forEach(([slug, qtd]) => {
+    vendidoPorSlug[slug] = (vendidoPorSlug[slug] || 0) + qtd;
+  });
+  return extras;
+}
+
 export async function calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior, consumoInternoAnt = {}, consumoInternoDia = {}) {
   // Carrega catálogo efetivo de bebidas (base + overrides do gestor)
   const bebidas = await obterBebidas();
@@ -777,6 +807,7 @@ export async function calcularAuditoriaOperacional(contagemIni, contagemFin, ven
       vendidoPorSlug[slugP] += p.qtd || 0;
     });
   });
+  const vinculadosPorSlug = somarVinculosDeVenda(bebidas, vendidoPorSlug);
 
   // Monta linha por bebida (usa catálogo efetivo carregado acima)
   return bebidas.map(bebida => {
@@ -847,6 +878,7 @@ export async function calcularAuditoriaOperacional(contagemIni, contagemFin, ven
       ini,
       recebido,
       vendido,
+      vendidoVinculado: vinculadosPorSlug[slug] || 0,
       consumo,
       esperado,
       real,
@@ -997,6 +1029,7 @@ export async function calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSo
       vendidoPorSlug[slug] += p.qtd || 0;
     });
   });
+  const vinculadosPorSlug = somarVinculosDeVenda(sorvetes, vendidoPorSlug);
 
   const temAnterior = !!contagemSorvAnterior;
 
@@ -1052,6 +1085,7 @@ export async function calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSo
       // campos no padrão bebidas (usados no render novo)
       recebido: abast,
       vendido,
+      vendidoVinculado: vinculadosPorSlug[slug] || 0,
       esperado,
       real,
       diferenca,
@@ -1372,7 +1406,7 @@ function renderLinhaOperacional(r) {
       ${cellD1Html}
       <div class="aud-num">${fmtInt(r.ini)}</div>
       <div class="aud-num aud-num-pos">${r.recebido > 0 ? '+' + fmtInt(r.recebido) : '—'}</div>
-      <div class="aud-num aud-num-neg">${r.vendido > 0 ? '−' + fmtInt(r.vendido) : '—'}${r.consumo > 0 ? `<span style="display:block;font-size:9.5px;font-weight:700;color:#c47a1a;line-height:1;margin-top:1px">cons ${fmtInt(r.consumo)}</span>` : ''}</div>
+      <div class="aud-num aud-num-neg">${r.vendido > 0 ? '−' + fmtInt(r.vendido) : '—'}${r.vendidoVinculado > 0 ? `<span style="display:block;font-size:9.5px;font-weight:700;color:#1a5276;line-height:1;margin-top:1px" title="Vendas de produtos vinculados do PDV">vinc ${fmtInt(r.vendidoVinculado)}</span>` : ''}${r.consumo > 0 ? `<span style="display:block;font-size:9.5px;font-weight:700;color:#c47a1a;line-height:1;margin-top:1px">cons ${fmtInt(r.consumo)}</span>` : ''}</div>
       <div class="aud-num aud-num-esp">${fmtInt(r.esperado)}</div>
       <div class="aud-num aud-num-real">${fmtInt(r.real)}</div>
       <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}</div>
@@ -1773,7 +1807,7 @@ function renderLinhaSorvetesOperacional(r) {
       ${cellD1Html}
       <div class="aud-num">${fmtInt(r.ini)}</div>
       <div class="aud-num aud-num-pos">${r.recebido > 0 ? '+' + fmtInt(r.recebido) : '—'}</div>
-      <div class="aud-num aud-num-neg">${r.vendido > 0 ? '−' + fmtInt(r.vendido) : '—'}</div>
+      <div class="aud-num aud-num-neg">${r.vendido > 0 ? '−' + fmtInt(r.vendido) : '—'}${r.vendidoVinculado > 0 ? `<span style="display:block;font-size:9.5px;font-weight:700;color:#1a5276;line-height:1;margin-top:1px" title="Vendas de produtos vinculados do PDV">vinc ${fmtInt(r.vendidoVinculado)}</span>` : ''}</div>
       <div class="aud-num aud-num-esp">${fmtInt(r.esperado)}</div>
       <div class="aud-num aud-num-real">${fmtInt(r.real)}</div>
       <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}</div>
