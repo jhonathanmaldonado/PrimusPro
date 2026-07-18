@@ -41,6 +41,7 @@ export async function inicializarDashboard() {
   container.innerHTML = `
     <div class="filtro-periodo">
       <label>Período:</label>
+      <button class="periodo-btn" data-periodo="semana">Essa semana</button>
       <button class="periodo-btn active" data-periodo="7d">7 dias</button>
       <button class="periodo-btn" data-periodo="30d">30 dias</button>
       <button class="periodo-btn" data-periodo="mes">Mês atual</button>
@@ -255,7 +256,15 @@ function aplicarPeriodo(tipo, de = null, ate = null) {
   const hoje = new Date();
   fim = toIso(hoje);
 
-  if (tipo === '7d') {
+  if (tipo === 'semana') {
+    // Semana corrente: SEGUNDA a DOMINGO (domingo conta como fim da semana, não início)
+    const dow = hoje.getDay();               // 0=Dom .. 6=Sáb
+    const ateSegunda = (dow === 0 ? -6 : 1 - dow);
+    const seg = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() + ateSegunda);
+    const dom = new Date(seg.getFullYear(), seg.getMonth(), seg.getDate() + 6);
+    inicio = toIso(seg);
+    fim    = toIso(dom);
+  } else if (tipo === '7d') {
     const d = new Date(); d.setDate(d.getDate() - 6);
     inicio = toIso(d);
   } else if (tipo === '30d') {
