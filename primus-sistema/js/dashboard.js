@@ -963,15 +963,21 @@ function renderGraficoPratos(vendas) {
 function renderGraficoEntradas(vendas) {
   chartsAtivos.entradas?.destroy?.();
 
-  // Palavras que definem ENTRADAS no cardápio Primus
-  // PASSAPORT KIDS é "outros" / categoria própria, não vai aqui
+  // Classificação de ENTRADAS pela MESMA fonte de verdade do Explorador de
+  // dados: a tabela oficial (produto-subgrupo-map.js), que cobre o cardápio
+  // atual. A lista de palavras antiga perdia entradas cujo nome não batia
+  // (ex: PINTADO A PALITO, COSTELINHA), dando contagem menor que a do Explorador.
+  // O keyword-list vira só fallback pra produto ainda não mapeado na tabela.
   const palavrasEntrada = [
-    'BOLINHO', 'PASTEL', 'CALDO', 'PETISCO',
-    'BATATA FRITA', 'MIX DE PETISCOS'
+    'BOLINHO DE PEIXE', 'PASTEL DE PEIXE', 'PASTEL DE CARNE', 'CALDO DE PEIXE',
+    'MIX DE PETISCOS', 'BATATA FRITA', 'PORCAO DE VENTRECHA', 'PINTADO A PALITO',
+    'COSTELINHA', 'CROQUETE', 'MOJIQUINHA'
   ];
 
   const ehEntrada = nome => {
-    const up = nome.toUpperCase();
+    const oficial = buscarSubgrupoOficial(nome);
+    if (oficial) return oficial === 'ENTRADAS';
+    const up = (nome || '').toUpperCase();
     return palavrasEntrada.some(p => up.includes(p));
   };
 
