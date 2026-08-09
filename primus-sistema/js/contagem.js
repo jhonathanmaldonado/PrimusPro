@@ -38,6 +38,28 @@ userChip.onclick = (e) => {
 document.addEventListener('click', () => userMenu.classList.remove('open'));
 document.getElementById('btn-logout').onclick = logout;
 
+// ===== AJUSTE DE GRID PRA 3 LOCAIS (Estoque + Fz. Principal + Fz. Auxiliar) =====
+// O layout base tinha 2 campos numéricos (freezer/estoque). Agora são 3.
+// Injeta o grid-template-columns aqui pra não depender de editar o CSS da página.
+(function ajustarGridLocais() {
+  const st = document.createElement('style');
+  st.textContent = `
+    /* INÍCIO: Produto | Estoque | Fz.Princ | Fz.Aux | Total | Obs */
+    .col-headers.layout-beb, .produto-row.layout-beb {
+      display: grid;
+      grid-template-columns: minmax(120px,2fr) 1fr 1fr 1fr 1fr minmax(90px,1.4fr);
+      gap: 6px; align-items: center;
+    }
+    /* FINAL: Produto | Estoque | Fz.Princ | Fz.Aux | Total | Receb | Obs */
+    .col-headers.layout-fin, .produto-row.layout-fin {
+      display: grid;
+      grid-template-columns: minmax(120px,2fr) 1fr 1fr 1fr 1fr 1fr minmax(90px,1.4fr);
+      gap: 6px; align-items: center;
+    }
+  `;
+  document.head.appendChild(st);
+})();
+
 // ===== DATA PADRÃO =====
 document.getElementById('data-input').value = hoje();
 
@@ -98,16 +120,18 @@ async function renderizarFormulario() {
       colHeader.className = 'col-headers layout-beb';
       colHeader.innerHTML = `
         <div class="col-header">Produto</div>
-        <div class="col-header">Freezer</div>
         <div class="col-header">Estoque</div>
+        <div class="col-header">Fz. Principal</div>
+        <div class="col-header">Fz. Auxiliar</div>
         <div class="col-header">Total</div>
         <div class="col-header">Obs</div>`;
     } else { // fin
       colHeader.className = 'col-headers layout-fin';
       colHeader.innerHTML = `
         <div class="col-header">Produto</div>
-        <div class="col-header">Freezer</div>
         <div class="col-header">Estoque</div>
+        <div class="col-header">Fz. Principal</div>
+        <div class="col-header">Fz. Auxiliar</div>
         <div class="col-header">Total</div>
         <div class="col-header">Receb.</div>
         <div class="col-header">Obs</div>`;
@@ -127,16 +151,18 @@ async function renderizarFormulario() {
         row.className = 'produto-row layout-beb';
         row.innerHTML = `
           ${nomeProd}
-          <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_fr" oninput="atualizar('${id}','fr',this)" onfocus="this.select()">
           <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_est" oninput="atualizar('${id}','est',this)" onfocus="this.select()">
+          <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_frPrinc" oninput="atualizar('${id}','frPrinc',this)" onfocus="this.select()">
+          <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_frAux" oninput="atualizar('${id}','frAux',this)" onfocus="this.select()">
           <div class="total-val" id="${id}_tot">—</div>
           ${obsInput}`;
       } else {
         row.className = 'produto-row layout-fin';
         row.innerHTML = `
           ${nomeProd}
-          <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_fr" oninput="atualizar('${id}','fr',this)" onfocus="this.select()">
           <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_est" oninput="atualizar('${id}','est',this)" onfocus="this.select()">
+          <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_frPrinc" oninput="atualizar('${id}','frPrinc',this)" onfocus="this.select()">
+          <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_frAux" oninput="atualizar('${id}','frAux',this)" onfocus="this.select()">
           <div class="total-val" id="${id}_tot">—</div>
           <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="0" id="${id}_rec" oninput="atualizar('${id}','rec',this)" onfocus="this.select()">
           ${obsInput}`;
@@ -225,11 +251,12 @@ window.atualizar = function(id, campo, input) {
   dados[id][campo] = val;
   input.classList.toggle('filled', input.value !== '' && input.value !== '0');
 
-  // Total de bebidas (freezer + estoque)
-  if (campo === 'fr' || campo === 'est') {
-    const fr  = parseInt(document.getElementById(id+'_fr')?.value)  || 0;
-    const est = parseInt(document.getElementById(id+'_est')?.value) || 0;
-    const tot = fr + est;
+  // Total de bebidas = Estoque + Freezer Bar Principal + Freezer Bar Auxiliar
+  if (campo === 'est' || campo === 'frPrinc' || campo === 'frAux') {
+    const est     = parseInt(document.getElementById(id+'_est')?.value)     || 0;
+    const frPrinc = parseInt(document.getElementById(id+'_frPrinc')?.value) || 0;
+    const frAux   = parseInt(document.getElementById(id+'_frAux')?.value)   || 0;
+    const tot = est + frPrinc + frAux;
     dados[id].total = tot;
     const totEl = document.getElementById(id+'_tot');
     if (totEl) {
