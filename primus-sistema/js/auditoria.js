@@ -2700,8 +2700,13 @@ window.__aud_corrigirErro = async function(slug, alvo, confirmadoAuto) {
         valorObj.qtd = valorNovo;
       } else if ('fr' in valorObj || 'est' in valorObj || 'total' in valorObj) {
         // Bebidas (INI ou FIN)
-        valorObj.fr = valorNovo;
-        valorObj.est = 0;
+        // Correção é um override de TOTAL: grava no Estoque, zera os freezers
+        // e limpa o campo legado. A auditoria usa o total; o funcionário pode
+        // redistribuir entre os locais depois, na tela de contagem.
+        valorObj.est = valorNovo;
+        valorObj.frPrinc = 0;
+        valorObj.frAux = 0;
+        valorObj.fr = 0;
         valorObj.total = valorNovo;
       } else {
         alert('Formato da contagem não reconhecido.');
@@ -2851,8 +2856,13 @@ window.__aud_corrigirOpErro = async function(slug, alvo) {
       } else if (chaveAtual.endsWith('__ini') && 'qtd' in valorObj) {
         valorObj.qtd = valorNovo;
       } else if ('fr' in valorObj || 'est' in valorObj || 'total' in valorObj) {
-        valorObj.fr = valorNovo;
-        valorObj.est = 0;
+        // Correção é um override de TOTAL: grava no Estoque, zera os freezers
+        // e limpa o campo legado. A auditoria usa o total; o funcionário pode
+        // redistribuir entre os locais depois, na tela de contagem.
+        valorObj.est = valorNovo;
+        valorObj.frPrinc = 0;
+        valorObj.frAux = 0;
+        valorObj.fr = 0;
         valorObj.total = valorNovo;
       } else {
         alert('Formato da contagem não reconhecido.');
@@ -3371,8 +3381,13 @@ async function aplicarEdicaoContagem(contagem, slug, novoValor, motivo, responsa
       } else if (chaveAtual.endsWith('__ini') && 'qtd' in valorObj) {
         valorObj.qtd = novoValor;
       } else if ('fr' in valorObj || 'est' in valorObj || 'total' in valorObj) {
-        valorObj.fr = novoValor;
-        valorObj.est = 0;
+        // Correção é um override de TOTAL: grava no Estoque, zera os freezers
+        // e limpa o campo legado. A auditoria usa o total; o funcionário pode
+        // redistribuir entre os locais depois, na tela de contagem.
+        valorObj.est = novoValor;
+        valorObj.frPrinc = 0;
+        valorObj.frAux = 0;
+        valorObj.fr = 0;
         valorObj.total = novoValor;
       } else {
         throw new Error('Formato da contagem não reconhecido.');
