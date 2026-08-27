@@ -665,7 +665,7 @@ async function renderRankingDiferencas() {
         const sorvAnt = todasContagens
           .filter(c => c.tipo === 'sorv' && c.data < dia)
           .sort((a, b) => b.data.localeCompare(a.data))[0] || null;
-        const resS = await calcularAuditoriaSorvetes(cSorv, vendasDia, sorvAnt);
+        const resS = await calcularAuditoriaSorvetes(cSorv, vendasDia, sorvAnt, consumoDia);
         resS.forEach(r => { if (r.status !== 'sem_dados') somar(r.slug, r.nome, r.diferenca); });
       }
     }

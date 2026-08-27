@@ -643,7 +643,7 @@ async function executarModoOperacional() {
 
   // 5b) Calcula auditoria de sorvetes (se houver contagem)
   if (contagemSorv) {
-    resultadoSorvetes = await calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSorvAnteriorOp);
+    resultadoSorvetes = await calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSorvAnteriorOp, consumoInternoDia);
   } else {
     resultadoSorvetes = [];
   }
@@ -1012,7 +1012,7 @@ async function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, au
 // - Compara com vendas do PDV
 // - Embalagens (categoria 📦) têm a mesma estrutura, mas geralmente o "vendeu"
 //   no PDV é o consumo de embalagem (ex: "EMBALAGEM M" no relatório de produtos).
-export async function calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSorvAnterior = null) {
+export async function calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSorvAnterior = null, consumoInternoDia = {}) {
   // Carrega catálogo efetivo de sorvetes (inclui embalagens — todos vão na mesma folha)
   const sorvetes = await obterSorvetes();
 
@@ -1041,9 +1041,10 @@ export async function calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSo
     const abast = c.abast || 0;   // reabastecimento durante o dia = "recebido"
     const fin   = c.fin   || 0;
     const vendido = vendidoPorSlug[slug] || 0;   // vendeu no PDV
+    const consumo = consumoInternoDia[slug] || 0; // retiradas fora do PDV no dia
 
-    // Formato bebidas: esperado = ini + recebido − vendido ; real = fin ; dif = real − esperado
-    const esperado  = ini + abast - vendido;
+    // Formato bebidas: esperado = ini + recebido − vendido − consumo ; real = fin ; dif = real − esperado
+    const esperado  = ini + abast - vendido - consumo;
     const real      = fin;
     const diferenca = real - esperado;
 
@@ -1071,7 +1072,7 @@ export async function calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSo
     // Status pela magnitude da diferença (mesma régua das bebidas)
     const abs = Math.abs(diferenca);
     let status;
-    if (ini === 0 && fin === 0 && abast === 0 && vendido === 0) status = 'sem_dados';
+    if (ini === 0 && fin === 0 && abast === 0 && vendido === 0 && consumo === 0) status = 'sem_dados';
     else if (abs >= 5) status = 'critico';
     else if (abs >= 2) status = 'atencao';
     else if (abs >= 1) status = 'leve';
@@ -1086,6 +1087,7 @@ export async function calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSo
       recebido: abast,
       vendido,
       vendidoVinculado: vinculadosPorSlug[slug] || 0,
+      consumo,
       esperado,
       real,
       diferenca,
@@ -1807,7 +1809,7 @@ function renderLinhaSorvetesOperacional(r) {
       ${cellD1Html}
       <div class="aud-num">${fmtInt(r.ini)}</div>
       <div class="aud-num aud-num-pos">${r.recebido > 0 ? '+' + fmtInt(r.recebido) : '—'}</div>
-      <div class="aud-num aud-num-neg">${r.vendido > 0 ? '−' + fmtInt(r.vendido) : '—'}${r.vendidoVinculado > 0 ? `<span style="display:block;font-size:9.5px;font-weight:700;color:#1a5276;line-height:1;margin-top:1px" title="Vendas de produtos vinculados do PDV">vinc ${fmtInt(r.vendidoVinculado)}</span>` : ''}</div>
+      <div class="aud-num aud-num-neg">${r.vendido > 0 ? '−' + fmtInt(r.vendido) : '—'}${r.vendidoVinculado > 0 ? `<span style="display:block;font-size:9.5px;font-weight:700;color:#1a5276;line-height:1;margin-top:1px" title="Vendas de produtos vinculados do PDV">vinc ${fmtInt(r.vendidoVinculado)}</span>` : ''}${r.consumo > 0 ? `<span style="display:block;font-size:9.5px;font-weight:700;color:#c47a1a;line-height:1;margin-top:1px">cons ${fmtInt(r.consumo)}</span>` : ''}</div>
       <div class="aud-num aud-num-esp">${fmtInt(r.esperado)}</div>
       <div class="aud-num aud-num-real">${fmtInt(r.real)}</div>
       <div class="aud-num ${difClasse}">${fmtSgn(r.diferenca)}</div>
@@ -4308,14 +4310,17 @@ async function abrirModalConsumoInterno() {
   garantirModalConsumo();
   _ciHouveLancamento = false;
 
-  // Popula produtos (bebidas)
-  const bebidas = await obterBebidas();
+  // Popula produtos: bebidas + sorvetes/embalagens (consumo vale pra todos)
+  const [bebidas, sorvetes] = await Promise.all([obterBebidas(), obterSorvetes()]);
   const sel = document.getElementById('ci-produto');
-  sel.innerHTML = bebidas
+  const montarOpts = arr => arr
     .slice()
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
-    .map(b => `<option value="${b.nome.replace(/"/g, '&quot;')}">${b.nome}</option>`)
+    .map(p => `<option value="${p.nome.replace(/"/g, '&quot;')}">${p.nome}</option>`)
     .join('');
+  sel.innerHTML =
+    `<optgroup label="Bebidas">${montarOpts(bebidas)}</optgroup>` +
+    `<optgroup label="Sorvetes e embalagens">${montarOpts(sorvetes)}</optgroup>`;
 
   // Default: o dia que está na auditoria
   const diaAud = document.getElementById('aud-data-principal')?.value || '';
@@ -4556,7 +4561,7 @@ async function renderSemanaAuditoria() {
       }
       if (sorv) {
         const sorvAnt = todasContagens.filter(c => c.tipo === 'sorv' && c.data < diaIso).sort((a, b) => b.data.localeCompare(a.data))[0] || null;
-        const resS = await calcularAuditoriaSorvetes(sorv, vendasDia, sorvAnt);
+        const resS = await calcularAuditoriaSorvetes(sorv, vendasDia, sorvAnt, consumoDia);
         resS.forEach(r => { if (r.status !== 'sem_dados') registrar(r.slug, r.nome, r.grupo, i, r.diferenca, r.vendido); });
       }
     }
