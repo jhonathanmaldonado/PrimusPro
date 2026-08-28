@@ -39,8 +39,39 @@ export async function salvarContagem(contagem) {
  * ou gestor). Diferente de salvarContagem, NÃO cria doc novo — sobrescreve o
  * mesmo, evitando contagens duplicadas pro mesmo dia. Registra editadoEm/editadoPor.
  */
+/**
+ * Marca com _editado:{por,em} cada item de `novos` cujo valor numérico difere
+ * de `originais`. Itens não alterados agora preservam a marca anterior (se houver).
+ * Usado tanto na edição pelo funcionário quanto na correção pelo gestor, pra a
+ * sinalização de "item alterado" ser idêntica nos dois caminhos.
+ */
+function marcarItensEditados(novos, originais = {}, por = 'edição') {
+  const CAMPOS = ['est', 'frPrinc', 'frAux', 'fr', 'rec', 'qtd', 'abast', 'final'];
+  const agora = new Date().toISOString();
+  Object.keys(novos || {}).forEach(k => {
+    const nv = novos[k];
+    if (!nv || typeof nv !== 'object') return;
+    const ov = originais[k] || {};
+    const mudou = CAMPOS.some(c => (Number(nv[c]) || 0) !== (Number(ov[c]) || 0));
+    if (mudou) {
+      nv._editado = { por, em: agora };
+    } else if (ov._editado) {
+      nv._editado = ov._editado; // preserva marca de edição anterior
+    }
+  });
+  return novos;
+}
+
 export async function atualizarContagem(id, itens, meta = {}) {
-  await updateDoc(doc(db, COL_CONTAGENS, id), {
+  const ref = doc(db, COL_CONTAGENS, id);
+  // Lê os itens atuais pra comparar e marcar só o que mudou de valor.
+  let originais = {};
+  try {
+    const snap = await getDoc(ref);
+    if (snap.exists()) originais = snap.data().itens || {};
+  } catch (_) { /* tolerante: sem original, só não marca de→para */ }
+  marcarItensEditados(itens, originais, meta.editadoPor || 'edição');
+  await updateDoc(ref, {
     itens,
     editadoEm: serverTimestamp(),
     ...meta
@@ -112,6 +143,9 @@ export async function corrigirItemContagem(idContagem, novosItens, correcao) {
     throw new Error('Contagem original n├úo encontrada');
   }
   const dados = contagemOriginal.data();
+
+  // Marca os itens efetivamente alterados (pra sinalização unificada com a edição).
+  marcarItensEditados(novosItens, dados.itens || {}, (correcao && correcao.responsavel) || 'Gestor');
 
   // Cria nova contagem com os itens corrigidos.
   // MARCADA como correção: preserva quem fez a contagem original (autorNome),
