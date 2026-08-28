@@ -4552,10 +4552,12 @@ async function renderSemanaAuditoria() {
       const sorv = todasContagens.find(c => c.tipo === 'sorv' && c.data === diaIso);
       const vendasDia = vendasLote.filter(v => (v.data || v.id) === diaIso);
       const recebDia  = recebLote.filter(r => r.data === diaIso);
+      // Consumo do dia no nível do loop: usado tanto pelo cálculo de bebidas
+      // quanto pelo de sorvetes (antes ficava dentro do if e quebrava o if(sorv)).
+      const consumoDia = (await listarConsumoInternoDia(diaIso)).itens;
 
       if (ini && fin) {
         const finAnt = todasContagens.filter(c => c.tipo === 'fin' && c.data < diaIso).sort((a, b) => b.data.localeCompare(a.data))[0] || null;
-        const consumoDia = (await listarConsumoInternoDia(diaIso)).itens;
         const res = await calcularAuditoriaOperacional(ini, fin, vendasDia, recebDia, finAnt, {}, consumoDia);
         res.forEach(r => { if (r.status !== 'semdados') registrar(r.slug, r.nome, r.grupo, i, r.diferenca, r.vendido); });
       }
