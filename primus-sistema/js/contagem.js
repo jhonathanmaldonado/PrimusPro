@@ -4,7 +4,7 @@
 import { slugify } from './produtos.js';
 import { obterBebidas, obterSorvetes } from './produtos-store.js';
 import { exigirPerfil, logout } from './auth.js';
-import { salvarContagem, hoje, listarContagens, atualizarContagem } from './db.js';
+import { salvarContagem, hoje, listarContagens, atualizarContagem, buscarAuditoriaFechada } from './db.js';
 
 // Garante sessão válida — barman, gerente ou gestor podem contar
 const sessao = exigirPerfil(['barman', 'gerente', 'gestor']);
@@ -72,7 +72,9 @@ window.selecionarTipo = async function(tipo) {
   // Por padrão é um NOVO lançamento (carregarParaEditar sobrescreve isto depois)
   editandoContagemId = null;
   document.getElementById('data-input').removeAttribute('readonly');
-  document.getElementById('edit-banner').style.display = 'none';
+  const _bnr = document.getElementById('edit-banner');
+  _bnr.style.display = 'none';
+  _bnr.style.background = ''; _bnr.style.color = ''; _bnr.style.borderLeftColor = '';
   document.getElementById('btn-salvar').innerHTML = '💾 Salvar Contagem';
   tipoAtual = tipo;
   ['ini','fin','sorv'].forEach(t => {
@@ -511,7 +513,33 @@ async function carregarParaEditar(contagem) {
   banner.innerHTML = `✏️ Editando contagem de <b>${d}/${m}/${y}</b>${contagem.autorNome ? ' · lançado por ' + contagem.autorNome : ''}`;
   banner.style.display = 'block';
 
+  // 3B: se a auditoria operacional deste dia já foi FECHADA, vira só-leitura.
+  // Tolerante a falha na leitura (não trava o uso se a checagem der erro).
+  try {
+    const fechada = await buscarAuditoriaFechada('operacional', contagem.data, contagem.data);
+    if (fechada) aplicarModoSomenteLeitura(contagem.data);
+  } catch (e) {
+    console.warn('Não deu pra verificar auditoria fechada:', e.message);
+  }
+
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Trava o formulário em só-leitura quando a auditoria do dia já foi fechada.
+function aplicarModoSomenteLeitura(diaIso) {
+  document.querySelectorAll('#main-content input, #main-content textarea').forEach(el => {
+    el.disabled = true;
+    el.style.opacity = '0.7';
+  });
+  document.getElementById('bottom-bar').style.display = 'none';
+  editandoContagemId = null; // garante que NADA será salvo
+  const [y, m, d] = diaIso.split('-');
+  const banner = document.getElementById('edit-banner');
+  banner.innerHTML = `🔒 Auditoria de <b>${d}/${m}/${y}</b> já foi fechada — visualização apenas, não editável.`;
+  banner.style.display = 'block';
+  banner.style.background = '#fdecea';
+  banner.style.color = '#c0392b';
+  banner.style.borderLeftColor = '#c0392b';
 }
 
 // Preenche os inputs do formulário a partir dos itens salvos.
