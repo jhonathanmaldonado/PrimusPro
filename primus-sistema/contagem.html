@@ -283,6 +283,51 @@
     .obs-input { font-size: 10px; }
     .prod-nome { font-size: 11px; }
   }
+
+  /* ===== ETAPA 3A: aba Contar/Calendário + calendário do funcionário ===== */
+  .modo-bar { display:flex; gap:8px; padding:12px 16px 0; background:var(--vinho); }
+  .modo-btn { flex:1; padding:10px; border-radius:10px 10px 0 0; border:none;
+    background:rgba(255,255,255,0.1); color:rgba(255,255,255,0.7);
+    font-family:'Raleway',sans-serif; font-weight:700; font-size:13px; cursor:pointer; }
+  .modo-btn.active { background:var(--amarelo); color:var(--vinho); }
+
+  .edit-banner { background:#fff4e0; color:#8a5a00; border-left:4px solid var(--amarelo);
+    padding:10px 14px; font-size:12.5px; font-weight:600; font-family:'DM Sans',sans-serif;
+    max-width:900px; margin:12px auto 0; border-radius:8px; line-height:1.4; }
+
+  .cal-view { max-width:600px; margin:0 auto;
+    padding:16px 12px calc(120px + env(safe-area-inset-bottom,0px)); }
+  .cal-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  .cal-titulo { font-family:'Raleway',sans-serif; font-weight:800; font-size:16px;
+    color:var(--vinho); text-transform:capitalize; }
+  .cal-nav { background:white; border:1px solid var(--cinza-borda); border-radius:8px;
+    padding:8px 14px; font-size:14px; cursor:pointer; color:var(--vinho); font-weight:700; }
+  .cal-grade { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }
+  .cal-wd { text-align:center; font-size:9px; color:var(--cinza-texto);
+    font-family:'DM Mono',monospace; font-weight:600; padding:4px 0; }
+  .cal-cel { aspect-ratio:1; background:white; border:1px solid var(--cinza-borda);
+    border-radius:8px; display:flex; flex-direction:column; align-items:center;
+    justify-content:flex-start; padding:4px 2px; }
+  .cal-cel.vazia { background:transparent; border:none; }
+  .cal-cel.tem { cursor:pointer; border-color:var(--amarelo); background:var(--amarelo-bg); }
+  .cal-cel.tem:active { background:var(--amarelo); }
+  .cal-dia { font-weight:700; color:var(--preto); font-size:12px; }
+  .cal-dots { font-size:9px; margin-top:2px; line-height:1; letter-spacing:1px; }
+  .cal-legenda { font-size:11px; color:var(--cinza-texto); text-align:center;
+    margin-top:14px; line-height:1.6; }
+
+  .cal-picker-bg { position:fixed; inset:0; background:rgba(0,0,0,0.5);
+    display:flex; align-items:flex-end; justify-content:center; z-index:200; }
+  .cal-picker { background:white; width:100%; max-width:480px; border-radius:16px 16px 0 0;
+    padding:18px 16px calc(24px + env(safe-area-inset-bottom,0px)); }
+  .cal-picker h3 { font-family:'Raleway',sans-serif; font-weight:800; font-size:16px;
+    color:var(--vinho); margin-bottom:12px; text-align:center; }
+  .cal-picker-btn { display:block; width:100%; padding:14px; margin-bottom:8px; border-radius:12px;
+    border:2px solid var(--cinza-borda); background:white; font-family:'Raleway',sans-serif;
+    font-weight:700; font-size:14px; cursor:pointer; text-align:left; color:var(--preto); }
+  .cal-picker-btn:active { background:var(--amarelo-bg); border-color:var(--amarelo); }
+  .cal-picker-cancel { width:100%; padding:12px; margin-top:4px; border:none;
+    background:transparent; color:var(--cinza-texto); font-weight:600; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -315,6 +360,11 @@
     </div>
   </div>
 
+  <div class="modo-bar">
+    <button class="modo-btn active" id="modo-contar" onclick="trocarModo('contar')">📝 Contar</button>
+    <button class="modo-btn" id="modo-cal" onclick="trocarModo('calendario')">📅 Calendário</button>
+  </div>
+
   <div class="tipo-selector">
     <div class="tipo-grid">
       <button class="tipo-btn" id="btn-ini" onclick="selecionarTipo('ini')">
@@ -344,6 +394,8 @@
   <span class="prog-pct" id="prog-pct">0%</span>
 </div>
 
+<div class="edit-banner" id="edit-banner" style="display:none"></div>
+
 <main class="main" id="main-content">
   <div class="tela-inicio">
     <div class="icon">📋</div>
@@ -351,6 +403,16 @@
     <p>Escolha acima qual folha você vai preencher</p>
   </div>
 </main>
+
+<div class="cal-view" id="cal-view" style="display:none">
+  <div class="cal-head">
+    <button class="cal-nav" onclick="calNavMes(-1)">◀</button>
+    <span class="cal-titulo" id="cal-titulo">—</span>
+    <button class="cal-nav" onclick="calNavMes(1)">▶</button>
+  </div>
+  <div class="cal-grade" id="cal-grade"></div>
+  <div class="cal-legenda">🌅 Início · 🌙 Final · 🍨 Sorvetes · toque num dia para editar</div>
+</div>
 
 <div class="bottom-bar" id="bottom-bar" style="display:none">
   <button class="btn btn-primary" id="btn-salvar" style="flex:1">

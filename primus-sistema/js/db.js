@@ -35,6 +35,19 @@ export async function salvarContagem(contagem) {
 }
 
 /**
+ * Atualiza os itens de uma contagem existente (edição de um dia pelo funcionário
+ * ou gestor). Diferente de salvarContagem, NÃO cria doc novo — sobrescreve o
+ * mesmo, evitando contagens duplicadas pro mesmo dia. Registra editadoEm/editadoPor.
+ */
+export async function atualizarContagem(id, itens, meta = {}) {
+  await updateDoc(doc(db, COL_CONTAGENS, id), {
+    itens,
+    editadoEm: serverTimestamp(),
+    ...meta
+  });
+}
+
+/**
  * Lista contagens com filtros opcionais.
  * NOTA: busca todos os documentos e filtra/ordena em JS para evitar
  * necessidade de ├¡ndices compostos. Em volume normal (at├® ~5000 contagens),

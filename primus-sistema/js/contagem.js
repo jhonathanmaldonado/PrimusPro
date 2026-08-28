@@ -4,7 +4,7 @@
 import { slugify } from './produtos.js';
 import { obterBebidas, obterSorvetes } from './produtos-store.js';
 import { exigirPerfil, logout } from './auth.js';
-import { salvarContagem, hoje } from './db.js';
+import { salvarContagem, hoje, listarContagens, atualizarContagem } from './db.js';
 
 // Garante sessão válida — barman, gerente ou gestor podem contar
 const sessao = exigirPerfil(['barman', 'gerente', 'gestor']);
@@ -12,7 +12,11 @@ if (!sessao) throw new Error('sem sessão');
 
 // ===== ESTADO =====
 let tipoAtual = null;
-const dados = {}; // { id: { fr, est, rec, qtd, obs, total } }
+const dados = {}; // { id: { est, frPrinc, frAux, rec, qtd, obs, total } }
+let editandoContagemId = null; // id do doc quando editando um dia existente (senão null = novo)
+let modoAtual = 'contar';      // 'contar' | 'calendario'
+let _calMes = null;            // mês exibido no calendário
+let _contagensCache = null;    // cache das contagens (recarrega ao abrir o calendário)
 
 // ===== HEADER DO USUÁRIO =====
 function iniciais(nome) {
@@ -65,6 +69,11 @@ document.getElementById('data-input').value = hoje();
 
 // ===== SELEÇÃO DE TIPO =====
 window.selecionarTipo = async function(tipo) {
+  // Por padrão é um NOVO lançamento (carregarParaEditar sobrescreve isto depois)
+  editandoContagemId = null;
+  document.getElementById('data-input').removeAttribute('readonly');
+  document.getElementById('edit-banner').style.display = 'none';
+  document.getElementById('btn-salvar').innerHTML = '💾 Salvar Contagem';
   tipoAtual = tipo;
   ['ini','fin','sorv'].forEach(t => {
     document.getElementById('btn-'+t).classList.toggle('active', t===tipo);
@@ -332,13 +341,18 @@ document.getElementById('btn-salvar').onclick = async () => {
   btn.innerHTML = '<span class="spinner"></span> Salvando...';
 
   try {
-    await salvarContagem({
-      tipo: tipoAtual,
-      data,
-      autor: { id: sessao.id, nome: sessao.nome, perfil: sessao.perfil },
-      itens
-    });
-    mostrarToast('Contagem salva com sucesso!', 'ok');
+    if (editandoContagemId) {
+      // Edição de dia existente: atualiza o doc (não cria duplicado)
+      await atualizarContagem(editandoContagemId, itens, { editadoPor: sessao.nome });
+    } else {
+      await salvarContagem({
+        tipo: tipoAtual,
+        data,
+        autor: { id: sessao.id, nome: sessao.nome, perfil: sessao.perfil },
+        itens
+      });
+    }
+    mostrarToast(editandoContagemId ? 'Contagem atualizada!' : 'Contagem salva com sucesso!', 'ok');
     btn.innerHTML = '✓ Salvo!';
     setTimeout(() => {
       if (confirm('Contagem salva. Deseja fazer outra contagem?')) {
@@ -362,3 +376,166 @@ function mostrarToast(msg, tipo = '') {
   t.className = 'toast show ' + tipo;
   setTimeout(() => t.className = 'toast', 2800);
 }
+
+// ============================================================================
+// ETAPA 3A — Aba Calendário do funcionário: ver dias lançados e editar.
+// ============================================================================
+
+// Alterna entre "Contar" (formulário) e "Calendário".
+window.trocarModo = function(modo) {
+  modoAtual = modo;
+  const contar = modo === 'contar';
+  document.getElementById('modo-contar').classList.toggle('active', contar);
+  document.getElementById('modo-cal').classList.toggle('active', !contar);
+
+  document.querySelector('.tipo-selector').style.display = contar ? '' : 'none';
+  document.querySelector('.data-bar').style.display      = contar ? '' : 'none';
+  document.getElementById('main-content').style.display  = contar ? '' : 'none';
+  document.getElementById('cal-view').style.display      = contar ? 'none' : '';
+
+  if (contar) {
+    // Volta pro formulário; barras só aparecem se um tipo estiver selecionado
+    if (tipoAtual) {
+      document.getElementById('progresso-bar').style.display = 'flex';
+      document.getElementById('bottom-bar').style.display = 'flex';
+    }
+  } else {
+    document.getElementById('progresso-bar').style.display = 'none';
+    document.getElementById('bottom-bar').style.display = 'none';
+    document.getElementById('edit-banner').style.display = 'none';
+    _contagensCache = null; // recarrega pra pegar edições recentes
+    renderCalendario();
+  }
+};
+
+window.calNavMes = function(delta) {
+  if (!_calMes) _calMes = new Date();
+  _calMes = new Date(_calMes.getFullYear(), _calMes.getMonth() + delta, 1);
+  renderCalendario();
+};
+
+async function renderCalendario() {
+  const grade = document.getElementById('cal-grade');
+  grade.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:24px;color:#999;font-size:13px">Carregando...</div>';
+
+  if (!_contagensCache) {
+    try {
+      _contagensCache = await listarContagens({ limite: 500 });
+    } catch (e) {
+      console.error(e);
+      grade.innerHTML = '<div style="grid-column:1/-1;text-align:center;padding:24px;color:#c0392b;font-size:13px">Erro ao carregar contagens.</div>';
+      return;
+    }
+  }
+
+  // Mapa dia -> { tipo: docMaisRecente } (listarContagens já vem do mais novo pro mais velho)
+  const diasMap = {};
+  _contagensCache.forEach(c => {
+    if (!c.data || !c.tipo) return;
+    if (!diasMap[c.data]) diasMap[c.data] = {};
+    if (!diasMap[c.data][c.tipo]) diasMap[c.data][c.tipo] = c;
+  });
+
+  if (!_calMes) _calMes = new Date();
+  const ano = _calMes.getFullYear(), mes = _calMes.getMonth();
+  document.getElementById('cal-titulo').textContent =
+    _calMes.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+
+  const primeiroDiaSemana = new Date(ano, mes, 1).getDay(); // 0=Dom
+  const ultimoN = new Date(ano, mes + 1, 0).getDate();
+
+  let html = '';
+  ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'].forEach(w => html += `<div class="cal-wd">${w}</div>`);
+  for (let i = 0; i < primeiroDiaSemana; i++) html += '<div class="cal-cel vazia"></div>';
+
+  for (let d = 1; d <= ultimoN; d++) {
+    const diaIso = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const tipos = diasMap[diaIso];
+    if (tipos) {
+      const dots = (tipos.ini ? '🌅' : '') + (tipos.fin ? '🌙' : '') + (tipos.sorv ? '🍨' : '');
+      html += `<div class="cal-cel tem" onclick="abrirDia('${diaIso}')"><span class="cal-dia">${d}</span><span class="cal-dots">${dots}</span></div>`;
+    } else {
+      html += `<div class="cal-cel"><span class="cal-dia" style="color:#ccc">${d}</span></div>`;
+    }
+  }
+  grade.innerHTML = html;
+}
+
+// Ao tocar num dia, mostra as folhas que existem pra escolher qual editar.
+window.abrirDia = function(diaIso) {
+  const tipos = {};
+  _contagensCache.forEach(c => {
+    if (c.data === diaIso && c.tipo && !tipos[c.tipo]) tipos[c.tipo] = c;
+  });
+  const nomes = { ini: '🌅 Bebidas — Início', fin: '🌙 Bebidas — Final', sorv: '🍨 Sorvetes & Embalagens' };
+  const [y, m, d] = diaIso.split('-');
+  let btns = '';
+  ['ini', 'fin', 'sorv'].forEach(tp => {
+    if (tipos[tp]) btns += `<button class="cal-picker-btn" onclick="editarDia('${diaIso}','${tp}')">${nomes[tp]}</button>`;
+  });
+
+  const bg = document.createElement('div');
+  bg.className = 'cal-picker-bg';
+  bg.id = 'cal-picker-bg';
+  bg.innerHTML = `<div class="cal-picker"><h3>${d}/${m}/${y}</h3>${btns}<button class="cal-picker-cancel" onclick="fecharPicker()">Cancelar</button></div>`;
+  bg.addEventListener('click', (e) => { if (e.target === bg) fecharPicker(); });
+  document.body.appendChild(bg);
+};
+
+window.fecharPicker = function() {
+  document.getElementById('cal-picker-bg')?.remove();
+};
+
+window.editarDia = async function(diaIso, tipo) {
+  const contagem = _contagensCache.find(c => c.data === diaIso && c.tipo === tipo);
+  fecharPicker();
+  if (!contagem) return;
+  await carregarParaEditar(contagem);
+};
+
+// Carrega uma contagem existente no formulário pra reedição.
+async function carregarParaEditar(contagem) {
+  trocarModo('contar');
+  document.getElementById('data-input').value = contagem.data;
+
+  await selecionarTipo(contagem.tipo);   // renderiza o formulário vazio (e reseta edição)
+  preencherFormComContagem(contagem);    // preenche com os valores salvos
+
+  // Agora sim marca como edição (depois do reset feito por selecionarTipo)
+  editandoContagemId = contagem.id;
+  document.getElementById('data-input').setAttribute('readonly', 'readonly');
+  document.getElementById('btn-salvar').innerHTML = '💾 Atualizar contagem';
+
+  const [y, m, d] = contagem.data.split('-');
+  const banner = document.getElementById('edit-banner');
+  banner.innerHTML = `✏️ Editando contagem de <b>${d}/${m}/${y}</b>${contagem.autorNome ? ' · lançado por ' + contagem.autorNome : ''}`;
+  banner.style.display = 'block';
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Preenche os inputs do formulário a partir dos itens salvos.
+// Genérico: input id = `${chave}_${campo}` cobre bebidas (est/frPrinc/frAux/rec/obs)
+// e sorvetes (chave __ini/__fin, campos qtd/abast/final/obs).
+function preencherFormComContagem(contagem) {
+  const itens = contagem.itens || {};
+  Object.entries(itens).forEach(([chave, v]) => {
+    if (!v || typeof v !== 'object') return;
+    Object.entries(v).forEach(([campo, val]) => {
+      if (campo === 'total' || campo === 'vendeu') return; // calculados
+      const el = document.getElementById(`${chave}_${campo}`);
+      if (!el) return;
+      if (campo === 'obs') {
+        el.value = val || '';
+        window.atualizarObs(chave, el);
+      } else {
+        el.value = (val === 0 || val) ? val : '';
+        window.atualizar(chave, campo, el);
+        if (campo === 'abast' || campo === 'final') {
+          window.calcularVendeu(chave.replace('__fin', ''));
+        }
+      }
+    });
+  });
+}
+
