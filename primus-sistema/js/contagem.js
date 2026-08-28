@@ -549,10 +549,12 @@ function preencherFormComContagem(contagem) {
   const itens = contagem.itens || {};
   Object.entries(itens).forEach(([chave, v]) => {
     if (!v || typeof v !== 'object') return;
+    let algumEl = null;
     Object.entries(v).forEach(([campo, val]) => {
-      if (campo === 'total' || campo === 'vendeu') return; // calculados
+      if (campo === 'total' || campo === 'vendeu' || campo === '_editado') return; // calculados/meta
       const el = document.getElementById(`${chave}_${campo}`);
       if (!el) return;
+      algumEl = el;
       if (campo === 'obs') {
         el.value = val || '';
         window.atualizarObs(chave, el);
@@ -564,6 +566,26 @@ function preencherFormComContagem(contagem) {
         }
       }
     });
+    // 3C.2: selo de item alterado após o 1º lançamento
+    if (v._editado && algumEl) {
+      const row = algumEl.closest('.produto-row');
+      const nomeEl = row && row.querySelector('.prod-nome');
+      if (nomeEl && !nomeEl.querySelector('.selo-editado')) {
+        nomeEl.insertAdjacentHTML('beforeend', seloEditadoContagem(v._editado));
+      }
+    }
   });
+}
+
+// Selo compacto de item alterado (lado do funcionário).
+function seloEditadoContagem(e) {
+  let quando = '';
+  if (e && e.em) {
+    const dt = new Date(e.em);
+    if (!isNaN(dt)) quando = ` \u00b7 ${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')} ` +
+      dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  }
+  const por = (e && e.por) || 'edição';
+  return `<span class="selo-editado" style="display:inline-block;font-size:8px;padding:1px 5px;border-radius:6px;margin-left:5px;background:#e8f1fb;color:#1a5276;font-family:'DM Mono',monospace;font-weight:600;vertical-align:middle" title="Item alterado após o 1º lançamento">\u270f\ufe0f ${por}${quando}</span>`;
 }
 

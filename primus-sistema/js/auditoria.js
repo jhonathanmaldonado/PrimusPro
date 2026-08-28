@@ -774,6 +774,17 @@ export async function calcularAuditoriaOperacional(contagemIni, contagemFin, ven
   // Se tiver FIN anterior, extrai também (pra calcular D-1)
   const estoqueFinAnt = contagemFinAnterior ? extrairEstoque(contagemFinAnterior) : null;
 
+  // Marca de edição por slug (item alterado após o 1º lançamento — em ini ou fin)
+  const editadoPorSlug = {};
+  [contagemIni, contagemFin].forEach(cont => {
+    Object.entries((cont && cont.itens) || {}).forEach(([slug, v]) => {
+      if (v && v._editado) {
+        const prev = editadoPorSlug[slug];
+        if (!prev || (v._editado.em || '') > (prev.em || '')) editadoPorSlug[slug] = v._editado;
+      }
+    });
+  });
+
   // Recebimentos têm 2 fontes possíveis:
   //  (a) registrados via Lista de Compras (documentos tipo "recebimento" em primus_compras)
   //  (b) anotados direto na folha FIN (campo "Recebido" → dados[slug].rec)
@@ -873,6 +884,7 @@ export async function calcularAuditoriaOperacional(contagemIni, contagemFin, ven
       slug,
       nome: bebida.nome,
       grupo: bebida.grupo,
+      editado: editadoPorSlug[slug] || null,
       unidCompra: bebida.unidCompra,
       porCaixa: bebida.porCaixa,
       ini,
@@ -888,6 +900,23 @@ export async function calcularAuditoriaOperacional(contagemIni, contagemFin, ven
       status
     };
   });
+}
+
+// Selo "item alterado após o 1º lançamento" (edição do funcionário OU correção do
+// gestor — ambos gravam item._editado:{por,em} via db.js). Mesmo visual nas 2 telas.
+function seloEditadoHtml(r) {
+  const e = r && r.editado;
+  if (!e) return '';
+  let quando = '';
+  if (e.em) {
+    const dt = new Date(e.em);
+    if (!isNaN(dt)) {
+      quando = ` \u00b7 ${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')} ` +
+               dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    }
+  }
+  const por = e.por || 'edição';
+  return `<span style="display:inline-block;font-size:8.5px;padding:1px 6px;border-radius:6px;margin-left:6px;background:#e8f1fb;color:#1a5276;font-family:'DM Mono',monospace;font-weight:600;vertical-align:middle" title="Item alterado após o 1º lançamento">✏️ editado por ${por}${quando}</span>`;
 }
 
 // Extrai estoque por slug, lidando com as 2 estruturas (ini e fin)
@@ -1017,6 +1046,15 @@ export async function calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSo
   const sorvetes = await obterSorvetes();
 
   // Extrai os campos da contagem (e da anterior, pro D-1)
+  // Marca de edição por slug (sorvetes: chaves __ini/__fin apontam pro mesmo produto)
+  const editadoPorSlug = {};
+  Object.entries((contagemSorv && contagemSorv.itens) || {}).forEach(([chave, v]) => {
+    if (v && v._editado) {
+      const base = chave.replace(/__(ini|fin)$/, '');
+      const prev = editadoPorSlug[base];
+      if (!prev || (v._editado.em || '') > (prev.em || '')) editadoPorSlug[base] = v._editado;
+    }
+  });
   const camposSorv = extrairCamposSorvetes(contagemSorv);
   const camposAnt  = extrairCamposSorvetes(contagemSorvAnterior);
 
@@ -1082,6 +1120,7 @@ export async function calcularAuditoriaSorvetes(contagemSorv, vendas, contagemSo
       slug,
       nome: sorv.nome,
       grupo: sorv.grupo || '',
+      editado: editadoPorSlug[slug] || null,
       ini,
       // campos no padrão bebidas (usados no render novo)
       recebido: abast,
@@ -1395,10 +1434,11 @@ function renderLinhaOperacional(r) {
     cellD1Html = `<div class="aud-num ${d1Cls}" title="${d1Title}">${fmtSgn(r.d1)}</div>`;
   }
 
+  const seloEd = seloEditadoHtml(r);
   return `
     <div class="aud-linha aud-linha-${r.status}${diag ? ' aud-linha-com-diag' : ''}">
       <div class="aud-nome">
-        <span class="aud-nome-texto">${r.nome}</span>
+        <span class="aud-nome-texto">${r.nome}</span>${seloEd}
         <button class="aud-btn-editar"
                 onclick="window.__aud_abrirEdicao('${r.slug}')"
                 title="Editar valores INI / REC / FIN deste produto">✏️</button>
@@ -1799,7 +1839,7 @@ function renderLinhaSorvetesOperacional(r) {
   return `
     <div class="aud-linha aud-linha-${r.status}${diag ? ' aud-linha-com-diag' : ''}">
       <div class="aud-nome">
-        <span class="aud-nome-texto">${r.nome}</span>
+        <span class="aud-nome-texto">${r.nome}</span>${seloEditadoHtml(r)}
         <button class="aud-btn-editar"
                 onclick="window.__aud_abrirEdicaoSorv('${r.slug}')"
                 title="Editar valores INI / ABAST / FIN deste sorvete">✏️</button>
