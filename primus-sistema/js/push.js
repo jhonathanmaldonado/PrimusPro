@@ -11,6 +11,10 @@ import { getSessao } from './auth.js';
 const VAPID_KEY = 'BCOHu1B-wMnCMZTJhUdZ4bX3b7k_C40_0PwBxhH73dqlGg1RrqjoYDVN7_ez_B9qr9Do-fond4VnBFuOiJrBHRA';
 const SW_PATH   = 'firebase-messaging-sw.js'; // relativo a /primus-sistema/
 const COL_TOKENS = 'primus_push_tokens';
+// ID FIXO do doc de token. Push é só pra 1 aparelho do gestor, então usamos
+// sempre o mesmo doc — assim qualquer login/aparelho SOBRESCREVE em vez de criar
+// doc novo (era o sessao.id instável que gerava tokens duplicados = notificações repetidas).
+const DOC_TOKEN = 'gestor_padrao';
 
 export async function inicializarPush() {
   const sessao = getSessao();
@@ -72,8 +76,8 @@ async function registrarToken(sessao) {
     });
     if (!token) { console.warn('[push] sem token (permissão?)'); return; }
 
-    // 1 documento por gestor (id = uid da sessão), guardando o token do aparelho
-    await setDoc(doc(db, COL_TOKENS, sessao.id), {
+    // 1 único documento (id fixo) — sempre sobrescreve, nunca duplica
+    await setDoc(doc(db, COL_TOKENS, DOC_TOKEN), {
       token,
       nome: sessao.nome,
       perfil: sessao.perfil,
