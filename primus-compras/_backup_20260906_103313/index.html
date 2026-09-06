@@ -1426,7 +1426,6 @@
       <button class="tab" data-tab="fornecedores">🚚 Fornecedores</button>
       <button class="tab" data-tab="cardapio">🍽️ Cardápio</button>
       <button class="tab" data-tab="vendas">🛍️ Vendas</button>
-      <button class="tab" data-tab="limpeza">🧴 Limpeza</button>
       <button class="tab" data-tab="equipe" id="tab-btn-equipe" style="display:none">👥 Equipe</button>
     </div>
 
@@ -2138,92 +2137,6 @@
     </div>
 
     <!-- ========== ABA: EQUIPE ========== -->
-    <!-- ========== ABA: LIMPEZA (Fase 1 - Painel) ========== -->
-    <div id="tab-limpeza" style="display:none">
-      <div class="toolbar">
-        <span class="toolbar-title">🧴 Consumo de Limpeza — Painel</span>
-      </div>
-
-      <div style="background:var(--gold-soft);border:1px solid #f0d590;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:12px;color:var(--wine-dark);line-height:1.5">
-        ℹ️ <strong>Como funciona:</strong> este painel lê as <strong>compras já finalizadas</strong> da categoria escolhida e cruza com o faturamento importado em <strong>🛍️ Vendas</strong>. É leitura pura — nada aqui precisa ser preenchido à mão.
-      </div>
-
-      <!-- Filtros -->
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-radius:10px">
-        <span style="font-size:12px;color:var(--muted);font-weight:600">Categoria:</span>
-        <select id="limpeza-categoria" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff"></select>
-
-        <span style="font-size:12px;color:var(--muted);font-weight:600">Período:</span>
-        <select id="limpeza-filtro-periodo" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff">
-          <option value="mes-atual">Mês atual</option>
-          <option value="mes-especifico">Mês específico</option>
-          <option value="todos">Todo o histórico</option>
-        </select>
-        <select id="limpeza-filtro-mes" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff;display:none"></select>
-
-        <span style="font-size:12px;color:var(--muted);font-weight:600">Alvo:</span>
-        <input type="number" id="limpeza-alvo" step="0.1" min="0.1" max="20" value="1.5" style="width:66px;padding:6px 8px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff;margin-bottom:0">
-        <span style="font-size:12px;color:var(--muted)">% do faturamento</span>
-
-        <span style="flex:1;text-align:right;font-size:11px;color:var(--muted)" id="limpeza-periodo-texto">—</span>
-      </div>
-
-      <!-- Card principal: gauge -->
-      <div style="background:#fff;border:2px solid var(--wine);border-radius:14px;padding:20px;margin-bottom:14px;text-align:center">
-        <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;font-weight:700;margin-bottom:10px">
-          LIMPEZA SOBRE O FATURAMENTO
-        </div>
-
-        <svg id="limpeza-gauge-svg" viewBox="0 0 200 130" style="width:200px;max-width:50%;margin:0 auto;display:block">
-          <path d="M 30 100 A 70 70 0 0 1 170 100" fill="none" stroke="#F1EFE8" stroke-width="18" stroke-linecap="round"/>
-          <path id="limpeza-gauge-arc" d="" fill="none" stroke="#888780" stroke-width="18" stroke-linecap="round"/>
-          <line id="limpeza-gauge-needle" x1="100" y1="100" x2="100" y2="100" stroke="#444441" stroke-width="4" stroke-linecap="round"/>
-          <circle cx="100" cy="100" r="8" fill="#444441"/>
-        </svg>
-
-        <div id="limpeza-valor-principal" style="font-size:36px;font-weight:700;color:var(--wine);margin-top:6px">—</div>
-        <div id="limpeza-alvo-texto" style="font-size:13px;color:var(--muted);margin-top:2px">Alvo: —</div>
-
-        <div id="limpeza-status-mensagem" style="margin-top:14px;padding:8px 14px;border-radius:8px;font-size:13px;font-weight:600;display:inline-block">
-          —
-        </div>
-      </div>
-
-      <!-- Resumo -->
-      <div class="summary" style="margin-bottom:14px">
-        <div class="stat">
-          <div class="stat-label">Gasto no período</div>
-          <div class="stat-value" id="limpeza-gasto">R$ 0,00</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:2px" id="limpeza-gasto-meta">—</div>
-        </div>
-        <div class="stat">
-          <div class="stat-label">Faturamento no período</div>
-          <div class="stat-value" id="limpeza-receita">R$ 0,00</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:2px" id="limpeza-receita-meta">—</div>
-        </div>
-        <div class="stat gold">
-          <div class="stat-label">Custo por dia de operação</div>
-          <div class="stat-value" id="limpeza-por-dia">—</div>
-          <div style="font-size:10px;color:var(--muted);margin-top:2px" id="limpeza-media3">—</div>
-        </div>
-      </div>
-
-      <!-- Avisos -->
-      <div id="limpeza-aviso" style="display:none;background:#fef3c7;border:1px solid #f0c674;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#854F0B;line-height:1.5"></div>
-
-      <!-- Evolução mês a mês -->
-      <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px">
-        <div style="font-size:13px;font-weight:700;color:var(--wine);margin-bottom:10px">📈 Evolução mês a mês</div>
-        <div id="limpeza-tabela-meses"></div>
-      </div>
-
-      <!-- Top produtos -->
-      <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px">
-        <div style="font-size:13px;font-weight:700;color:var(--wine);margin-bottom:10px">🏆 Onde o dinheiro foi (no período)</div>
-        <div id="limpeza-tabela-produtos"></div>
-      </div>
-    </div>
-
     <div id="tab-equipe" style="display:none">
       <div class="toolbar">
         <span class="toolbar-title">Equipe / Membros</span>

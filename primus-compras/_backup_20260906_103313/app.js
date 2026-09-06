@@ -138,12 +138,6 @@ let comprasBaseMes = null;            // 'YYYY-MM' quando tipo === 'mes-especifi
 let comprasHorizonte = 7;             // dias (3 | 7 | 14 | 30)
 let comprasMargem = 10;               // % (margem de segurança)
 let comprasSelecionados = {};         // { insumoId: true } - quais insumos estão marcados
-
-// Limpeza - Painel (Fase 1: leitura pura, sem coleção nova)
-let limpezaCategoriaId = null;          // categoria do catálogo tratada como "limpeza"
-let limpezaPeriodoTipo = 'mes-atual';   // mes-atual | mes-especifico | todos
-let limpezaMesEspecifico = null;        // 'YYYY-MM'
-let limpezaAlvoPct = 1.5;               // % do faturamento considerado saudável
 let comprasResultadoAtual = null;     // último resultado calculado, pra usar no btn criar lista
 
 // Categoria modal
@@ -450,7 +444,6 @@ function iniciarListeners() {
     popularSelectCategoria();
     popularDatalistCategoriasInsumo();
     renderTudo();
-    if (currentTab === 'limpeza') renderLimpeza();
     if ($('modal-categorias').classList.contains('show')) renderListaCategoriasModal();
   }));
 
@@ -502,7 +495,6 @@ function iniciarListeners() {
     vendasDias = vd;
     if (currentTab === 'vendas' && currentSubTabVendas === 'calendario') renderCalendario();
     if (currentTab === 'vendas' && currentSubTabVendas === 'dados') renderDadosVendas();
-    if (currentTab === 'limpeza') renderLimpeza();
   }));
 
   unsubsRefs.push(observarListaEmCriacao((lista) => {
@@ -521,7 +513,6 @@ function iniciarListeners() {
   unsubsRefs.push(observarHistorico((hist) => {
     historico = hist;
     if (currentTab === 'historico') renderHistorico();
-    if (currentTab === 'limpeza') renderLimpeza();
   }));
 
   unsubsRefs.push(observarFornecedores((forn) => {
@@ -3567,7 +3558,6 @@ function switchTab(tab) {
   $('tab-fornecedores').style.display = tab === 'fornecedores' ? 'block' : 'none';
   $('tab-cardapio').style.display = tab === 'cardapio' ? 'block' : 'none';
   $('tab-vendas').style.display = tab === 'vendas' ? 'block' : 'none';
-  $('tab-limpeza').style.display = tab === 'limpeza' ? 'block' : 'none';
   $('tab-equipe').style.display = tab === 'equipe' ? 'block' : 'none';
   if (tab === 'historico') renderHistorico();
   if (tab === 'fornecedores') renderFornecedores();
@@ -3577,7 +3567,6 @@ function switchTab(tab) {
   if (tab === 'vendas') {
     switchSubTabVendas(currentSubTabVendas || 'importar');
   }
-  if (tab === 'limpeza') renderLimpeza();
   if (tab === 'equipe') renderEquipe();
 }
 
@@ -5111,453 +5100,6 @@ async function criarListaDaSugestao() {
 }
 
 // ============================================================================
-// LIMPEZA — Painel de consumo (Fase 1)
-// Leitura pura: cruza compras finalizadas da categoria com o faturamento
-// importado em Vendas. Não grava nada no Firestore.
-// ============================================================================
-
-const LIMPEZA_LS_CATEGORIA = 'primus_limpeza_categoria';
-const LIMPEZA_LS_ALVO = 'primus_limpeza_alvo';
-
-function limpezaCarregarPrefs() {
-  try {
-    const cat = localStorage.getItem(LIMPEZA_LS_CATEGORIA);
-    if (cat) limpezaCategoriaId = cat;
-    const alvo = parseFloat(localStorage.getItem(LIMPEZA_LS_ALVO));
-    if (!isNaN(alvo) && alvo > 0) limpezaAlvoPct = alvo;
-  } catch (e) { /* localStorage indisponível: segue com os defaults */ }
-}
-
-function limpezaSalvarPref(chave, valor) {
-  try { localStorage.setItem(chave, String(valor)); } catch (e) { /* ignora */ }
-}
-
-// Resolve a categoria de limpeza: preferência salva > nome contendo "limpeza" > null
-function limpezaResolverCategoria() {
-  if (limpezaCategoriaId && categorias.some(c => c.id === limpezaCategoriaId)) {
-    return limpezaCategoriaId;
-  }
-  const auto = categorias.find(c => /limpeza/i.test(c.nome || ''));
-  limpezaCategoriaId = auto ? auto.id : null;
-  return limpezaCategoriaId;
-}
-
-// Data de um doc do histórico em 'YYYY-MM-DD' (Timestamp do Firestore ou string)
-function limpezaDataISO(h) {
-  // serverTimestamp() chega null no snapshot local antes de o servidor confirmar.
-  // Sem esta guarda, new Date(null) vira 01/01/1970 e a compra polui o histórico.
-  if (!h || !h.data) return null;
-  const d = h.data.toDate ? h.data.toDate() : new Date(h.data);
-  if (!d || isNaN(d.getTime())) return null;
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-// Agrega TODO o histórico + vendas por mês:
-// { 'YYYY-MM': { mes, gasto, receita, diasComVenda, compras, itens } }
-function limpezaAgregarPorMes(catId) {
-  const mapa = {};
-  const garante = (m) => {
-    if (!mapa[m]) mapa[m] = { mes: m, gasto: 0, receita: 0, diasComVenda: 0, compras: 0, itens: 0 };
-    return mapa[m];
-  };
-
-  for (const h of historico) {
-    const iso = limpezaDataISO(h);
-    if (!iso) continue;
-    let gastoCompra = 0;
-    let n = 0;
-    for (const it of (h.itens || [])) {
-      if (it.categoriaId !== catId) continue;
-      gastoCompra += parseFloat(it.subtotal) || 0;
-      n++;
-    }
-    if (n === 0) continue;
-    const reg = garante(iso.substring(0, 7));
-    reg.gasto += gastoCompra;
-    reg.compras++;
-    reg.itens += n;
-  }
-
-  for (const vd of vendasDias) {
-    if (!vd.data || vd.data.length < 7) continue;
-    const reg = garante(vd.data.substring(0, 7));
-    reg.receita += parseFloat(vd.totalReceita) || 0;
-    reg.diasComVenda++;
-  }
-
-  return mapa;
-}
-
-function limpezaMesAtualStr() {
-  const h = new Date();
-  return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, '0')}`;
-}
-
-function limpezaMesesDoPeriodo(mapa) {
-  if (limpezaPeriodoTipo === 'mes-atual') return [limpezaMesAtualStr()];
-  if (limpezaPeriodoTipo === 'mes-especifico') return limpezaMesEspecifico ? [limpezaMesEspecifico] : [];
-  return Object.keys(mapa).sort();
-}
-
-// Núcleo do cálculo do período selecionado.
-// Regra importante: o % só usa meses que têm faturamento importado. Mês com
-// compra e sem venda entra no gasto total mas fica FORA do percentual, senão
-// o indicador mente (gasto sem receita = % infinito).
-function calcularLimpezaPeriodo() {
-  const catId = limpezaResolverCategoria();
-  const mapa = limpezaAgregarPorMes(catId);
-
-  // Se o modo é "mês específico" e não há mês válido escolhido, assume o mais
-  // recente. Precisa acontecer ANTES do filtro, senão o primeiro render depois
-  // de trocar o período vem vazio.
-  if (limpezaPeriodoTipo === 'mes-especifico') {
-    const disp = Object.keys(mapa).sort().reverse();
-    if (!limpezaMesEspecifico || !disp.includes(limpezaMesEspecifico)) {
-      limpezaMesEspecifico = disp[0] || null;
-    }
-  }
-
-  const meses = limpezaMesesDoPeriodo(mapa);
-
-  let gasto = 0, receita = 0, dias = 0, compras = 0, gastoSemReceita = 0;
-  const mesesSemReceita = [];
-
-  for (const m of meses) {
-    const reg = mapa[m];
-    if (!reg) continue;
-    gasto += reg.gasto;
-    compras += reg.compras;
-    if (reg.receita > 0) {
-      receita += reg.receita;
-      dias += reg.diasComVenda;
-    } else if (reg.gasto > 0) {
-      gastoSemReceita += reg.gasto;
-      mesesSemReceita.push(m);
-    }
-  }
-
-  const gastoComparavel = gasto - gastoSemReceita;
-  const pct = receita > 0 ? (gastoComparavel / receita) * 100 : null;
-
-  // Média dos 3 últimos meses com gasto: suaviza compra em lote (galão de 20L)
-  const mesesComGasto = Object.keys(mapa).filter(m => mapa[m].gasto > 0).sort().reverse();
-  const ult3 = mesesComGasto.slice(0, 3);
-  const media3 = ult3.length ? ult3.reduce((s, m) => s + mapa[m].gasto, 0) / ult3.length : 0;
-
-  return {
-    catId, mapa, meses,
-    gasto, gastoComparavel, gastoSemReceita, mesesSemReceita,
-    receita, dias, compras, pct,
-    media3, media3Qtd: ult3.length,
-    gastoPorDia: dias > 0 ? gastoComparavel / dias : null
-  };
-}
-
-// Agrega os itens da categoria no período: onde o dinheiro foi
-function limpezaTopProdutos(catId, meses) {
-  const setMeses = new Set(meses);
-  const agg = {};
-
-  for (const h of historico) {
-    const iso = limpezaDataISO(h);
-    if (!iso || !setMeses.has(iso.substring(0, 7))) continue;
-    for (const it of (h.itens || [])) {
-      if (it.categoriaId !== catId) continue;
-      const chave = it.itemId || it.nome || '?';
-      if (!agg[chave]) {
-        agg[chave] = {
-          nome: it.nome || '?', tipo: it.tipo || '',
-          total: 0, qtd: 0, compras: 0, precoMin: null, precoMax: null
-        };
-      }
-      const a = agg[chave];
-      a.total += parseFloat(it.subtotal) || 0;
-      a.qtd += parseFloat(it.qtd) || 0;
-      a.compras++;
-      const p = parseFloat(it.preco) || 0;
-      if (p > 0) {
-        a.precoMin = a.precoMin === null ? p : Math.min(a.precoMin, p);
-        a.precoMax = a.precoMax === null ? p : Math.max(a.precoMax, p);
-      }
-    }
-  }
-
-  return Object.values(agg).sort((a, b) => b.total - a.total);
-}
-
-// Gauge do painel (mesma mecânica e mesmas cores do CMV Real)
-function desenharGaugeLimpeza(pct, alvo) {
-  const arc = $('limpeza-gauge-arc');
-  const needle = $('limpeza-gauge-needle');
-  if (!arc || !needle) return;
-
-  if (pct === null || pct <= 0 || !alvo || alvo <= 0) {
-    arc.setAttribute('d', '');
-    arc.setAttribute('stroke', '#888780');
-    needle.setAttribute('x2', '100');
-    needle.setAttribute('y2', '100');
-    needle.setAttribute('stroke', '#444441');
-    return;
-  }
-
-  const ratio = pct / alvo;
-  const ratioLimitado = Math.max(0, Math.min(2, ratio));
-  const angulo = 180 - (ratioLimitado / 2) * 180;
-  const anguloRad = angulo * Math.PI / 180;
-
-  const cx = 100, cy = 100, r = 70;
-  const px = cx + r * Math.cos(Math.PI - anguloRad);
-  const py = cy - r * Math.sin(Math.PI - anguloRad);
-  const largeArc = (180 - angulo) > 180 ? 1 : 0;
-  arc.setAttribute('d', `M 30 100 A ${r} ${r} 0 ${largeArc} 1 ${px.toFixed(2)} ${py.toFixed(2)}`);
-
-  let corArco, corNeedle;
-  if (ratio < 0.80) { corArco = '#639922'; corNeedle = '#173404'; }
-  else if (ratio < 1.0) { corArco = '#FAC775'; corNeedle = '#854F0B'; }
-  else if (ratio < 1.2) { corArco = '#EF9F27'; corNeedle = '#633806'; }
-  else { corArco = '#E24B4A'; corNeedle = '#791F1F'; }
-
-  arc.setAttribute('stroke', corArco);
-  needle.setAttribute('x2', px.toFixed(2));
-  needle.setAttribute('y2', py.toFixed(2));
-  needle.setAttribute('stroke', corNeedle);
-}
-
-function limpezaResetCard(msgAlvo, msgStatus) {
-  $('limpeza-valor-principal').textContent = '—';
-  $('limpeza-valor-principal').style.color = 'var(--wine)';
-  $('limpeza-alvo-texto').textContent = msgAlvo;
-  const msg = $('limpeza-status-mensagem');
-  msg.textContent = msgStatus;
-  msg.className = '';
-  desenharGaugeLimpeza(null, limpezaAlvoPct);
-}
-
-function renderLimpeza() {
-  const catId = limpezaResolverCategoria();
-
-  // Select de categorias
-  const selCat = $('limpeza-categoria');
-  selCat.innerHTML = categorias.length
-    ? categorias.map(c => `<option value="${c.id}">${escHtml(c.nome)}</option>`).join('')
-    : '<option value="">— sem categorias —</option>';
-  if (catId) selCat.value = catId;
-
-  $('limpeza-alvo').value = limpezaAlvoPct;
-
-  // Sem categoria resolvida: nada a calcular
-  if (!catId) {
-    $('limpeza-periodo-texto').textContent = '—';
-    limpezaResetCard('Selecione uma categoria', 'Nenhuma categoria de limpeza escolhida');
-    $('limpeza-gasto').textContent = fmtMoeda(0);
-    $('limpeza-receita').textContent = fmtMoeda(0);
-    $('limpeza-por-dia').textContent = '—';
-    $('limpeza-gasto-meta').textContent = '—';
-    $('limpeza-receita-meta').textContent = '—';
-    $('limpeza-media3').textContent = '—';
-    $('limpeza-aviso').style.display = 'none';
-    $('limpeza-tabela-meses').innerHTML = '<div class="empty-msg">Escolha a categoria de limpeza no filtro acima</div>';
-    $('limpeza-tabela-produtos').innerHTML = '<div class="empty-msg">Escolha a categoria de limpeza no filtro acima</div>';
-    return;
-  }
-
-  const r = calcularLimpezaPeriodo();
-
-  // Select de meses disponíveis (qualquer mês com gasto ou receita)
-  const mesesDisp = Object.keys(r.mapa).sort().reverse();
-  const selMes = $('limpeza-filtro-mes');
-  selMes.innerHTML = mesesDisp.map(m => `<option value="${m}">${nomeMes(m)}</option>`).join('');
-  if (limpezaPeriodoTipo === 'mes-especifico') {
-    if (!limpezaMesEspecifico || !mesesDisp.includes(limpezaMesEspecifico)) {
-      limpezaMesEspecifico = mesesDisp[0] || null;
-    }
-    if (limpezaMesEspecifico) selMes.value = limpezaMesEspecifico;
-  }
-  selMes.style.display = limpezaPeriodoTipo === 'mes-especifico' ? 'inline-block' : 'none';
-
-  // Texto do período
-  let periodoTxt;
-  if (limpezaPeriodoTipo === 'mes-atual') periodoTxt = nomeMes(limpezaMesAtualStr());
-  else if (limpezaPeriodoTipo === 'mes-especifico') periodoTxt = limpezaMesEspecifico ? nomeMes(limpezaMesEspecifico) : '—';
-  else periodoTxt = `Todo o histórico (${mesesDisp.length} ${mesesDisp.length === 1 ? 'mês' : 'meses'})`;
-  $('limpeza-periodo-texto').textContent = periodoTxt;
-
-  // Stats
-  $('limpeza-gasto').textContent = fmtMoeda(r.gasto);
-  $('limpeza-gasto-meta').textContent = r.compras > 0
-    ? `${r.compras} ${r.compras === 1 ? 'compra' : 'compras'} no período`
-    : 'nenhuma compra no período';
-
-  $('limpeza-receita').textContent = fmtMoeda(r.receita);
-  $('limpeza-receita-meta').textContent = r.dias > 0
-    ? `${r.dias} ${r.dias === 1 ? 'dia' : 'dias'} com venda importada`
-    : 'sem vendas importadas';
-
-  $('limpeza-por-dia').textContent = r.gastoPorDia !== null ? fmtMoeda(r.gastoPorDia) : '—';
-  $('limpeza-media3').textContent = r.media3Qtd > 0
-    ? `Média ${r.media3Qtd}m: ${fmtMoeda(r.media3)}/mês`
-    : '—';
-
-  // Avisos
-  const avisos = [];
-  if (r.mesesSemReceita.length > 0) {
-    avisos.push(`<strong>${fmtMoeda(r.gastoSemReceita)}</strong> de compra em ${r.mesesSemReceita.map(nomeMes).join(', ')} ficou fora do percentual porque esses meses não têm vendas importadas. O valor continua somado no gasto total.`);
-  }
-  if (r.compras > 0 && r.compras < 2 && limpezaPeriodoTipo !== 'todos') {
-    avisos.push('Só <strong>1 compra</strong> no período. Compra de limpeza costuma ser em lote — um mês isolado tende a exagerar ou subestimar. Compare com a média de 3 meses antes de concluir qualquer coisa.');
-  }
-  const aviso = $('limpeza-aviso');
-  if (avisos.length) {
-    aviso.innerHTML = 'ℹ️ ' + avisos.join('<br><br>ℹ️ ');
-    aviso.style.display = 'block';
-  } else {
-    aviso.style.display = 'none';
-  }
-
-  // Card principal
-  // Gasto zero NÃO é "excelente" — é ausência de dado. Trata como vazio.
-  if (r.pct === null || r.gastoComparavel <= 0) {
-    let motivo;
-    if (r.gasto > 0 && r.pct === null) motivo = 'Importe as vendas do período em 🛍️ Vendas para calcular o %';
-    else if (r.gasto > 0) motivo = 'Compras do período ainda sem faturamento correspondente';
-    else motivo = 'Nenhuma compra dessa categoria no período';
-    limpezaResetCard(`Alvo: ${limpezaAlvoPct.toFixed(1)}%`, motivo);
-  } else {
-    const pct = r.pct;
-    const alvo = limpezaAlvoPct;
-    const ratio = pct / alvo;
-    const diff = pct - alvo;
-
-    $('limpeza-valor-principal').textContent = `${pct.toFixed(2)}%`;
-    $('limpeza-alvo-texto').textContent = `Alvo: ${alvo.toFixed(1)}% · ${fmtMoeda(r.gastoComparavel)} sobre ${fmtMoeda(r.receita)}`;
-
-    let corValor;
-    if (ratio < 0.80) corValor = '#173404';
-    else if (ratio < 1.0) corValor = '#854F0B';
-    else if (ratio < 1.2) corValor = '#633806';
-    else corValor = '#791F1F';
-    $('limpeza-valor-principal').style.color = corValor;
-
-    const msg = $('limpeza-status-mensagem');
-    if (ratio < 0.80) {
-      msg.textContent = `✅ ${Math.abs(diff).toFixed(2)} pontos abaixo do alvo`;
-      msg.className = 'cmv-status-otimo';
-    } else if (ratio < 1.0) {
-      msg.textContent = `🟡 Dentro do alvo (${Math.abs(diff).toFixed(2)} pontos de folga)`;
-      msg.className = 'cmv-status-bom';
-    } else if (ratio < 1.2) {
-      msg.textContent = `⚠️ ${diff.toFixed(2)} pontos acima do alvo`;
-      msg.className = 'cmv-status-atencao';
-    } else {
-      msg.textContent = `🔴 ${diff.toFixed(2)} pontos acima do alvo — investigar`;
-      msg.className = 'cmv-status-critico';
-    }
-
-    desenharGaugeLimpeza(pct, alvo);
-  }
-
-  renderLimpezaTabelaMeses(r);
-  renderLimpezaTabelaProdutos(r);
-}
-
-function renderLimpezaTabelaMeses(r) {
-  const el = $('limpeza-tabela-meses');
-  const meses = Object.keys(r.mapa).filter(m => r.mapa[m].gasto > 0 || r.mapa[m].receita > 0).sort().reverse();
-
-  if (!meses.length) {
-    el.innerHTML = '<div class="empty-msg">Nenhuma compra dessa categoria no histórico ainda</div>';
-    return;
-  }
-
-  const noPeriodo = new Set(r.meses);
-
-  let html = '<table class="cmv-tabela">';
-  html += '<thead><tr><th>Mês</th><th class="num">Gasto</th><th class="num">Faturamento</th><th class="num">% do fat.</th><th class="num">Por dia</th></tr></thead><tbody>';
-
-  for (const m of meses.slice(0, 18)) {
-    const reg = r.mapa[m];
-    const pct = reg.receita > 0 ? (reg.gasto / reg.receita) * 100 : null;
-    const porDia = reg.diasComVenda > 0 ? reg.gasto / reg.diasComVenda : null;
-    const destaque = noPeriodo.has(m) ? ' style="font-weight:700"' : '';
-
-    let celPct;
-    if (pct === null) {
-      celPct = '<span style="color:var(--muted)" title="Sem vendas importadas neste mês">—</span>';
-    } else {
-      const ratio = pct / limpezaAlvoPct;
-      let cor;
-      if (ratio < 0.80) cor = 'background:#dcfce7;color:#173404';
-      else if (ratio < 1.0) cor = 'background:#fef9c3;color:#854F0B';
-      else if (ratio < 1.2) cor = 'background:#fed7aa;color:#633806';
-      else cor = 'background:#fecaca;color:#791F1F';
-      celPct = `<span class="pct" style="${cor}">${pct.toFixed(2)}%</span>`;
-    }
-
-    html += `<tr${destaque}>`;
-    html += `<td>${escHtml(nomeMes(m))}</td>`;
-    html += `<td class="num">${fmtMoeda(reg.gasto)}</td>`;
-    html += `<td class="num">${reg.receita > 0 ? fmtMoeda(reg.receita) : '—'}</td>`;
-    html += `<td class="num">${celPct}</td>`;
-    html += `<td class="num">${porDia !== null ? fmtMoeda(porDia) : '—'}</td>`;
-    html += '</tr>';
-  }
-
-  html += '</tbody></table>';
-  el.innerHTML = html;
-}
-
-function renderLimpezaTabelaProdutos(r) {
-  const el = $('limpeza-tabela-produtos');
-  const produtos = limpezaTopProdutos(r.catId, r.meses);
-
-  if (!produtos.length) {
-    el.innerHTML = '<div class="empty-msg">Nenhum item dessa categoria comprado no período</div>';
-    return;
-  }
-
-  const totalGeral = produtos.reduce((s, p) => s + p.total, 0);
-
-  let html = '<table class="cmv-tabela">';
-  html += '<thead><tr><th>Item</th><th class="num">Qtd</th><th class="num">Gasto</th><th class="num">% do total</th><th class="num">Preço pago</th></tr></thead><tbody>';
-
-  for (const p of produtos.slice(0, 15)) {
-    const share = totalGeral > 0 ? (p.total / totalGeral) * 100 : 0;
-
-    // Preço: mostra faixa quando variou; sinaliza variação grande (possível erro de digitação)
-    let celPreco = '—';
-    if (p.precoMin !== null) {
-      if (p.precoMax > p.precoMin * 1.0001) {
-        const variacao = p.precoMin > 0 ? (p.precoMax / p.precoMin) : 1;
-        const alerta = variacao >= 2
-          ? ' <span title="Variação grande de preço entre compras — vale conferir se algum lançamento foi digitado errado" style="color:#791F1F">⚠</span>'
-          : '';
-        celPreco = `${fmtMoeda(p.precoMin)}–${fmtMoeda(p.precoMax)}${alerta}`;
-      } else {
-        celPreco = fmtMoeda(p.precoMin);
-      }
-    }
-
-    const tipo = p.tipo ? ` <span style="color:var(--muted);font-weight:400">· ${escHtml(p.tipo)}</span>` : '';
-
-    html += '<tr>';
-    html += `<td><strong>${escHtml(p.nome)}</strong>${tipo}</td>`;
-    html += `<td class="num">${p.qtd % 1 === 0 ? p.qtd : p.qtd.toFixed(2)}</td>`;
-    html += `<td class="num">${fmtMoeda(p.total)}</td>`;
-    html += `<td class="num">${share.toFixed(1)}%</td>`;
-    html += `<td class="num">${celPreco}</td>`;
-    html += '</tr>';
-  }
-
-  html += '</tbody></table>';
-
-  if (produtos.length > 15) {
-    html += `<div style="font-size:11px;color:var(--muted);margin-top:8px;text-align:right">mostrando os 15 maiores de ${produtos.length} itens</div>`;
-  }
-
-  el.innerHTML = html;
-}
-
-// ============================================================================
 // EVENTOS
 // ============================================================================
 
@@ -5776,31 +5318,6 @@ function setupEventos() {
   $('btn-add-item-atual').addEventListener('click', abrirModalAddAtual);
   $('btn-finalizar').addEventListener('click', tratarFinalizarCompra);
   $('btn-cancelar-lista-atual').addEventListener('click', tratarCancelarListaAtual);
-
-  // Limpeza - Painel (Fase 1)
-  $('limpeza-categoria').addEventListener('change', e => {
-    limpezaCategoriaId = e.target.value || null;
-    limpezaSalvarPref(LIMPEZA_LS_CATEGORIA, limpezaCategoriaId || '');
-    renderLimpeza();
-  });
-  $('limpeza-filtro-periodo').addEventListener('change', e => {
-    limpezaPeriodoTipo = e.target.value;
-    renderLimpeza();
-  });
-  $('limpeza-filtro-mes').addEventListener('change', e => {
-    limpezaMesEspecifico = e.target.value;
-    renderLimpeza();
-  });
-  $('limpeza-alvo').addEventListener('change', e => {
-    const v = parseFloat(e.target.value);
-    if (isNaN(v) || v <= 0) {
-      e.target.value = limpezaAlvoPct;
-      return;
-    }
-    limpezaAlvoPct = v;
-    limpezaSalvarPref(LIMPEZA_LS_ALVO, v);
-    renderLimpeza();
-  });
   $('search-atual').addEventListener('input', e => {
     searchAtual = e.target.value.trim();
     renderListaAtual();
@@ -6223,7 +5740,6 @@ function setupEventos() {
 // ============================================================================
 
 function init() {
-  limpezaCarregarPrefs();
   setupEventos();
   mostrarSplash();
 
