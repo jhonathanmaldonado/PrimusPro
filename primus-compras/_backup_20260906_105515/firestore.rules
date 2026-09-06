@@ -98,17 +98,6 @@ service cloud.firestore {
       match /vendas/{vendaId} {
         allow read, write: if isMember(wid);
       }
-
-      // Limpeza - saidas do deposito (Fase 2)
-      // write completo pra membro: a chef precisa corrigir os proprios erros
-      // sem depender do dono. O historico de compras continua restrito.
-      match /consumo_limpeza/{regId} {
-        allow read, write: if isMember(wid);
-      }
-
-      match /limpeza_solicitantes/{solId} {
-        allow read, write: if isMember(wid);
-      }
     }
   }
 }

@@ -52,8 +52,6 @@ const INSUMOS = () => collection(db, 'workspaces', WORKSPACE_ID, 'insumos');
 const FICHAS = () => collection(db, 'workspaces', WORKSPACE_ID, 'fichas');
 const VENDAS_DIAS = () => collection(db, 'workspaces', WORKSPACE_ID, 'vendas_dias');
 const VENDAS = () => collection(db, 'workspaces', WORKSPACE_ID, 'vendas');
-const LIMPEZA_CONSUMO = () => collection(db, 'workspaces', WORKSPACE_ID, 'consumo_limpeza');
-const LIMPEZA_SOLICITANTES = () => collection(db, 'workspaces', WORKSPACE_ID, 'limpeza_solicitantes');
 
 // ============================================================================
 // CONFIG (incluindo precificação)
@@ -1307,97 +1305,4 @@ export async function seedCatalogoSeVazio(seedData) {
 
   await batch.commit();
   return { importado: true, categorias: countCats, itens: countItens };
-}
-
-// ============================================================================
-// LIMPEZA — Consumo (Fase 2)
-// Registro de saída de material de limpeza do depósito.
-// O custo é gravado como SNAPSHOT no momento da saída: relatório antigo não
-// pode mudar sozinho quando o preço de compra sobe depois.
-// ============================================================================
-
-export function observarConsumoLimpeza(callback) {
-  // Limite defensivo: a coleção cresce indefinidamente e o painel só precisa
-  // do passado recente. 800 registros ≈ 2 anos a ~1,5 saídas/dia.
-  const q = query(LIMPEZA_CONSUMO(), orderBy('data', 'desc'), limit(800));
-  return onSnapshot(q, snap => {
-    const lista = snap.docs.map(d => ({ ...d.data(), id: d.id }));
-    callback(lista);
-  });
-}
-
-export async function registrarSaidaLimpeza(dados) {
-  if (!dados.itemId) throw new Error('Item não informado.');
-  const qtd = parseFloat(dados.qtd) || 0;
-  if (qtd <= 0) throw new Error('Quantidade precisa ser maior que zero.');
-  if (!dados.data) throw new Error('Data não informada.');
-
-  const custoUnit = parseFloat(dados.custoUnit) || 0;
-  const ref = doc(LIMPEZA_CONSUMO());
-
-  await setDoc(ref, {
-    itemId: dados.itemId,
-    itemNome: dados.itemNome || '?',      // snapshot: sobrevive se o item sair do catálogo
-    itemTipo: dados.itemTipo || '',
-    qtd,
-    solicitanteId: dados.solicitanteId || null,
-    solicitante: dados.solicitante || 'Não informado',
-    data: dados.data,                      // 'YYYY-MM-DD'
-    custoUnit,                             // snapshot do custo unitário
-    custoTotal: qtd * custoUnit,
-    custoEstimado: custoUnit <= 0,         // marca registro sem preço conhecido
-    obs: dados.obs || '',
-    ...auditFields({ criadoEm: serverTimestamp() })
-  });
-
-  return ref.id;
-}
-
-export async function deletarSaidaLimpeza(id) {
-  await deleteDoc(doc(LIMPEZA_CONSUMO(), id));
-}
-
-// Marca/desmarca um item do catálogo como controlado no depósito
-export async function setItemControleLimpeza(itemId, controlado) {
-  await updateDoc(doc(ITENS(), itemId), {
-    controleLimpeza: !!controlado,
-    ...auditFields()
-  });
-}
-
-// ============================================================================
-// LIMPEZA — Solicitantes
-// Lista própria, separada de /usuarios: a cozinha não tem login no app e
-// criar membro desloga o dono.
-// ============================================================================
-
-export function observarSolicitantesLimpeza(callback) {
-  const q = query(LIMPEZA_SOLICITANTES(), orderBy('nome'));
-  return onSnapshot(q, snap => {
-    const lista = snap.docs.map(d => ({ ...d.data(), id: d.id }));
-    callback(lista);
-  });
-}
-
-export async function criarSolicitanteLimpeza(nome) {
-  const limpo = (nome || '').trim();
-  if (!limpo) throw new Error('Nome vazio.');
-
-  const existentes = await getDocs(LIMPEZA_SOLICITANTES());
-  const dup = existentes.docs.some(d =>
-    (d.data().nome || '').trim().toLowerCase() === limpo.toLowerCase()
-  );
-  if (dup) throw new Error('Já existe alguém com esse nome.');
-
-  const ref = doc(LIMPEZA_SOLICITANTES());
-  await setDoc(ref, {
-    nome: limpo,
-    ativo: true,
-    ...auditFields({ criadoEm: serverTimestamp() })
-  });
-  return ref.id;
-}
-
-export async function deletarSolicitanteLimpeza(id) {
-  await deleteDoc(doc(LIMPEZA_SOLICITANTES(), id));
 }

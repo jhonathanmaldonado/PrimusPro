@@ -2140,13 +2140,6 @@
     <!-- ========== ABA: EQUIPE ========== -->
     <!-- ========== ABA: LIMPEZA (Fase 1 - Painel) ========== -->
     <div id="tab-limpeza" style="display:none">
-      <!-- Sub-navegação da aba Limpeza -->
-      <div class="sub-nav">
-        <button class="sub-nav-btn active" data-limpeza-subtab="painel">📊 Painel</button>
-        <button class="sub-nav-btn" data-limpeza-subtab="saidas">📤 Saídas</button>
-      </div>
-
-      <div id="limpeza-subtab-painel">
       <div class="toolbar">
         <span class="toolbar-title">🧴 Consumo de Limpeza — Painel</span>
       </div>
@@ -2228,62 +2221,6 @@
       <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px">
         <div style="font-size:13px;font-weight:700;color:var(--wine);margin-bottom:10px">🏆 Onde o dinheiro foi (no período)</div>
         <div id="limpeza-tabela-produtos"></div>
-      </div>
-      </div>
-
-      <!-- ===== Sub-aba: Saídas do depósito ===== -->
-      <div id="limpeza-subtab-saidas" style="display:none">
-        <div class="toolbar">
-          <span class="toolbar-title">📤 Saídas do depósito</span>
-          <button class="btn btn-primary" id="btn-nova-saida">+ Registrar Saída</button>
-          <button class="btn" id="btn-config-limpeza">⚙️ Configurar</button>
-        </div>
-
-        <div style="background:var(--gold-soft);border:1px solid #f0d590;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:12px;color:var(--wine-dark);line-height:1.5">
-          ℹ️ <strong>Como funciona:</strong> cada vez que alguém pega material no depósito, registre aqui. O custo é congelado no momento da saída, com base na média dos últimos preços de compra. Em <strong>⚙️ Configurar</strong> você escolhe quais itens são controlados e quem pode pedir.
-        </div>
-
-        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-radius:10px">
-          <span style="font-size:12px;color:var(--muted);font-weight:600">Mês:</span>
-          <select id="saidas-filtro-mes" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff"></select>
-          <span style="font-size:12px;color:var(--muted);font-weight:600">Pessoa:</span>
-          <select id="saidas-filtro-pessoa" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff"></select>
-          <span style="flex:1;text-align:right;font-size:11px;color:var(--muted)" id="saidas-resumo-texto">—</span>
-        </div>
-
-        <div class="summary" style="margin-bottom:14px">
-          <div class="stat">
-            <div class="stat-label">Saídas no período</div>
-            <div class="stat-value" id="saidas-total-registros">0</div>
-          </div>
-          <div class="stat">
-            <div class="stat-label">Custo das saídas</div>
-            <div class="stat-value" id="saidas-total-custo">R$ 0,00</div>
-            <div style="font-size:10px;color:var(--muted);margin-top:2px" id="saidas-custo-meta">—</div>
-          </div>
-          <div class="stat gold">
-            <div class="stat-label">Pessoas que retiraram</div>
-            <div class="stat-value" id="saidas-total-pessoas">0</div>
-          </div>
-        </div>
-
-        <div id="saidas-aviso" style="display:none;background:#fef3c7;border:1px solid #f0c674;border-radius:8px;padding:10px 14px;margin-bottom:14px;font-size:12px;color:#854F0B;line-height:1.5"></div>
-
-        <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px">
-          <div style="font-size:13px;font-weight:700;color:var(--wine);margin-bottom:4px">👤 Por pessoa</div>
-          <div style="font-size:11px;color:var(--muted);margin-bottom:10px">Volume de retirada, não desperdício — quem trabalha mais retira mais. Serve pra ver padrão, não pra cobrar.</div>
-          <div id="saidas-tabela-pessoas"></div>
-        </div>
-
-        <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px">
-          <div style="font-size:13px;font-weight:700;color:var(--wine);margin-bottom:10px">📦 Por item</div>
-          <div id="saidas-tabela-itens"></div>
-        </div>
-
-        <div style="background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px">
-          <div style="font-size:13px;font-weight:700;color:var(--wine);margin-bottom:10px">🧾 Lançamentos</div>
-          <div id="saidas-lista"></div>
-        </div>
       </div>
     </div>
 
@@ -2827,100 +2764,6 @@
 
 <!-- ÁREA DE IMPRESSÃO DE FICHA TÉCNICA INDIVIDUAL -->
 <div id="ficha-impressao" class="ficha-impressao-area"></div>
-
-
-<!-- ===== MODAL: Registrar saída de limpeza ===== -->
-<div class="modal-bg" id="modal-saida">
-  <div class="modal" style="max-width:520px">
-    <div class="modal-header">
-      <span class="modal-title">📤 Registrar Saída</span>
-      <button class="modal-close" data-close-modal="modal-saida">×</button>
-    </div>
-    <div class="modal-body">
-
-      <div class="form-field">
-        <label>Item</label>
-        <select id="saida-item"></select>
-        <div style="font-size:11px;color:var(--muted);margin-top:4px" id="saida-item-custo">—</div>
-      </div>
-
-      <div style="display:flex;gap:12px">
-        <div class="form-field" style="flex:1">
-          <label>Quantidade</label>
-          <input type="number" id="saida-qtd" step="0.01" min="0.01" placeholder="Ex: 2">
-        </div>
-        <div class="form-field" style="flex:1">
-          <label>Data</label>
-          <input type="date" id="saida-data">
-        </div>
-      </div>
-
-      <div class="form-field">
-        <label>Quem pediu</label>
-        <select id="saida-solicitante"></select>
-      </div>
-
-      <div class="form-field">
-        <label>Observação <span class="optional">(opcional)</span></label>
-        <input type="text" id="saida-obs" placeholder="Ex: troca de bombona da máquina">
-      </div>
-
-      <div id="saida-preview" style="display:none;background:var(--gold-soft);border:1px solid #f0d590;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--wine-dark)"></div>
-
-      <div id="saida-error" class="form-error"></div>
-
-      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:6px">
-        <button class="btn" data-close-modal="modal-saida">Cancelar</button>
-        <button class="btn btn-primary" id="btn-salvar-saida">💾 Registrar</button>
-      </div>
-
-    </div>
-  </div>
-</div>
-
-<!-- ===== MODAL: Configurar controle de limpeza ===== -->
-<div class="modal-bg" id="modal-limpeza-config">
-  <div class="modal" style="max-width:600px">
-    <div class="modal-header">
-      <span class="modal-title">⚙️ Configurar Controle de Limpeza</span>
-      <button class="modal-close" data-close-modal="modal-limpeza-config">×</button>
-    </div>
-    <div class="modal-body">
-
-      <div style="font-size:13px;font-weight:700;color:var(--wine);margin-bottom:4px">📦 Itens controlados</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
-        Marque os itens que saem do depósito com registro. Só eles aparecem na tela de saída.
-      </div>
-
-      <div class="search-wrap" style="margin-bottom:10px">
-        <span class="search-icon">🔍</span>
-        <input type="text" class="search-input" id="search-limpeza-catalogo" placeholder="Buscar item do catálogo..." autocomplete="off">
-        <button class="search-clear" id="search-limpeza-catalogo-clear">×</button>
-      </div>
-
-      <div id="limpeza-config-itens" style="max-height:260px;overflow-y:auto;border:1px solid var(--line);border-radius:8px;background:#fff;margin-bottom:20px"></div>
-
-      <div style="font-size:13px;font-weight:700;color:var(--wine);margin-bottom:4px">👤 Quem pode pedir</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:10px">
-        Lista própria da cozinha — não precisa de login no app.
-      </div>
-
-      <div style="display:flex;gap:8px;margin-bottom:10px">
-        <input type="text" id="novo-solicitante-nome" placeholder="Nome da pessoa" style="flex:1;padding:8px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff">
-        <button class="btn btn-primary" id="btn-add-solicitante">+ Adicionar</button>
-      </div>
-
-      <div id="limpeza-config-solicitantes" style="border:1px solid var(--line);border-radius:8px;background:#fff"></div>
-
-      <div id="limpeza-config-error" class="form-error"></div>
-
-      <div style="display:flex;justify-content:flex-end;margin-top:16px">
-        <button class="btn" data-close-modal="modal-limpeza-config">Fechar</button>
-      </div>
-
-    </div>
-  </div>
-</div>
 
 <!-- TOAST -->
 <div class="toast" id="toast"></div>
