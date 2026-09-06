@@ -53,7 +53,6 @@ import {
   registrarSaidaLimpeza,
   deletarSaidaLimpeza,
   setItemControleLimpeza,
-  setItemConsumoLimpeza,
   observarSolicitantesLimpeza,
   criarSolicitanteLimpeza,
   deletarSolicitanteLimpeza,
@@ -5609,88 +5608,13 @@ function itensControlados() {
     .sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'));
 }
 
-// Custo de UMA EMBALAGEM (unidade de compra): média dos últimos N preços
+// Custo unitário atual de um item: média dos últimos N preços, com fallback
 function custoUnitarioItem(item) {
   if (!item) return 0;
   const media = calcularMediaPrecos(item, mediaN);
   if (media && media > 0) return media;
   const ultimo = parseFloat(item.ultimoPreco) || 0;
   return ultimo > 0 ? ultimo : 0;
-}
-
-// ---------------------------------------------------------------------------
-// Unidades de consumo
-// A compra continua em embalagem. Isto descreve só como o item SAI do depósito.
-// ---------------------------------------------------------------------------
-
-const UNIDADES_CONSUMO = [
-  { v: 'un', t: 'un' },
-  { v: 'ml', t: 'ml' },
-  { v: 'L',  t: 'L'  },
-  { v: 'g',  t: 'g'  },
-  { v: 'kg', t: 'kg' }
-];
-
-function unidadeConsumoDe(item) {
-  const u = item?.limpezaUnidadeConsumo;
-  return UNIDADES_CONSUMO.some(x => x.v === u) ? u : 'un';
-}
-
-function fatorConsumoDe(item) {
-  const f = parseFloat(item?.limpezaFator);
-  return (!isNaN(f) && f > 0) ? f : 1;
-}
-
-// Custo de 1 unidade de consumo (ex: 1 ml de Qboa)
-function custoPorUnidadeConsumo(item) {
-  return custoUnitarioItem(item) / fatorConsumoDe(item);
-}
-
-// Valores por ml/g ficam na casa dos milésimos; fmtMoeda mostraria R$ 0,00
-function fmtMoedaPrecisa(v) {
-  const n = Number(v) || 0;
-  if (n > 0 && n < 0.01) return 'R$ ' + n.toFixed(4).replace('.', ',');
-  return fmtMoeda(n);
-}
-
-// Detecta "5L", "galão 20 L", "500ml" no nome/tipo pra sugerir o rendimento
-function detectarRendimento(item) {
-  const txt = `${item?.nome || ''} ${item?.tipo || ''}`;
-  const m = txt.match(/(\d+(?:[.,]\d+)?)\s*(ml|l|kg|g)\b/i);
-  if (!m) return null;
-  const valor = parseFloat(m[1].replace(',', '.'));
-  if (!valor || valor <= 0) return null;
-  const u = m[2].toLowerCase();
-  if (u === 'l')  return { unidade: 'ml', fator: valor * 1000 };
-  if (u === 'ml') return { unidade: 'ml', fator: valor };
-  if (u === 'kg') return { unidade: 'g',  fator: valor * 1000 };
-  return { unidade: 'g', fator: valor };
-}
-
-// Se o item já tem insumo vinculado, o fator de conversão da compra já existe
-function sugestaoConsumo(item) {
-  if (!item) return null;
-  const insumo = item.insumoId ? insumos.find(i => i.id === item.insumoId) : null;
-  const fatorCompra = parseFloat(item.fatorConversao);
-  if (insumo && !isNaN(fatorCompra) && fatorCompra > 0 && fatorCompra !== 1) {
-    if (insumo.unidade === 'LITRO') return { unidade: 'ml', fator: fatorCompra * 1000, origem: 'vínculo com insumo' };
-    if (insumo.unidade === 'KG')    return { unidade: 'g',  fator: fatorCompra * 1000, origem: 'vínculo com insumo' };
-    return { unidade: 'un', fator: fatorCompra, origem: 'vínculo com insumo' };
-  }
-  const det = detectarRendimento(item);
-  return det ? { ...det, origem: 'nome do item' } : null;
-}
-
-// Item que aparenta ser volume/peso mas continua sem conversão configurada
-function precisaConfigurarConsumo(item) {
-  if (fatorConsumoDe(item) !== 1) return false;
-  return !!sugestaoConsumo(item);
-}
-
-function fmtQtdConsumo(qtd, unidade) {
-  const n = Number(qtd) || 0;
-  const txt = n % 1 === 0 ? String(n) : n.toFixed(2);
-  return `${txt} ${unidade || 'un'}`;
 }
 
 function saidasMesesDisponiveis() {
@@ -5727,7 +5651,7 @@ function abrirModalSaida() {
 
   const selItem = $('saida-item');
   selItem.innerHTML = controlados
-    .map(i => `<option value="${i.id}">${escHtml(i.nome)}${i.tipo ? ' · ' + escHtml(i.tipo) : ''} (sai em ${unidadeConsumoDe(i)})</option>`)
+    .map(i => `<option value="${i.id}">${escHtml(i.nome)}${i.tipo ? ' · ' + escHtml(i.tipo) : ''}</option>`)
     .join('');
 
   const selSol = $('saida-solicitante');
@@ -5753,40 +5677,23 @@ function fecharModalSaida() {
 
 function atualizarPreviewSaida() {
   const item = itens.find(i => i.id === $('saida-item').value);
-  const custoEmbalagem = custoUnitarioItem(item);
-  const unidade = unidadeConsumoDe(item);
-  const fator = fatorConsumoDe(item);
-  const custoUnid = custoPorUnidadeConsumo(item);
+  const custo = custoUnitarioItem(item);
   const qtd = parseFloat($('saida-qtd').value) || 0;
-
-  // Rótulo da unidade ao lado do campo de quantidade
-  $('saida-unidade-label').textContent = unidade;
 
   const info = $('saida-item-custo');
   if (!item) {
     info.textContent = '—';
+  } else if (custo > 0) {
+    info.textContent = `Custo unitário: ${fmtMoeda(custo)} (média das últimas ${mediaN} compras)`;
     info.style.color = 'var(--muted)';
-  } else if (custoEmbalagem <= 0) {
-    info.textContent = '⚠ Sem preço de compra registrado — a saída entra com custo R$ 0,00';
-    info.style.color = '#791F1F';
-  } else if (fator !== 1) {
-    info.textContent = `${fmtMoeda(custoEmbalagem)} a embalagem (rende ${fator} ${unidade}) · ${fmtMoedaPrecisa(custoUnid)} por ${unidade}`;
-    info.style.color = 'var(--muted)';
-  } else if (precisaConfigurarConsumo(item)) {
-    info.textContent = `⚠ ${fmtMoeda(custoEmbalagem)} por embalagem — este item parece ser vendido a granel e ainda não tem conversão. Configure em ⚙️ Configurar.`;
-    info.style.color = '#854F0B';
   } else {
-    info.textContent = `${fmtMoeda(custoEmbalagem)} por ${unidade} (média das últimas ${mediaN} compras)`;
-    info.style.color = 'var(--muted)';
+    info.textContent = '⚠ Este item não tem preço de compra registrado — a saída entra com custo R$ 0,00';
+    info.style.color = '#791F1F';
   }
 
   const prev = $('saida-preview');
   if (qtd > 0 && item) {
-    let txt = `Saída de <strong>${fmtQtdConsumo(qtd, unidade)}</strong> · custo <strong>${fmtMoeda(qtd * custoUnid)}</strong>`;
-    if (fator !== 1) {
-      txt += `<div style="font-size:11px;margin-top:4px;opacity:0.85">equivale a ${(qtd / fator).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')} embalagem(ns)</div>`;
-    }
-    prev.innerHTML = txt;
+    prev.innerHTML = `Custo desta saída: <strong>${fmtMoeda(qtd * custo)}</strong>`;
     prev.style.display = 'block';
   } else {
     prev.style.display = 'none';
@@ -5821,9 +5728,7 @@ async function salvarSaida() {
       solicitanteId: sol.id,
       solicitante: sol.nome,
       data,
-      unidadeConsumo: unidadeConsumoDe(item),
-      fatorConsumo: fatorConsumoDe(item),
-      custoUnit: custoPorUnidadeConsumo(item),
+      custoUnit: custoUnitarioItem(item),
       obs: $('saida-obs').value.trim()
     });
     fecharModalSaida();
@@ -5840,7 +5745,7 @@ async function salvarSaida() {
 async function excluirSaida(id) {
   const s = consumoLimpeza.find(x => x.id === id);
   if (!s) return;
-  if (!confirm(`Excluir a saída de ${fmtQtdConsumo(s.qtd, s.unidadeConsumo)} de ${s.itemNome} (${s.solicitante})?\n\nEsta ação não pode ser desfeita.`)) return;
+  if (!confirm(`Excluir a saída de ${s.qtd}x ${s.itemNome} (${s.solicitante})?\n\nEsta ação não pode ser desfeita.`)) return;
   try {
     await deletarSaidaLimpeza(id);
     showToast('✓ Saída excluída', 'success');
@@ -5896,46 +5801,11 @@ function renderConfigItensLimpeza() {
       ? `<span style="color:var(--muted)">${fmtMoeda(custo)}</span>`
       : `<span style="color:#791F1F" title="Sem preço de compra: as saídas deste item entram com custo zero">⚠ sem preço</span>`;
 
-    const unidade = unidadeConsumoDe(i);
-    const fator = fatorConsumoDe(i);
-    const alerta = (i.controleLimpeza && precisaConfigurarConsumo(i)) ? ' ⚠' : '';
-
-    html += `<div style="border-bottom:1px solid var(--line)">`;
-    html += `<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;cursor:pointer">`;
+    html += `<label style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--line);cursor:pointer">`;
     html += `<input type="checkbox" data-action="toggle-controle" data-item-id="${i.id}"${i.controleLimpeza ? ' checked' : ''} style="margin:0;width:auto">`;
-    html += `<span style="flex:1;font-size:13px">${escHtml(i.nome)}${i.tipo ? ` <span style="color:var(--muted);font-size:11px">· ${escHtml(i.tipo)}</span>` : ''}<span style="color:#854F0B">${alerta}</span></span>`;
+    html += `<span style="flex:1;font-size:13px">${escHtml(i.nome)}${i.tipo ? ` <span style="color:var(--muted);font-size:11px">· ${escHtml(i.tipo)}</span>` : ''}</span>`;
     html += `<span style="font-size:11px">${avisoPreco}</span>`;
     html += `</label>`;
-
-    // Conversão de consumo: só aparece pros itens controlados
-    if (i.controleLimpeza) {
-      const sug = sugestaoConsumo(i);
-      const mostraSugestao = sug && fator === 1;
-
-      html += `<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:0 12px 10px 40px;font-size:12px;color:var(--muted)">`;
-      html += `<span>Retira em</span>`;
-      html += `<select data-action="unidade-consumo" data-item-id="${i.id}" style="padding:4px 6px;font-size:12px;border:1px solid var(--line);border-radius:5px;background:#fff">`;
-      html += UNIDADES_CONSUMO.map(u => `<option value="${u.v}"${u.v === unidade ? ' selected' : ''}>${u.t}</option>`).join('');
-      html += `</select>`;
-      html += `<span>· 1 ${escHtml(i.tipo || 'embalagem')} rende</span>`;
-      html += `<input type="number" data-action="fator-consumo" data-item-id="${i.id}" value="${fator}" min="0.001" step="any" style="width:88px;padding:4px 6px;font-size:12px;border:1px solid var(--line);border-radius:5px;background:#fff;margin-bottom:0">`;
-      html += `<span>${escHtml(unidade)}</span>`;
-
-      if (custo > 0 && fator !== 1) {
-        html += `<span style="margin-left:auto;color:var(--wine);font-weight:600">${fmtMoedaPrecisa(custo / fator)}/${escHtml(unidade)}</span>`;
-      }
-
-      if (mostraSugestao) {
-        html += `<div style="width:100%;margin-top:6px">`;
-        html += `<button class="vinculo-btn-sm" data-action="aplicar-sugestao" data-item-id="${i.id}" data-sug-unidade="${sug.unidade}" data-sug-fator="${sug.fator}">`;
-        html += `Usar ${sug.fator} ${sug.unidade} (detectado pelo ${escHtml(sug.origem)})`;
-        html += `</button></div>`;
-      }
-
-      html += `</div>`;
-    }
-
-    html += `</div>`;
   }
 
   if (lista.length > 60) {
@@ -5943,26 +5813,6 @@ function renderConfigItensLimpeza() {
   }
 
   el.innerHTML = html;
-}
-
-// Salva a conversão de consumo. Passa null no campo que não mudou.
-async function salvarConsumoLimpeza(itemId, unidade, fator) {
-  const item = itens.find(i => i.id === itemId);
-  if (!item) return;
-
-  const u = unidade ?? unidadeConsumoDe(item);
-  const f = fator ?? fatorConsumoDe(item);
-
-  const err = $('limpeza-config-error');
-  err.classList.remove('show');
-
-  try {
-    await setItemConsumoLimpeza(itemId, u, f);
-  } catch (e) {
-    err.textContent = e.message;
-    err.classList.add('show');
-    renderConfigItensLimpeza();
-  }
 }
 
 async function toggleControleLimpeza(itemId, controlado) {
@@ -6129,7 +5979,7 @@ function renderSaidasPorItem(lista, custoTotal) {
   const agg = {};
   for (const s of lista) {
     const chave = s.itemId || s.itemNome || '?';
-    if (!agg[chave]) agg[chave] = { nome: s.itemNome || '?', tipo: s.itemTipo || '', unidade: s.unidadeConsumo || 'un', qtd: 0, custo: 0, registros: 0 };
+    if (!agg[chave]) agg[chave] = { nome: s.itemNome || '?', tipo: s.itemTipo || '', qtd: 0, custo: 0, registros: 0 };
     agg[chave].qtd += parseFloat(s.qtd) || 0;
     agg[chave].custo += parseFloat(s.custoTotal) || 0;
     agg[chave].registros++;
@@ -6144,7 +5994,7 @@ function renderSaidasPorItem(lista, custoTotal) {
     const tipo = i.tipo ? ` <span style="color:var(--muted);font-weight:400">· ${escHtml(i.tipo)}</span>` : '';
     html += '<tr>';
     html += `<td><strong>${escHtml(i.nome)}</strong>${tipo}</td>`;
-    html += `<td class="num">${fmtQtdConsumo(i.qtd, i.unidade)}</td>`;
+    html += `<td class="num">${i.qtd % 1 === 0 ? i.qtd : i.qtd.toFixed(2)}</td>`;
     html += `<td class="num">${i.registros}</td>`;
     html += `<td class="num">${fmtMoeda(i.custo)}</td>`;
     html += `<td class="num">${share.toFixed(1)}%</td>`;
@@ -6179,7 +6029,7 @@ function renderSaidasLista(lista) {
 
     html += `<div style="display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:6px;background:#fff">`;
     html += `<div style="flex:1;min-width:0">`;
-    html += `<div style="font-size:13px"><strong>${escHtml(fmtQtdConsumo(s.qtd, s.unidadeConsumo))}</strong> · ${escHtml(s.itemNome || '?')}</div>`;
+    html += `<div style="font-size:13px"><strong>${s.qtd % 1 === 0 ? s.qtd : s.qtd.toFixed(2)}×</strong> ${escHtml(s.itemNome || '?')}</div>`;
     html += `<div style="font-size:11px;color:var(--muted);margin-top:2px">👤 ${escHtml(s.solicitante || 'Não informado')}</div>`;
     html += obs;
     html += `</div>`;
@@ -6467,17 +6317,7 @@ function setupEventos() {
   });
   $('limpeza-config-itens').addEventListener('change', e => {
     const cb = e.target.closest('[data-action="toggle-controle"]');
-    if (cb) { toggleControleLimpeza(cb.dataset.itemId, cb.checked); return; }
-
-    const sel = e.target.closest('[data-action="unidade-consumo"]');
-    if (sel) { salvarConsumoLimpeza(sel.dataset.itemId, sel.value, null); return; }
-
-    const inp = e.target.closest('[data-action="fator-consumo"]');
-    if (inp) { salvarConsumoLimpeza(inp.dataset.itemId, null, inp.value); return; }
-  });
-  $('limpeza-config-itens').addEventListener('click', e => {
-    const b = e.target.closest('[data-action="aplicar-sugestao"]');
-    if (b) salvarConsumoLimpeza(b.dataset.itemId, b.dataset.sugUnidade, b.dataset.sugFator);
+    if (cb) toggleControleLimpeza(cb.dataset.itemId, cb.checked);
   });
   $('search-limpeza-catalogo').addEventListener('input', e => {
     searchLimpezaCatalogo = e.target.value.trim();

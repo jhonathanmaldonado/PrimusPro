@@ -1343,9 +1343,7 @@ export async function registrarSaidaLimpeza(dados) {
     solicitanteId: dados.solicitanteId || null,
     solicitante: dados.solicitante || 'Não informado',
     data: dados.data,                      // 'YYYY-MM-DD'
-    unidadeConsumo: dados.unidadeConsumo || 'un',  // snapshot: registro se autoexplica
-    fatorConsumo: parseFloat(dados.fatorConsumo) || 1,
-    custoUnit,                             // snapshot do custo POR UNIDADE DE CONSUMO
+    custoUnit,                             // snapshot do custo unitário
     custoTotal: qtd * custoUnit,
     custoEstimado: custoUnit <= 0,         // marca registro sem preço conhecido
     obs: dados.obs || '',
@@ -1363,21 +1361,6 @@ export async function deletarSaidaLimpeza(id) {
 export async function setItemControleLimpeza(itemId, controlado) {
   await updateDoc(doc(ITENS(), itemId), {
     controleLimpeza: !!controlado,
-    ...auditFields()
-  });
-}
-
-// Configura como o item SAI do depósito.
-// A compra continua em embalagem (qtd/preço não mudam); isto só descreve
-// o consumo: em que unidade se retira e quanto rende 1 embalagem.
-//   Qboa galão 5L  -> unidade 'ml', fator 5000
-//   Touca (pacote) -> unidade 'un', fator 1
-export async function setItemConsumoLimpeza(itemId, unidade, fator) {
-  const f = parseFloat(fator);
-  if (isNaN(f) || f <= 0) throw new Error('O rendimento da embalagem precisa ser maior que zero.');
-  await updateDoc(doc(ITENS(), itemId), {
-    limpezaUnidadeConsumo: unidade || 'un',
-    limpezaFator: f,
     ...auditFields()
   });
 }
