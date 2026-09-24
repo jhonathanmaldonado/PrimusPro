@@ -225,6 +225,26 @@
   .dica-tela { color: var(--tinta-suave); font-size: 15px; margin: 0 0 16px; }
   .botao.compacto { width: auto; min-height: 52px; padding: 0 20px; font-size: 20px; }
   .lista { display: grid; gap: 10px; }
+  .abas {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    background: #EAE1E5;
+    border-radius: 14px;
+    padding: 4px;
+    gap: 4px;
+    margin-bottom: 14px;
+  }
+  .aba {
+    min-height: 50px;
+    border: 0;
+    border-radius: 11px;
+    background: transparent;
+    font: 600 17px var(--texto);
+    color: var(--tinta-suave);
+    cursor: pointer;
+  }
+  .aba.atual { background: #fff; color: var(--bordo); box-shadow: 0 1px 3px rgba(60, 0, 30, .15); }
+  .aba:focus-visible { outline: 3px solid var(--bordo); outline-offset: 1px; }
   .linha-usuario {
     display: grid;
     grid-template-columns: 1fr auto;
@@ -414,6 +434,10 @@
         <button id="usuarios-novo" class="botao compacto" type="button">Novo usuário</button>
       </div>
       <p id="usuarios-dica" class="dica-tela"></p>
+      <div class="abas" role="tablist">
+        <button id="aba-ativos" class="aba atual" type="button" role="tab" aria-selected="true">Ativos</button>
+        <button id="aba-desativados" class="aba" type="button" role="tab" aria-selected="false">Desativados</button>
+      </div>
       <div id="lista-usuarios" class="lista"></div>
     </div>
   </main>

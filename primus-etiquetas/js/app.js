@@ -1,5 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/app.js (v3)
+// PRIMUS ETIQUETAS - js/app.js (v4)
+// v4: usuarios separados em abas Ativos / Desativados
 // v3: mensagem de usuario desativado nao some mais; modal nao corta o titulo
 // Fase 2a: setup inicial, login usuario+PIN, tela inicial com status da impressora
 // Fase 2b: usuarios (gestor e chef cadastram) e troca do proprio PIN
@@ -10,7 +11,7 @@ import {
   observarUsuarios, criarUsuario, atualizarUsuario, trocarMeuPin
 } from "./db.js";
 
-const VERSAO_APP = "v3";
+const VERSAO_APP = "v4";
 const CHAVE_ULTIMO_USUARIO = "primusEtiquetas.ultimoUsuario";
 const ONLINE_ATE_SEG = 150; // agente manda sinal a cada 60 s
 
@@ -26,6 +27,7 @@ let setupRodando = false; // enquanto o setup roda, o observador de sessao esper
 let cancelarUsuarios = null;
 let usuariosAtuais = [];
 let usuarioEmEdicao = null; // null = novo
+let abaUsuarios = "ativos"; // "ativos" | "desativados"
 let mensagemPendente = ""; // mostrada na tela de login depois de um sair() forcado
 
 // ---------------------------------------------------------------- permissoes
@@ -267,6 +269,7 @@ function abrirUsuarios() {
   $("usuarios-dica").textContent = perfilAtual.papel === "chef"
     ? "Você pode cadastrar e editar usuários da cozinha."
     : "Toque em um usuário para editar.";
+  abaUsuarios = "ativos";
   mostrarTela("tela-usuarios");
   if (!cancelarUsuarios) {
     $("lista-usuarios").innerHTML = '<p class="vazio">Carregando...</p>';
@@ -279,13 +282,30 @@ function abrirUsuarios() {
   }
 }
 
+function trocarAbaUsuarios(aba) {
+  abaUsuarios = aba;
+  desenharUsuarios();
+}
+
 function desenharUsuarios() {
+  const ativos = usuariosAtuais.filter((u) => u.ativo);
+  const desativados = usuariosAtuais.filter((u) => !u.ativo);
+  $("aba-ativos").textContent = `Ativos (${ativos.length})`;
+  $("aba-desativados").textContent = `Desativados (${desativados.length})`;
+  $("aba-ativos").classList.toggle("atual", abaUsuarios === "ativos");
+  $("aba-desativados").classList.toggle("atual", abaUsuarios === "desativados");
+  $("aba-ativos").setAttribute("aria-selected", abaUsuarios === "ativos" ? "true" : "false");
+  $("aba-desativados").setAttribute("aria-selected", abaUsuarios === "desativados" ? "true" : "false");
+
+  const lista = abaUsuarios === "ativos" ? ativos : desativados;
   const alvo = $("lista-usuarios");
-  if (!usuariosAtuais.length) {
-    alvo.innerHTML = '<p class="vazio">Nenhum usuário ainda.</p>';
+  if (!lista.length) {
+    alvo.innerHTML = abaUsuarios === "ativos"
+      ? '<p class="vazio">Nenhum usuário ativo.</p>'
+      : '<p class="vazio">Nenhum usuário desativado.</p>';
     return;
   }
-  alvo.innerHTML = usuariosAtuais.map((u) => {
+  alvo.innerHTML = lista.map((u) => {
     const editavel = podeEditarUsuario(perfilAtual, u);
     const eu = perfilAtual && u.uid === perfilAtual.uid;
     return `
@@ -385,6 +405,7 @@ async function salvarUsuario(ev) {
   const eu = usuarioEmEdicao.uid === perfilAtual.uid;
   if (!eu && perfilAtual.papel === "gestor") campos.papel = papel;
   if (!eu) campos.ativo = $("usuario-ativo").checked;
+  const mudouAtivo = !eu && campos.ativo !== !!usuarioEmEdicao.ativo;
 
   ocupado(botao, true, "Salvando...");
   try {
@@ -394,7 +415,9 @@ async function salvarUsuario(ev) {
       $("inicio-nome").textContent = nome;
     }
     fecharModal("modal-usuario");
-    aviso("Alterações salvas.");
+    if (mudouAtivo && !campos.ativo) aviso(`${nome} foi desativado. Está na aba Desativados.`);
+    else if (mudouAtivo && campos.ativo) aviso(`${nome} foi reativado. Está na aba Ativos.`);
+    else aviso("Alterações salvas.");
   } catch (e) {
     mostrarErro("usuario-erro", traduzirErro(e));
   } finally {
@@ -449,6 +472,8 @@ async function iniciar() {
   $("usuarios-voltar").addEventListener("click", () => abrirInicio(perfilAtual));
   $("usuarios-novo").addEventListener("click", () => abrirFormUsuario(null));
   $("lista-usuarios").addEventListener("click", clicarListaUsuarios);
+  $("aba-ativos").addEventListener("click", () => trocarAbaUsuarios("ativos"));
+  $("aba-desativados").addEventListener("click", () => trocarAbaUsuarios("desativados"));
   $("form-usuario").addEventListener("submit", salvarUsuario);
   $("usuario-cancelar").addEventListener("click", () => fecharModal("modal-usuario"));
   $("form-pin").addEventListener("submit", salvarMeuPin);
