@@ -1,13 +1,15 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/app.js (v1)
+// PRIMUS ETIQUETAS - js/app.js (v2)
 // Fase 2a: setup inicial, login usuario+PIN, tela inicial com status da impressora
+// Fase 2b: usuarios (gestor e chef cadastram) e troca do proprio PIN
 // ============================================================
 import {
-  auth, normalizarUsuario, validarUsuario, validarPin, traduzirErro,
-  setupFeito, fazerSetup, entrar, sair, observarSessao, carregarPerfil, observarAgentes
+  auth, PAPEIS, normalizarUsuario, validarUsuario, validarPin, traduzirErro,
+  setupFeito, fazerSetup, entrar, sair, observarSessao, carregarPerfil, observarAgentes,
+  observarUsuarios, criarUsuario, atualizarUsuario, trocarMeuPin
 } from "./db.js";
 
-const VERSAO_APP = "v1";
+const VERSAO_APP = "v2";
 const CHAVE_ULTIMO_USUARIO = "primusEtiquetas.ultimoUsuario";
 const ONLINE_ATE_SEG = 150; // agente manda sinal a cada 60 s
 
@@ -20,10 +22,33 @@ let cancelarAgentes = null;
 let agentesAtuais = [];
 let timerStatus = null;
 let setupRodando = false; // enquanto o setup roda, o observador de sessao espera
+let cancelarUsuarios = null;
+let usuariosAtuais = [];
+let usuarioEmEdicao = null; // null = novo
 
-// ---------------------------------------------------------------- telas
+// ---------------------------------------------------------------- permissoes
+function podeGerenciarUsuarios(p) {
+  return !!p && (p.papel === "gestor" || p.papel === "chef");
+}
+
+function papeisQuePodeAtribuir(p) {
+  if (!p) return [];
+  if (p.papel === "gestor") return PAPEIS.slice();
+  if (p.papel === "chef") return ["cozinha"];
+  return [];
+}
+
+function podeEditarUsuario(p, alvo) {
+  if (!p || !alvo) return false;
+  if (p.papel === "gestor") return true;
+  if (p.papel === "chef") return alvo.papel === "cozinha";
+  return false;
+}
+
+// ---------------------------------------------------------------- utilitarios de tela
 function mostrarTela(id) {
   for (const t of document.querySelectorAll(".tela")) t.hidden = t.id !== id;
+  window.scrollTo(0, 0);
 }
 
 function mostrarErro(idCaixa, msg) {
@@ -43,12 +68,36 @@ function ocupado(botao, sim, textoOcupado) {
   }
 }
 
+function abrirModal(id) {
+  $(id).hidden = false;
+  document.body.classList.add("com-modal");
+}
+
+function fecharModal(id) {
+  $(id).hidden = true;
+  if (!document.querySelector(".modal:not([hidden])")) document.body.classList.remove("com-modal");
+}
+
+let timerAviso = null;
+function aviso(msg) {
+  const el = $("aviso");
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(timerAviso);
+  timerAviso = setTimeout(() => { el.hidden = true; }, 3000);
+}
+
 function lerUltimoUsuario() {
   try { return localStorage.getItem(CHAVE_ULTIMO_USUARIO) || ""; } catch (e) { return ""; }
 }
 
 function gravarUltimoUsuario(usuario) {
   try { localStorage.setItem(CHAVE_ULTIMO_USUARIO, usuario); } catch (e) { /* ignora */ }
+}
+
+function escapar(texto) {
+  return String(texto == null ? "" : texto)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 // ---------------------------------------------------------------- setup
@@ -125,22 +174,35 @@ function abrirInicio(perfil) {
   perfilAtual = perfil;
   $("inicio-nome").textContent = perfil.nome;
   $("inicio-papel").textContent = NOMES_PAPEL[perfil.papel] || perfil.papel;
+
+  const cartaoUsuarios = $("acao-usuarios");
+  if (podeGerenciarUsuarios(perfil)) {
+    cartaoUsuarios.hidden = false;
+  } else {
+    cartaoUsuarios.hidden = true;
+  }
   mostrarTela("tela-inicio");
 
-  if (cancelarAgentes) cancelarAgentes();
-  cancelarAgentes = observarAgentes(
-    (lista) => { agentesAtuais = lista; desenharStatus(); },
-    (e) => { agentesAtuais = []; desenharStatus(traduzirErro(e)); }
-  );
+  if (!cancelarAgentes) {
+    cancelarAgentes = observarAgentes(
+      (lista) => { agentesAtuais = lista; desenharStatus(); },
+      (e) => { agentesAtuais = []; desenharStatus(traduzirErro(e)); }
+    );
+  }
   clearInterval(timerStatus);
   timerStatus = setInterval(() => desenharStatus(), 15000);
+  desenharStatus();
 }
 
-function fecharInicio() {
+function fecharSessaoLocal() {
   perfilAtual = null;
   if (cancelarAgentes) { cancelarAgentes(); cancelarAgentes = null; }
+  if (cancelarUsuarios) { cancelarUsuarios(); cancelarUsuarios = null; }
   clearInterval(timerStatus);
   agentesAtuais = [];
+  usuariosAtuais = [];
+  for (const m of document.querySelectorAll(".modal")) m.hidden = true;
+  document.body.classList.remove("com-modal");
 }
 
 function tempoDesde(data) {
@@ -182,13 +244,188 @@ function desenharStatus(erro) {
     caixa.classList.add("offline");
     titulo.textContent = "Impressora offline";
   }
-  detalhe.textContent = `PC ${a.id} · último sinal há ${tempoDesde(a.ultimoSinal)}` +
-    (a.impressora ? ` · ${a.impressora}` : "");
+  detalhe.textContent = `PC ${a.id}, último sinal há ${tempoDesde(a.ultimoSinal)}` +
+    (a.impressora ? `, ${a.impressora}` : "");
 }
 
 async function clicarSair() {
-  fecharInicio();
+  fecharSessaoLocal();
   await sair();
+}
+
+// ---------------------------------------------------------------- usuarios: lista
+function abrirUsuarios() {
+  if (!podeGerenciarUsuarios(perfilAtual)) return;
+  $("usuarios-dica").textContent = perfilAtual.papel === "chef"
+    ? "Você pode cadastrar e editar usuários da cozinha."
+    : "Toque em um usuário para editar.";
+  mostrarTela("tela-usuarios");
+  if (!cancelarUsuarios) {
+    $("lista-usuarios").innerHTML = '<p class="vazio">Carregando...</p>';
+    cancelarUsuarios = observarUsuarios(
+      (lista) => { usuariosAtuais = lista; desenharUsuarios(); },
+      (e) => { $("lista-usuarios").innerHTML = `<p class="vazio">${escapar(traduzirErro(e))}</p>`; }
+    );
+  } else {
+    desenharUsuarios();
+  }
+}
+
+function desenharUsuarios() {
+  const alvo = $("lista-usuarios");
+  if (!usuariosAtuais.length) {
+    alvo.innerHTML = '<p class="vazio">Nenhum usuário ainda.</p>';
+    return;
+  }
+  alvo.innerHTML = usuariosAtuais.map((u) => {
+    const editavel = podeEditarUsuario(perfilAtual, u);
+    const eu = perfilAtual && u.uid === perfilAtual.uid;
+    return `
+      <button type="button" class="linha-usuario${u.ativo ? "" : " inativo"}" data-uid="${escapar(u.uid)}" ${editavel ? "" : "disabled"}>
+        <span class="nome-usuario">${escapar(u.nome)}${eu ? " (você)" : ""}</span>
+        <span class="login-usuario">${escapar(u.usuario)}</span>
+        <span class="selo selo-${escapar(u.papel)}">${escapar(NOMES_PAPEL[u.papel] || u.papel)}</span>
+        ${u.ativo ? "" : '<span class="selo selo-inativo">Desativado</span>'}
+      </button>`;
+  }).join("");
+}
+
+function clicarListaUsuarios(ev) {
+  const botao = ev.target.closest(".linha-usuario");
+  if (!botao || botao.disabled) return;
+  const u = usuariosAtuais.find((x) => x.uid === botao.dataset.uid);
+  if (u) abrirFormUsuario(u);
+}
+
+// ---------------------------------------------------------------- usuarios: formulario
+function preencherPapeis(selecionado, travado) {
+  const sel = $("usuario-papel");
+  const opcoes = papeisQuePodeAtribuir(perfilAtual);
+  if (selecionado && !opcoes.includes(selecionado)) opcoes.push(selecionado);
+  sel.innerHTML = opcoes.map((p) =>
+    `<option value="${p}" ${p === selecionado ? "selected" : ""}>${NOMES_PAPEL[p]}</option>`).join("");
+  sel.disabled = !!travado;
+}
+
+function abrirFormUsuario(usuario) {
+  usuarioEmEdicao = usuario || null;
+  mostrarErro("usuario-erro", "");
+  const novo = !usuarioEmEdicao;
+  const eu = !novo && usuarioEmEdicao.uid === perfilAtual.uid;
+
+  $("usuario-titulo").textContent = novo ? "Novo usuário" : "Editar usuário";
+  $("usuario-nome").value = novo ? "" : usuarioEmEdicao.nome;
+  $("usuario-login").value = novo ? "" : usuarioEmEdicao.usuario;
+  $("usuario-login").disabled = !novo;
+  $("usuario-login-dica").textContent = novo
+    ? "É o que a pessoa digita para entrar. Sem espaços nem acentos."
+    : "O usuário não pode ser alterado.";
+
+  // Chef so edita nome e ativo de quem e da cozinha; ninguem muda o proprio papel
+  const travarPapel = !novo && (eu || perfilAtual.papel !== "gestor");
+  preencherPapeis(novo ? papeisQuePodeAtribuir(perfilAtual).slice(-1)[0] : usuarioEmEdicao.papel, travarPapel);
+
+  $("bloco-pin-novo").hidden = !novo;
+  $("usuario-pin").value = "";
+  $("usuario-pin2").value = "";
+
+  $("bloco-ativo").hidden = novo || eu;
+  $("usuario-ativo").checked = novo ? true : !!usuarioEmEdicao.ativo;
+
+  $("usuario-salvar").textContent = novo ? "Cadastrar" : "Salvar alterações";
+  abrirModal("modal-usuario");
+  (novo ? $("usuario-nome") : $("usuario-nome")).focus();
+}
+
+async function salvarUsuario(ev) {
+  ev.preventDefault();
+  mostrarErro("usuario-erro", "");
+  const novo = !usuarioEmEdicao;
+  const nome = $("usuario-nome").value.trim();
+  const papel = $("usuario-papel").value;
+
+  if (nome.length < 2) return mostrarErro("usuario-erro", "Informe o nome.");
+  if (!papeisQuePodeAtribuir(perfilAtual).includes(papel) && (novo || papel !== usuarioEmEdicao.papel))
+    return mostrarErro("usuario-erro", "Você não pode atribuir esse papel.");
+
+  const botao = $("usuario-salvar");
+  if (novo) {
+    const usuario = normalizarUsuario($("usuario-login").value);
+    const pin = $("usuario-pin").value.trim();
+    const pin2 = $("usuario-pin2").value.trim();
+    const erroUsuario = validarUsuario(usuario);
+    if (erroUsuario) return mostrarErro("usuario-erro", erroUsuario);
+    const erroPin = validarPin(pin);
+    if (erroPin) return mostrarErro("usuario-erro", erroPin);
+    if (pin !== pin2) return mostrarErro("usuario-erro", "Os dois PINs não são iguais.");
+
+    ocupado(botao, true, "Cadastrando...");
+    try {
+      await criarUsuario({ nome, usuario, papel, pin });
+      fecharModal("modal-usuario");
+      aviso(`Usuário ${usuario} cadastrado.`);
+    } catch (e) {
+      mostrarErro("usuario-erro", traduzirErro(e));
+    } finally {
+      ocupado(botao, false);
+    }
+    return;
+  }
+
+  const campos = { nome };
+  const eu = usuarioEmEdicao.uid === perfilAtual.uid;
+  if (!eu && perfilAtual.papel === "gestor") campos.papel = papel;
+  if (!eu) campos.ativo = $("usuario-ativo").checked;
+
+  ocupado(botao, true, "Salvando...");
+  try {
+    await atualizarUsuario(usuarioEmEdicao.uid, campos);
+    if (eu) {
+      perfilAtual.nome = nome;
+      $("inicio-nome").textContent = nome;
+    }
+    fecharModal("modal-usuario");
+    aviso("Alterações salvas.");
+  } catch (e) {
+    mostrarErro("usuario-erro", traduzirErro(e));
+  } finally {
+    ocupado(botao, false);
+  }
+}
+
+// ---------------------------------------------------------------- meu PIN
+function abrirMeuPin() {
+  mostrarErro("pin-erro", "");
+  $("pin-atual").value = "";
+  $("pin-novo").value = "";
+  $("pin-novo2").value = "";
+  abrirModal("modal-pin");
+  $("pin-atual").focus();
+}
+
+async function salvarMeuPin(ev) {
+  ev.preventDefault();
+  mostrarErro("pin-erro", "");
+  const atual = $("pin-atual").value.trim();
+  const novo = $("pin-novo").value.trim();
+  const novo2 = $("pin-novo2").value.trim();
+  if (validarPin(atual)) return mostrarErro("pin-erro", "Digite o seu PIN atual (4 números).");
+  const erroPin = validarPin(novo);
+  if (erroPin) return mostrarErro("pin-erro", erroPin);
+  if (novo !== novo2) return mostrarErro("pin-erro", "Os dois PINs novos não são iguais.");
+  if (novo === atual) return mostrarErro("pin-erro", "O PIN novo é igual ao atual.");
+
+  const botao = $("pin-salvar");
+  ocupado(botao, true, "Trocando...");
+  try {
+    await trocarMeuPin(perfilAtual.usuario, atual, novo);
+    fecharModal("modal-pin");
+    aviso("PIN trocado.");
+  } catch (e) {
+    mostrarErro("pin-erro", traduzirErro(e));
+  } finally {
+    ocupado(botao, false);
+  }
 }
 
 // ---------------------------------------------------------------- inicio
@@ -197,11 +434,20 @@ async function iniciar() {
   $("form-setup").addEventListener("submit", enviarSetup);
   $("form-login").addEventListener("submit", enviarLogin);
   $("botao-sair").addEventListener("click", clicarSair);
+  $("botao-meu-pin").addEventListener("click", abrirMeuPin);
+  $("acao-usuarios").addEventListener("click", abrirUsuarios);
+  $("usuarios-voltar").addEventListener("click", () => abrirInicio(perfilAtual));
+  $("usuarios-novo").addEventListener("click", () => abrirFormUsuario(null));
+  $("lista-usuarios").addEventListener("click", clicarListaUsuarios);
+  $("form-usuario").addEventListener("submit", salvarUsuario);
+  $("usuario-cancelar").addEventListener("click", () => fecharModal("modal-usuario"));
+  $("form-pin").addEventListener("submit", salvarMeuPin);
+  $("pin-cancelar").addEventListener("click", () => fecharModal("modal-pin"));
 
   observarSessao(async (user) => {
     if (setupRodando) return;
     if (!user) {
-      fecharInicio();
+      fecharSessaoLocal();
       try {
         if (await setupFeito()) {
           prepararLogin();
@@ -225,7 +471,7 @@ async function iniciar() {
       }
       if (!perfil.ativo) {
         await sair();
-        prepararLogin("Usuário desativado. Fale com o gestor.");
+        prepararLogin("Usuário desativado. Fale com o gestor ou a chef.");
         return;
       }
       abrirInicio(perfil);

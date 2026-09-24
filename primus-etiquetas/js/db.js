@@ -1,15 +1,16 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/db.js (v1)
-// Firebase: inicializacao, login usuario+PIN, perfil, setup inicial
+// PRIMUS ETIQUETAS - js/db.js (v2)
+// Firebase: inicializacao, login usuario+PIN, perfil, setup inicial, usuarios
 // Projeto Firebase proprio: primus-etiquetas (independente dos outros sistemas)
+// v2: cadastro/edicao de usuarios (gestor e chef) e troca do proprio PIN
 // ============================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
   getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword,
-  signOut, onAuthStateChanged
+  signOut, onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential, updatePassword
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import {
-  getFirestore, doc, getDoc, writeBatch, collection, onSnapshot, serverTimestamp
+  getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch, collection, onSnapshot, serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -24,6 +25,12 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
+
+// Instancia secundaria: cria login de funcionario sem deslogar quem esta cadastrando
+const appSecundario = initializeApp(firebaseConfig, "cadastro");
+const authSecundario = getAuth(appSecundario);
+
+export const PAPEIS = ["gestor", "chef", "cozinha"];
 
 // ---------------------------------------------------------------- usuario + PIN
 // O usuario vira um e-mail interno e o PIN vira a senha (o Firebase exige 6+ caracteres).
@@ -68,9 +75,18 @@ export function traduzirErro(e) {
     return "Sem conexão com a internet.";
   if (codigo === "auth/email-already-in-use")
     return "Esse usuário já existe.";
+  if (codigo === "auth/requires-recent-login")
+    return "Por segurança, saia e entre de novo antes de trocar o PIN.";
   if (codigo === "permission-denied")
     return "Sem permissão para essa ação.";
+  if (e && e.mensagemTela) return e.mensagemTela;
   return "Erro inesperado: " + (e && e.message ? e.message : String(e));
+}
+
+function erroTela(msg) {
+  const e = new Error(msg);
+  e.mensagemTela = msg;
+  return e;
 }
 
 // ---------------------------------------------------------------- setup inicial
@@ -87,7 +103,6 @@ export async function fazerSetup(nome, usuario, pin) {
   try {
     cred = await createUserWithEmailAndPassword(auth, email, senha);
   } catch (e) {
-    // Se uma tentativa anterior criou o login mas falhou no perfil, entra e completa
     if (e.code === "auth/email-already-in-use") {
       cred = await signInWithEmailAndPassword(auth, email, senha);
     } else {
@@ -128,6 +143,78 @@ export function observarSessao(callback) {
 export async function carregarPerfil(uid) {
   const snap = await getDoc(doc(db, "usuarios", uid));
   return snap.exists() ? { uid, ...snap.data() } : null;
+}
+
+// ---------------------------------------------------------------- usuarios
+export function observarUsuarios(callback, callbackErro) {
+  return onSnapshot(collection(db, "usuarios"), (snap) => {
+    const lista = snap.docs.map((d) => ({ uid: d.id, ...d.data() }));
+    lista.sort((a, b) => {
+      if (a.ativo !== b.ativo) return a.ativo ? -1 : 1;
+      return String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
+    });
+    callback(lista);
+  }, callbackErro);
+}
+
+// Cria o login (na instancia secundaria) e depois o perfil em usuarios/{uid}
+export async function criarUsuario({ nome, usuario, papel, pin }) {
+  const email = usuarioParaEmail(usuario);
+  const senha = pinParaSenha(pin);
+  let uid;
+  try {
+    const cred = await createUserWithEmailAndPassword(authSecundario, email, senha);
+    uid = cred.user.uid;
+  } catch (e) {
+    if (e.code !== "auth/email-already-in-use") throw e;
+    // Tentativa anterior pode ter criado o login e falhado no perfil: com o mesmo PIN, completa
+    try {
+      const cred = await signInWithEmailAndPassword(authSecundario, email, senha);
+      uid = cred.user.uid;
+    } catch (e2) {
+      throw erroTela(`O usuário "${usuario}" já existe. Escolha outro nome de usuário.`);
+    }
+  } finally {
+    try { await signOut(authSecundario); } catch (e3) { /* ignora */ }
+  }
+
+  const existente = await getDoc(doc(db, "usuarios", uid));
+  if (existente.exists()) throw erroTela(`O usuário "${usuario}" já está cadastrado.`);
+
+  await setDoc(doc(db, "usuarios", uid), {
+    usuario,
+    nome: nome.trim(),
+    papel,
+    ativo: true,
+    criadoEm: serverTimestamp(),
+    criadoPor: auth.currentUser.uid
+  });
+  return uid;
+}
+
+export function atualizarUsuario(uid, campos) {
+  const permitido = {};
+  for (const k of ["nome", "papel", "ativo"]) {
+    if (campos[k] !== undefined) permitido[k] = campos[k];
+  }
+  permitido.atualizadoEm = serverTimestamp();
+  permitido.atualizadoPor = auth.currentUser.uid;
+  return updateDoc(doc(db, "usuarios", uid), permitido);
+}
+
+// Troca o PIN do proprio usuario logado (pede o PIN atual)
+export async function trocarMeuPin(usuario, pinAtual, pinNovo) {
+  const user = auth.currentUser;
+  if (!user) throw erroTela("Sessão expirada. Entre de novo.");
+  const credencial = EmailAuthProvider.credential(usuarioParaEmail(usuario), pinParaSenha(pinAtual));
+  try {
+    await reauthenticateWithCredential(user, credencial);
+  } catch (e) {
+    if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password")
+      throw erroTela("O PIN atual está errado.");
+    throw e;
+  }
+  await updatePassword(user, pinParaSenha(pinNovo));
 }
 
 // ---------------------------------------------------------------- status da impressora

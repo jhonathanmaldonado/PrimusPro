@@ -200,6 +200,114 @@
 
   .carregando { color: #fff; font-family: var(--titulo); font-size: 26px; }
 
+  .topo-botoes { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  button.acao {
+    width: 100%;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+    border: 2px solid var(--linha);
+    border-left: 8px solid var(--dourado);
+    color: var(--tinta-suave);
+  }
+  button.acao:hover { border-color: var(--bordo); border-left-color: var(--dourado); }
+  button.acao:focus-visible { outline: 3px solid var(--bordo); outline-offset: 2px; }
+
+  /* ---------- usuarios ---------- */
+  .barra {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 8px;
+  }
+  .barra h2 { font-family: var(--titulo); font-size: 30px; margin: 0; }
+  .dica-tela { color: var(--tinta-suave); font-size: 15px; margin: 0 0 16px; }
+  .botao.compacto { width: auto; min-height: 52px; padding: 0 20px; font-size: 20px; }
+  .lista { display: grid; gap: 10px; }
+  .linha-usuario {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: "nome selo" "login inativo";
+    align-items: center;
+    gap: 2px 10px;
+    width: 100%;
+    text-align: left;
+    background: #fff;
+    border: 2px solid var(--linha);
+    border-radius: 14px;
+    padding: 14px 16px;
+    font: inherit;
+    color: var(--tinta);
+    cursor: pointer;
+    min-height: 72px;
+  }
+  .linha-usuario:hover:not(:disabled) { border-color: var(--bordo); }
+  .linha-usuario:disabled { cursor: default; opacity: .75; }
+  .linha-usuario.inativo { background: #F1ECEE; }
+  .linha-usuario.inativo .nome-usuario { text-decoration: line-through; color: var(--tinta-suave); }
+  .nome-usuario { grid-area: nome; font-weight: 600; font-size: 19px; }
+  .login-usuario { grid-area: login; color: var(--tinta-suave); font-size: 15px; }
+  .selo {
+    grid-area: selo;
+    justify-self: end;
+    font-size: 13px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #EFE7EB;
+    color: var(--bordo);
+  }
+  .selo-gestor { background: var(--bordo); color: #fff; }
+  .selo-chef { background: var(--dourado); color: var(--bordo-escuro); }
+  .selo-inativo { grid-area: inativo; background: #fff; border: 1px solid #C9BFC4; color: var(--tinta-suave); }
+  .vazio { color: var(--tinta-suave); text-align: center; padding: 30px 0; }
+
+  /* ---------- modal ---------- */
+  body.com-modal { overflow: hidden; }
+  .modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(40, 0, 22, .55);
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: calc(20px + env(safe-area-inset-top, 0px)) 14px 20px;
+    overflow-y: auto;
+    z-index: 20;
+  }
+  .modal .rolo { margin: auto 0; }
+  .linha-botoes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 4px; }
+  .botao.neutro { background: #EFE7EB; color: var(--tinta); }
+  .botao.neutro:hover { background: #E3D8DE; }
+  select {
+    width: 100%;
+    font: inherit;
+    font-size: 20px;
+    padding: 14px 16px;
+    border: 2px solid var(--linha);
+    border-radius: 12px;
+    background: #fff;
+    color: var(--tinta);
+  }
+  select:disabled, input:disabled { background: #F4F0F2; color: var(--tinta-suave); }
+  .alternar { display: flex; align-items: center; gap: 12px; font-weight: 600; cursor: pointer; }
+  .alternar input { width: 28px; height: 28px; accent-color: var(--bordo); }
+
+  .aviso {
+    position: fixed;
+    left: 50%;
+    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%);
+    background: var(--tinta);
+    color: #fff;
+    padding: 14px 22px;
+    border-radius: 12px;
+    font-weight: 600;
+    z-index: 30;
+    max-width: calc(100% - 32px);
+  }
+
   @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -271,7 +379,10 @@
       <div id="inicio-nome" class="quem"></div>
       <div id="inicio-papel" class="papel"></div>
     </div>
-    <button id="botao-sair" class="botao-sec" type="button">Sair</button>
+    <div class="topo-botoes">
+      <button id="botao-meu-pin" class="botao-sec" type="button">Meu PIN</button>
+      <button id="botao-sair" class="botao-sec" type="button">Sair</button>
+    </div>
   </header>
   <main class="conteudo">
     <div class="largura">
@@ -285,11 +396,100 @@
       <div class="acoes">
         <div class="acao"><strong>Emitir etiqueta</strong>Em construção</div>
         <div class="acao"><strong>Produtos</strong>Em construção</div>
-        <div class="acao"><strong>Usuários</strong>Em construção</div>
+        <button id="acao-usuarios" class="acao" type="button" hidden><strong>Usuários</strong>Cadastrar funcionários e definir quem pode fazer o quê</button>
       </div>
     </div>
   </main>
 </section>
+
+<!-- Usuarios -->
+<section id="tela-usuarios" class="tela" hidden>
+  <header class="topo">
+    <button id="usuarios-voltar" class="botao-sec" type="button">Voltar</button>
+  </header>
+  <main class="conteudo">
+    <div class="largura">
+      <div class="barra">
+        <h2>Usuários</h2>
+        <button id="usuarios-novo" class="botao compacto" type="button">Novo usuário</button>
+      </div>
+      <p id="usuarios-dica" class="dica-tela"></p>
+      <div id="lista-usuarios" class="lista"></div>
+    </div>
+  </main>
+</section>
+
+<!-- Modal: novo/editar usuario -->
+<div id="modal-usuario" class="modal" hidden>
+  <div class="rolo">
+    <form id="form-usuario" class="etiqueta" autocomplete="off" novalidate>
+      <h1 id="usuario-titulo">Novo usuário</h1>
+      <hr class="corte">
+      <div id="usuario-erro" class="erro" hidden></div>
+      <div class="campo">
+        <label for="usuario-nome">Nome</label>
+        <input id="usuario-nome" type="text" maxlength="40" autocapitalize="words">
+      </div>
+      <div class="campo">
+        <label for="usuario-login">Usuário</label>
+        <input id="usuario-login" type="text" maxlength="20" autocapitalize="none" spellcheck="false">
+        <div id="usuario-login-dica" class="dica"></div>
+      </div>
+      <div class="campo">
+        <label for="usuario-papel">Papel</label>
+        <select id="usuario-papel"></select>
+      </div>
+      <div id="bloco-pin-novo">
+        <p class="dica">Entregue o aparelho para o funcionário digitar o PIN dele.</p>
+        <div class="campo">
+          <label for="usuario-pin">PIN (4 números)</label>
+          <input id="usuario-pin" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4">
+        </div>
+        <div class="campo">
+          <label for="usuario-pin2">Repita o PIN</label>
+          <input id="usuario-pin2" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4">
+        </div>
+      </div>
+      <div id="bloco-ativo" class="campo">
+        <label class="alternar"><input id="usuario-ativo" type="checkbox"> Pode entrar no sistema</label>
+        <div class="dica">Desmarque para bloquear o acesso sem apagar o histórico.</div>
+      </div>
+      <div class="linha-botoes">
+        <button id="usuario-cancelar" class="botao neutro" type="button">Cancelar</button>
+        <button id="usuario-salvar" class="botao" type="submit">Cadastrar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: trocar meu PIN -->
+<div id="modal-pin" class="modal" hidden>
+  <div class="rolo">
+    <form id="form-pin" class="etiqueta" autocomplete="off" novalidate>
+      <h1>Trocar meu PIN</h1>
+      <hr class="corte">
+      <div id="pin-erro" class="erro" hidden></div>
+      <div class="campo">
+        <label for="pin-atual">PIN atual</label>
+        <input id="pin-atual" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4">
+      </div>
+      <div class="campo">
+        <label for="pin-novo">PIN novo</label>
+        <input id="pin-novo" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4">
+      </div>
+      <div class="campo">
+        <label for="pin-novo2">Repita o PIN novo</label>
+        <input id="pin-novo2" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4">
+      </div>
+      <div class="linha-botoes">
+        <button id="pin-cancelar" class="botao neutro" type="button">Cancelar</button>
+        <button id="pin-salvar" class="botao" type="submit">Trocar PIN</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="aviso" class="aviso" role="status" hidden></div>
 
 <script type="module" src="js/app.js"></script>
 </body>
