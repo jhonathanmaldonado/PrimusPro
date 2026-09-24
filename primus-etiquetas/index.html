@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#7C0047">
+<title>Primus Etiquetas</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='8' y='8' width='84' height='84' rx='14' fill='%237C0047'/><rect x='22' y='30' width='56' height='8' fill='%23FAB900'/><rect x='22' y='48' width='40' height='6' fill='white'/><rect x='22' y='62' width='48' height='6' fill='white'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bordo: #7C0047;
+    --bordo-escuro: #5E0036;
+    --vinho: #8B1A3A;
+    --dourado: #FAB900;
+    --dourado-escuro: #F5A800;
+    --papel: #FFFFFF;
+    --tinta: #1F1A1C;
+    --tinta-suave: #6B5F64;
+    --linha: #E6DDE1;
+    --ok: #1E7F4F;
+    --alerta: #B3261E;
+    --titulo: "Barlow Condensed", "Arial Narrow", Arial, sans-serif;
+    --texto: "Barlow", "Segoe UI", Arial, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: var(--texto);
+    color: var(--tinta);
+    background: var(--bordo);
+    font-size: 18px;
+    line-height: 1.4;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    -webkit-tap-highlight-color: transparent;
+  }
+  [hidden] { display: none !important; }
+
+  /* ---------- a etiqueta: elemento central da identidade ---------- */
+  .palco {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 24px 16px 40px;
+  }
+  .rolo {
+    width: 100%;
+    max-width: 420px;
+    background: #E9E1E5;
+    border-radius: 6px;
+    padding: 14px 12px;
+    box-shadow: 0 18px 40px rgba(40, 0, 20, .35);
+  }
+  .etiqueta {
+    background: var(--papel);
+    border-radius: 18px;
+    padding: 26px 24px 22px;
+  }
+  .etiqueta h1 {
+    font-family: var(--titulo);
+    font-weight: 700;
+    font-size: 34px;
+    line-height: 1.05;
+    margin: 0 0 4px;
+    letter-spacing: .01em;
+  }
+  .etiqueta .sub {
+    color: var(--tinta-suave);
+    margin: 0 0 18px;
+    font-size: 16px;
+  }
+  .corte {
+    border: 0;
+    border-top: 3px solid var(--tinta);
+    margin: 0 0 18px;
+  }
+  .marca {
+    font-family: var(--titulo);
+    color: #fff;
+    font-size: 22px;
+    font-weight: 600;
+    margin: 0 0 16px;
+    letter-spacing: .02em;
+  }
+  .marca b { color: var(--dourado); font-weight: 700; }
+
+  label { display: block; font-weight: 600; font-size: 16px; margin: 0 0 6px; }
+  .campo { margin-bottom: 16px; }
+  input {
+    width: 100%;
+    font: inherit;
+    font-size: 22px;
+    padding: 14px 16px;
+    border: 2px solid var(--linha);
+    border-radius: 12px;
+    background: #fff;
+    color: var(--tinta);
+  }
+  input:focus { outline: none; border-color: var(--bordo); box-shadow: 0 0 0 3px rgba(124, 0, 71, .18); }
+  input.pin { letter-spacing: .5em; font-family: var(--titulo); font-size: 30px; text-align: center; }
+  .dica { color: var(--tinta-suave); font-size: 14px; margin-top: 4px; }
+
+  .botao {
+    width: 100%;
+    min-height: 60px;
+    border: 0;
+    border-radius: 14px;
+    font-family: var(--titulo);
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: .02em;
+    cursor: pointer;
+    background: var(--dourado);
+    color: var(--bordo-escuro);
+  }
+  .botao:hover { background: var(--dourado-escuro); }
+  .botao:active { transform: translateY(1px); }
+  .botao:disabled { opacity: .6; cursor: wait; }
+  .botao:focus-visible, .botao-sec:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; }
+
+  .erro {
+    background: #FDECEA;
+    color: var(--alerta);
+    border-left: 5px solid var(--alerta);
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 16px;
+    margin: 0 0 16px;
+  }
+
+  .rodape { color: rgba(255, 255, 255, .7); font-size: 13px; margin-top: 18px; text-align: center; }
+
+  /* ---------- tela inicial ---------- */
+  .topo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 20px;
+    color: #fff;
+  }
+  .topo .quem { font-family: var(--titulo); font-size: 26px; font-weight: 700; line-height: 1.1; }
+  .topo .papel { color: var(--dourado); font-size: 15px; font-weight: 600; }
+  .botao-sec {
+    background: transparent;
+    color: #fff;
+    border: 2px solid rgba(255, 255, 255, .55);
+    border-radius: 12px;
+    font: 600 17px var(--texto);
+    padding: 10px 16px;
+    min-height: 48px;
+    cursor: pointer;
+  }
+  .conteudo {
+    background: #F6F1F3;
+    min-height: calc(100vh - 90px);
+    border-radius: 24px 24px 0 0;
+    padding: 22px 16px 40px;
+  }
+  .largura { max-width: 640px; margin: 0 auto; }
+
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: #fff;
+    border-radius: 16px;
+    padding: 18px;
+    border: 2px solid var(--linha);
+    margin-bottom: 22px;
+  }
+  .status .luz {
+    flex: 0 0 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #C9BFC4;
+  }
+  .status.online { border-color: #BFE3CF; }
+  .status.online .luz { background: var(--ok); box-shadow: 0 0 0 6px rgba(30, 127, 79, .15); }
+  .status.offline { border-color: #F3C4C0; }
+  .status.offline .luz { background: var(--alerta); box-shadow: 0 0 0 6px rgba(179, 38, 30, .12); }
+  .status h2 { font-family: var(--titulo); font-size: 24px; margin: 0; line-height: 1.1; }
+  .status p { margin: 2px 0 0; color: var(--tinta-suave); font-size: 15px; }
+
+  .acoes { display: grid; gap: 12px; }
+  .acao {
+    background: #fff;
+    border: 2px dashed #D6CAD0;
+    border-radius: 16px;
+    padding: 18px;
+    color: var(--tinta-suave);
+  }
+  .acao strong { display: block; font-family: var(--titulo); font-size: 24px; color: var(--tinta); }
+
+  .carregando { color: #fff; font-family: var(--titulo); font-size: 26px; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+
+<!-- Carregando -->
+<section id="tela-carregando" class="tela palco">
+  <p class="carregando">Carregando...</p>
+</section>
+
+<!-- Primeiro acesso: cria o gestor -->
+<section id="tela-setup" class="tela palco" hidden>
+  <p class="marca">Primus <b>Etiquetas</b></p>
+  <div class="rolo">
+    <form id="form-setup" class="etiqueta" autocomplete="off" novalidate>
+      <h1>Primeiro acesso</h1>
+      <p class="sub">Crie o usuário do gestor. Os outros usuários você cadastra depois, lá dentro.</p>
+      <hr class="corte">
+      <div id="setup-erro" class="erro" hidden></div>
+      <div class="campo">
+        <label for="setup-nome">Seu nome</label>
+        <input id="setup-nome" type="text" maxlength="40" autocapitalize="words">
+      </div>
+      <div class="campo">
+        <label for="setup-usuario">Usuário</label>
+        <input id="setup-usuario" type="text" maxlength="20" autocapitalize="none" spellcheck="false">
+        <div class="dica">Sem espaços nem acentos. Ex.: jhonathan</div>
+      </div>
+      <div class="campo">
+        <label for="setup-pin">PIN (4 números)</label>
+        <input id="setup-pin" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4">
+      </div>
+      <div class="campo">
+        <label for="setup-pin2">Repita o PIN</label>
+        <input id="setup-pin2" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4">
+      </div>
+      <button id="setup-botao" class="botao" type="submit">Criar gestor</button>
+    </form>
+  </div>
+</section>
+
+<!-- Login -->
+<section id="tela-login" class="tela palco" hidden>
+  <p class="marca">Primus <b>Etiquetas</b></p>
+  <div class="rolo">
+    <form id="form-login" class="etiqueta" autocomplete="off" novalidate>
+      <h1>Entrar</h1>
+      <p class="sub">Cozinha da Primus Peixaria</p>
+      <hr class="corte">
+      <div id="login-erro" class="erro" hidden></div>
+      <div class="campo">
+        <label for="login-usuario">Usuário</label>
+        <input id="login-usuario" type="text" maxlength="20" autocapitalize="none" spellcheck="false">
+      </div>
+      <div class="campo">
+        <label for="login-pin">PIN</label>
+        <input id="login-pin" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4">
+      </div>
+      <button id="login-botao" class="botao" type="submit">Entrar</button>
+    </form>
+  </div>
+  <p class="rodape">Primus Etiquetas <span id="versao"></span></p>
+</section>
+
+<!-- Inicio -->
+<section id="tela-inicio" class="tela" hidden>
+  <header class="topo">
+    <div>
+      <div id="inicio-nome" class="quem"></div>
+      <div id="inicio-papel" class="papel"></div>
+    </div>
+    <button id="botao-sair" class="botao-sec" type="button">Sair</button>
+  </header>
+  <main class="conteudo">
+    <div class="largura">
+      <div id="status-impressora" class="status">
+        <span class="luz" aria-hidden="true"></span>
+        <div>
+          <h2 id="status-titulo">Verificando impressora...</h2>
+          <p id="status-detalhe"></p>
+        </div>
+      </div>
+      <div class="acoes">
+        <div class="acao"><strong>Emitir etiqueta</strong>Em construção</div>
+        <div class="acao"><strong>Produtos</strong>Em construção</div>
+        <div class="acao"><strong>Usuários</strong>Em construção</div>
+      </div>
+    </div>
+  </main>
+</section>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
