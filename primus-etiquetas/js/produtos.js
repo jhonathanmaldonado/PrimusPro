@@ -1,5 +1,7 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/produtos.js (v1)
+// PRIMUS ETIQUETAS - js/produtos.js (v2)
+// v2: filtros de grupo aparecem apos carregar produtos; botao Grupos junto do titulo;
+//     cozinha nao ve a barra de abas (so tem uma)
 // Fase 2c: produtos, grupos, busca, revisao e historico
 // Regras: todos cadastram; so gestor e chef editam, revisam, excluem e gerenciam grupos.
 //         Produto criado pela cozinha fica "aguardando revisao", mas ja pode ser usado.
@@ -80,6 +82,7 @@ export function configurarProdutos({ obterPerfil, voltar }) {
     if (b) { filtroGrupo = b.dataset.grupo; desenharFiltroGrupos(); desenharLista(); }
   });
   $("lista-produtos").addEventListener("click", (ev) => {
+    if (ev.target.closest("[data-abrir-grupos]")) { abrirGrupos(); return; }
     const b = ev.target.closest("[data-produto]");
     if (!b) return;
     const p = produtos.find((x) => x.id === b.dataset.produto);
@@ -101,6 +104,7 @@ export function abrirProdutos() {
   $("produtos-grupos").hidden = !revisor;
   $("aba-revisao").hidden = !revisor;
   $("aba-excluidos").hidden = !revisor;
+  $("produtos-abas").hidden = !revisor;
   $("produtos-abas").classList.toggle("tres", revisor);
   aba = "ativos";
   filtroGrupo = "";
@@ -117,7 +121,7 @@ export function abrirProdutos() {
   if (!cancelarProdutos) {
     $("lista-produtos").innerHTML = '<p class="vazio">Carregando...</p>';
     cancelarProdutos = observarProdutos(
-      (lista) => { produtos = lista; desenharLista(); },
+      (lista) => { produtos = lista; desenharFiltroGrupos(); desenharLista(); desenharGrupos(); },
       (e) => { $("lista-produtos").innerHTML = `<p class="vazio">${escapar(traduzirErro(e))}</p>`; }
     );
   } else {
@@ -173,7 +177,11 @@ function desenharLista() {
     if (termo || filtroGrupo) msg = "Nenhum produto encontrado com esse filtro.";
     else if (aba === "revisao") msg = "Nada aguardando revisão.";
     else if (aba === "excluidos") msg = "Nenhum produto excluído.";
-    else if (!grupos.length && ehRevisor()) msg = "Comece cadastrando os grupos (botão Grupos) e depois os produtos.";
+    else if (!grupos.length && ehRevisor()) {
+      alvo.innerHTML = '<div class="vazio"><p>Ainda não há grupos. Crie os grupos primeiro e depois os produtos.</p>' +
+        '<button type="button" class="botao compacto" data-abrir-grupos>Criar grupos</button></div>';
+      return;
+    }
     alvo.innerHTML = `<p class="vazio">${escapar(msg)}</p>`;
     return;
   }

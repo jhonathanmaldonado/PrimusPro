@@ -225,6 +225,8 @@
   .dica-tela { color: var(--tinta-suave); font-size: 15px; margin: 0 0 16px; }
   .botao.compacto { width: auto; min-height: 52px; padding: 0 20px; font-size: 20px; }
   .lista { display: grid; gap: 10px; }
+  .barra-botoes { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+  .vazio .botao { margin-top: 12px; }
   .abas {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -539,13 +541,15 @@
 <section id="tela-produtos" class="tela" hidden>
   <header class="topo">
     <button id="produtos-voltar" class="botao-sec" type="button">Voltar</button>
-    <button id="produtos-grupos" class="botao-sec" type="button" hidden>Grupos</button>
   </header>
   <main class="conteudo">
     <div class="largura">
       <div class="barra">
         <h2>Produtos</h2>
-        <button id="produtos-novo" class="botao compacto" type="button">Novo produto</button>
+        <div class="barra-botoes">
+          <button id="produtos-grupos" class="botao compacto neutro" type="button" hidden>Grupos</button>
+          <button id="produtos-novo" class="botao compacto" type="button">Novo produto</button>
+        </div>
       </div>
       <input id="produtos-busca" class="busca" type="search" placeholder="Buscar produto" autocomplete="off" spellcheck="false">
       <div id="produtos-abas" class="abas" role="tablist">

@@ -1,5 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/app.js (v5)
+// PRIMUS ETIQUETAS - js/app.js (v6)
+// v6: so muda a versao exibida (ajustes em produtos.js v2 e index)
 // v5: Fase 2c (produtos e grupos em js/produtos.js); utilitarios de tela em js/ui.js
 // v4: usuarios separados em abas Ativos / Desativados
 // v3: mensagem de usuario desativado nao some mais; modal nao corta o titulo
@@ -16,7 +17,7 @@ import {
 } from "./ui.js";
 import { configurarProdutos, abrirProdutos, encerrarProdutos } from "./produtos.js";
 
-const VERSAO_APP = "v5";
+const VERSAO_APP = "v6";
 const CHAVE_ULTIMO_USUARIO = "primusEtiquetas.ultimoUsuario";
 const ONLINE_ATE_SEG = 150; // agente manda sinal a cada 60 s
 
