@@ -1,5 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/app.js (v2)
+// PRIMUS ETIQUETAS - js/app.js (v3)
+// v3: mensagem de usuario desativado nao some mais; modal nao corta o titulo
 // Fase 2a: setup inicial, login usuario+PIN, tela inicial com status da impressora
 // Fase 2b: usuarios (gestor e chef cadastram) e troca do proprio PIN
 // ============================================================
@@ -9,7 +10,7 @@ import {
   observarUsuarios, criarUsuario, atualizarUsuario, trocarMeuPin
 } from "./db.js";
 
-const VERSAO_APP = "v2";
+const VERSAO_APP = "v3";
 const CHAVE_ULTIMO_USUARIO = "primusEtiquetas.ultimoUsuario";
 const ONLINE_ATE_SEG = 150; // agente manda sinal a cada 60 s
 
@@ -25,6 +26,7 @@ let setupRodando = false; // enquanto o setup roda, o observador de sessao esper
 let cancelarUsuarios = null;
 let usuariosAtuais = [];
 let usuarioEmEdicao = null; // null = novo
+let mensagemPendente = ""; // mostrada na tela de login depois de um sair() forcado
 
 // ---------------------------------------------------------------- permissoes
 function podeGerenciarUsuarios(p) {
@@ -248,6 +250,12 @@ function desenharStatus(erro) {
     (a.impressora ? `, ${a.impressora}` : "");
 }
 
+// Desloga e deixa a mensagem para o observador de sessao mostrar no login
+async function sairComMensagem(msg) {
+  mensagemPendente = msg || "";
+  try { await sair(); } catch (e) { prepararLogin(msg); }
+}
+
 async function clicarSair() {
   fecharSessaoLocal();
   await sair();
@@ -334,7 +342,8 @@ function abrirFormUsuario(usuario) {
 
   $("usuario-salvar").textContent = novo ? "Cadastrar" : "Salvar alterações";
   abrirModal("modal-usuario");
-  (novo ? $("usuario-nome") : $("usuario-nome")).focus();
+  $("modal-usuario").scrollTop = 0;
+  $("usuario-nome").focus({ preventScroll: true });
 }
 
 async function salvarUsuario(ev) {
@@ -400,7 +409,8 @@ function abrirMeuPin() {
   $("pin-novo").value = "";
   $("pin-novo2").value = "";
   abrirModal("modal-pin");
-  $("pin-atual").focus();
+  $("modal-pin").scrollTop = 0;
+  $("pin-atual").focus({ preventScroll: true });
 }
 
 async function salvarMeuPin(ev) {
@@ -450,7 +460,8 @@ async function iniciar() {
       fecharSessaoLocal();
       try {
         if (await setupFeito()) {
-          prepararLogin();
+          prepararLogin(mensagemPendente);
+          mensagemPendente = "";
         } else {
           mostrarTela("tela-setup");
           $("setup-nome").focus();
@@ -465,19 +476,16 @@ async function iniciar() {
     try {
       const perfil = await carregarPerfil(user.uid);
       if (!perfil) {
-        await sair();
-        prepararLogin("Usuário sem cadastro no sistema. Fale com o gestor.");
+        await sairComMensagem("Usuário sem cadastro no sistema. Fale com o gestor.");
         return;
       }
       if (!perfil.ativo) {
-        await sair();
-        prepararLogin("Usuário desativado. Fale com o gestor ou a chef.");
+        await sairComMensagem("Usuário desativado. Fale com o gestor ou a chef.");
         return;
       }
       abrirInicio(perfil);
     } catch (e) {
-      await sair();
-      prepararLogin(traduzirErro(e));
+      await sairComMensagem(traduzirErro(e));
     }
   });
 }
