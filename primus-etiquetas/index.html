@@ -338,6 +338,71 @@
   .lista-grupos small { color: var(--tinta-suave); }
   .botao-link { background: none; border: 0; color: var(--bordo); font: 600 15px var(--texto); cursor: pointer; padding: 8px; }
   .linha-grupo-novo { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  .linha-botoes.unico { grid-template-columns: 1fr; }
+
+  /* ---------- home: cartoes especiais ---------- */
+  button.acao.principal { background: var(--bordo); border-color: var(--bordo); border-left-color: var(--dourado); color: rgba(255,255,255,.85); padding: 22px 18px; }
+  button.acao.principal strong { color: #fff; font-size: 30px; }
+  button.acao.principal:hover { background: var(--vinho); }
+  button.acao.discreta { border-left-color: #C9BFC4; }
+  button.acao.discreta strong { font-size: 20px; }
+  button.acao span { display: block; }
+
+  /* ---------- emissao ---------- */
+  .quem {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: #fff; border: 2px solid var(--linha); border-radius: 14px;
+    padding: 10px 14px; margin-bottom: 12px; font-weight: 600;
+  }
+  .linha-produto.emitir { padding: 16px; min-height: 72px; }
+  .linha-produto.emitir .grupo-produto { margin-bottom: 0; }
+  .emissao-produto { font-family: var(--titulo); font-size: 30px; line-height: 1.1; margin: 0 0 4px; }
+  .modos { display: grid; gap: 10px; margin-bottom: 18px; }
+  .botao-modo {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    min-height: 64px; padding: 0 18px; border-radius: 14px; border: 3px solid transparent;
+    font: inherit; cursor: pointer; text-align: left;
+  }
+  .botao-modo strong { font-family: var(--titulo); font-size: 24px; }
+  .botao-modo span { font-weight: 700; font-size: 18px; }
+  .botao-modo.atual { border-color: var(--tinta); box-shadow: 0 0 0 3px rgba(31, 26, 28, .12); }
+  .contador { display: grid; grid-template-columns: 64px 1fr 64px; align-items: center; gap: 10px; margin-bottom: 18px; }
+  .contador button {
+    height: 64px; border-radius: 14px; border: 2px solid var(--linha); background: #fff;
+    font: 700 32px var(--titulo); color: var(--bordo); cursor: pointer;
+  }
+  .contador button:disabled { opacity: .35; cursor: default; }
+  .contador output { text-align: center; font: 700 40px var(--titulo); }
+  .alternancia { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+  .alternancia button {
+    min-height: 54px; border-radius: 12px; border: 2px solid var(--linha); background: #fff;
+    font: 600 18px var(--texto); color: var(--tinta); cursor: pointer;
+  }
+  .alternancia button.atual { background: var(--bordo); border-color: var(--bordo); color: #fff; }
+  .resumo {
+    display: grid; gap: 4px; background: #F6F1F3; border-radius: 12px;
+    padding: 12px 14px; margin: 8px 0 16px; font-size: 16px;
+  }
+  .resumo-validade strong { font-size: 22px; color: var(--bordo); }
+  .resumo-dica { color: var(--tinta-suave); }
+  .chips.nomes { flex-wrap: wrap; overflow: visible; }
+  .chip.nome { font-size: 17px; padding: 12px 18px; }
+  .acompanhamento {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    width: min(560px, calc(100% - 24px));
+    display: grid; gap: 8px; z-index: 15;
+  }
+  .status-envio {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    border-radius: 14px; padding: 14px 16px; color: #fff; background: var(--tinta);
+    box-shadow: 0 10px 24px rgba(40, 0, 20, .25);
+  }
+  .status-envio strong { display: block; font-size: 17px; }
+  .status-envio .status-texto { font-size: 15px; opacity: .9; }
+  .status-envio.ok { background: var(--ok); }
+  .status-envio.falhou { background: var(--alerta); }
+  .status-envio .botao-link { color: #fff; border: 2px solid rgba(255,255,255,.7); border-radius: 10px; padding: 8px 14px; }
   .linha-grupo-novo .botao { width: auto; padding: 0 18px; min-height: 56px; font-size: 20px; }
   .linha-usuario {
     display: grid;
@@ -508,8 +573,9 @@
         </div>
       </div>
       <div class="acoes">
-        <div class="acao"><strong>Emitir etiqueta</strong>Em construção</div>
+        <button id="acao-emitir" class="acao principal" type="button"><strong>Emitir etiqueta</strong>Escolher o produto e imprimir</button>
         <button id="acao-produtos" class="acao" type="button"><strong>Produtos</strong>Cadastro, grupos e prazos de validade</button>
+        <button id="acao-aparelho" class="acao discreta" type="button" hidden><strong id="aparelho-titulo">Este aparelho</strong><span id="aparelho-texto"></span></button>
         <button id="acao-usuarios" class="acao" type="button" hidden><strong>Usuários</strong>Cadastrar funcionários e definir quem pode fazer o quê</button>
       </div>
     </div>
@@ -562,6 +628,82 @@
     </div>
   </main>
 </section>
+
+<!-- Emitir -->
+<section id="tela-emitir" class="tela" hidden>
+  <header class="topo">
+    <button id="emitir-voltar" class="botao-sec" type="button">Voltar</button>
+  </header>
+  <main class="conteudo">
+    <div class="largura">
+      <div class="barra"><h2>Emitir etiqueta</h2></div>
+      <div id="emitir-quem" class="quem" hidden>
+        <span id="emitir-quem-texto"></span>
+        <button id="emitir-quem-trocar" class="botao-link" type="button" hidden>Trocar</button>
+      </div>
+      <input id="emitir-busca" class="busca" type="search" placeholder="Buscar produto" autocomplete="off" spellcheck="false">
+      <div id="emitir-grupos" class="chips"></div>
+      <div id="emitir-lista" class="lista"></div>
+      <div style="height:120px"></div>
+    </div>
+  </main>
+  <div id="acompanhamento" class="acompanhamento" aria-live="polite"></div>
+</section>
+
+<!-- Modal: emissao -->
+<div id="modal-emissao" class="modal" hidden>
+  <div class="rolo">
+    <form id="form-emissao" class="etiqueta" autocomplete="off" novalidate>
+      <p id="emissao-produto" class="emissao-produto"></p>
+      <hr class="corte">
+      <div id="emissao-erro" class="erro" hidden></div>
+      <p id="emissao-offline" class="erro" hidden>Impressora offline. Confira o PC da cozinha antes de imprimir.</p>
+      <label>Modo de conservação</label>
+      <div id="emissao-modos" class="modos"></div>
+      <label>Quantidade</label>
+      <div class="contador">
+        <button id="emissao-menos" type="button" aria-label="Menos uma">−</button>
+        <output id="emissao-copias">1</output>
+        <button id="emissao-mais" type="button" aria-label="Mais uma">+</button>
+      </div>
+      <label>Manipulação</label>
+      <div class="alternancia">
+        <button id="emissao-agora" type="button" class="atual">Agora</button>
+        <button id="emissao-antes" type="button">Mais cedo</button>
+      </div>
+      <div id="bloco-hora" class="campo" hidden>
+        <label for="emissao-hora">Hora da manipulação</label>
+        <input id="emissao-hora" type="time">
+        <div class="dica">Até 24 horas atrás. Hora maior que agora conta como ontem.</div>
+      </div>
+      <div id="emissao-resumo" class="resumo"></div>
+      <div class="linha-botoes">
+        <button id="emissao-cancelar" class="botao neutro" type="button">Cancelar</button>
+        <button id="emissao-imprimir" class="botao" type="submit">Imprimir</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: quem esta emitindo (tablet) -->
+<div id="modal-responsavel" class="modal" hidden>
+  <div class="rolo">
+    <form id="form-responsavel" class="etiqueta" autocomplete="off" novalidate>
+      <h1>Quem está emitindo?</h1>
+      <hr class="corte">
+      <div id="responsavel-erro" class="erro" hidden></div>
+      <div id="responsavel-lista" class="chips nomes"></div>
+      <div id="bloco-pin-responsavel" class="campo" hidden>
+        <label id="responsavel-pin-rotulo" for="responsavel-pin">PIN</label>
+        <input id="responsavel-pin" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4">
+      </div>
+      <div class="linha-botoes">
+        <button id="responsavel-cancelar" class="botao neutro" type="button">Cancelar</button>
+        <button id="responsavel-confirmar" class="botao" type="submit" disabled>Confirmar</button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <!-- Modal: produto -->
 <div id="modal-produto" class="modal" hidden>

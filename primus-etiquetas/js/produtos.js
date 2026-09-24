@@ -1,5 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/produtos.js (v2)
+// PRIMUS ETIQUETAS - js/produtos.js (v3)
+// v3: dados de produtos/grupos compartilhados com a emissao (garantirDados); botao Fechar largura total
 // v2: filtros de grupo aparecem apos carregar produtos; botao Grupos junto do titulo;
 //     cozinha nao ve a barra de abas (so tem uma)
 // Fase 2c: produtos, grupos, busca, revisao e historico
@@ -27,6 +28,36 @@ let filtroGrupo = "";          // "" = todos
 let textoBusca = "";
 let produtoEmEdicao = null;    // null = novo
 let somenteLeitura = false;
+const ouvintes = new Set();    // outras telas (emissao) que querem saber quando os dados mudam
+
+function avisarOuvintes() {
+  for (const fn of ouvintes) { try { fn(); } catch (e) { /* ignora */ } }
+}
+
+export function obterProdutos() { return produtos; }
+export function obterGrupos() { return grupos; }
+export function nomeDoGrupo(id) { return nomeGrupo(id); }
+
+// Liga os ouvintes do Firestore (uma vez) e registra quem quer ser avisado
+export function garantirDados(aoMudar) {
+  if (aoMudar) ouvintes.add(aoMudar);
+  if (!cancelarGrupos) {
+    cancelarGrupos = observarGrupos(
+      (lista) => { grupos = lista; desenharFiltroGrupos(); desenharLista(); desenharGrupos(); avisarOuvintes(); },
+      (e) => aviso(traduzirErro(e))
+    );
+  }
+  if (!cancelarProdutos) {
+    cancelarProdutos = observarProdutos(
+      (lista) => { produtos = lista; desenharFiltroGrupos(); desenharLista(); desenharGrupos(); avisarOuvintes(); },
+      (e) => {
+        const alvo = $("lista-produtos");
+        if (alvo) alvo.innerHTML = `<p class="vazio">${escapar(traduzirErro(e))}</p>`;
+        aviso(traduzirErro(e));
+      }
+    );
+  }
+}
 
 // ---------------------------------------------------------------- permissoes
 function ehRevisor() {
@@ -112,22 +143,10 @@ export function abrirProdutos() {
   $("produtos-busca").value = "";
   mostrarTela("tela-produtos");
 
-  if (!cancelarGrupos) {
-    cancelarGrupos = observarGrupos(
-      (lista) => { grupos = lista; desenharFiltroGrupos(); desenharLista(); desenharGrupos(); },
-      (e) => aviso(traduzirErro(e))
-    );
-  }
-  if (!cancelarProdutos) {
-    $("lista-produtos").innerHTML = '<p class="vazio">Carregando...</p>';
-    cancelarProdutos = observarProdutos(
-      (lista) => { produtos = lista; desenharFiltroGrupos(); desenharLista(); desenharGrupos(); },
-      (e) => { $("lista-produtos").innerHTML = `<p class="vazio">${escapar(traduzirErro(e))}</p>`; }
-    );
-  } else {
-    desenharFiltroGrupos();
-    desenharLista();
-  }
+  if (!cancelarProdutos) $("lista-produtos").innerHTML = '<p class="vazio">Carregando...</p>';
+  garantirDados();
+  desenharFiltroGrupos();
+  desenharLista();
 }
 
 export function encerrarProdutos() {
@@ -135,6 +154,7 @@ export function encerrarProdutos() {
   if (cancelarProdutos) { cancelarProdutos(); cancelarProdutos = null; }
   grupos = [];
   produtos = [];
+  ouvintes.clear();
 }
 
 // ---------------------------------------------------------------- lista
@@ -234,6 +254,7 @@ async function abrirFormProduto(produto) {
   $("produto-salvar").hidden = somenteLeitura || (!novo && !produtoEmEdicao.ativo);
   $("produto-salvar").textContent = novo ? "Cadastrar" : "Salvar";
   $("produto-cancelar").textContent = somenteLeitura ? "Fechar" : "Cancelar";
+  $("produto-cancelar").parentElement.classList.toggle("unico", $("produto-salvar").hidden);
 
   const mostraAcoesRevisor = !novo && revisor;
   $("produto-acoes-revisor").hidden = !mostraAcoesRevisor;

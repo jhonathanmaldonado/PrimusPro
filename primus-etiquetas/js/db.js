@@ -1,9 +1,10 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/db.js (v3)
+// PRIMUS ETIQUETAS - js/db.js (v4)
 // Firebase: inicializacao, login usuario+PIN, perfil, setup inicial, usuarios
 // Projeto Firebase proprio: primus-etiquetas (independente dos outros sistemas)
 // v2: cadastro/edicao de usuarios (gestor e chef) e troca do proprio PIN
 // v3: grupos, produtos (validade em horas por modo de conservacao) e historico
+// v4: emissao de etiquetas (codigo sequencial + fila de impressao) e conferencia de PIN do responsavel
 // ============================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
@@ -12,7 +13,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch, collection, onSnapshot, serverTimestamp,
-  addDoc, getDocs, query, orderBy, limit
+  addDoc, getDocs, query, orderBy, limit, runTransaction, Timestamp
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -341,4 +342,67 @@ export async function lerHistorico(id, maximo) {
     const h = d.data();
     return { id: d.id, ...h, quando: h.quando && h.quando.toDate ? h.quando.toDate() : null };
   });
+}
+
+// ---------------------------------------------------------------- emissao
+export const URL_ETIQUETA = "https://gestao.primuspeixaria.com.br/primus-etiquetas/?e=";
+
+export function formatarCodigo(num) {
+  return String(num).padStart(6, "0");
+}
+
+// Confere o PIN de outra pessoa (tablet compartilhado) sem trocar quem esta logado
+export async function verificarPin(usuario, pin) {
+  try {
+    const cred = await signInWithEmailAndPassword(authSecundario, usuarioParaEmail(usuario), pinParaSenha(pin));
+    return cred.user.uid;
+  } catch (e) {
+    if (e.code === "auth/invalid-credential" || e.code === "auth/wrong-password" || e.code === "auth/user-not-found")
+      throw erroTela("PIN incorreto.");
+    throw e;
+  } finally {
+    try { await signOut(authSecundario); } catch (e2) { /* ignora */ }
+  }
+}
+
+// Reserva o proximo codigo e cria o pedido na fila, na mesma transacao.
+// e: { produto, modo:{id,nome}, horas, manipulacao:Date, copias, responsavel:{uid,nome} }
+export async function emitirEtiqueta(e) {
+  const refContador = doc(db, "config", "contador");
+  const manipMs = e.manipulacao.getTime();
+  return runTransaction(db, async (t) => {
+    const snap = await t.get(refContador);
+    const num = (snap.exists() ? snap.data().ultimo : 0) + 1;
+    const codigo = formatarCodigo(num);
+    t.set(refContador, { ultimo: num, atualizadoEm: serverTimestamp() });
+    t.set(doc(db, "filaImpressao", String(num)), {
+      status: "pendente",
+      tipo: "etiqueta",
+      codigoNum: num,
+      codigo,
+      copias: e.copias,
+      produtoId: e.produto.id,
+      modo: e.modo.id,
+      criadoEm: serverTimestamp(),
+      solicitadoEm: Timestamp.fromMillis(Date.now()),
+      emitidoPor: auth.currentUser.uid,
+      dados: {
+        produto: e.produto.nome,
+        conservacao: e.modo.nome,
+        manipulacaoEm: Timestamp.fromMillis(manipMs),
+        validadeEm: Timestamp.fromMillis(manipMs + e.horas * 3600000),
+        responsavel: e.responsavel.nome,
+        responsavelUid: e.responsavel.uid,
+        lote: codigo,
+        qr: URL_ETIQUETA + num
+      }
+    });
+    return { num, codigo };
+  });
+}
+
+export function observarEtiqueta(num, callback) {
+  return onSnapshot(doc(db, "filaImpressao", String(num)), (snap) => {
+    callback(snap.exists() ? snap.data() : null);
+  }, () => callback(null));
 }

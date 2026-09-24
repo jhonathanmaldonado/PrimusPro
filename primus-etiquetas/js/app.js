@@ -1,6 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/app.js (v6)
-// v6: so muda a versao exibida (ajustes em produtos.js v2 e index)
+// PRIMUS ETIQUETAS - js/app.js (v7)
+// v7: Fase 3 (emissao em js/emissao.js) e configuracao do aparelho (tablet da cozinha x celular pessoal)
 // v5: Fase 2c (produtos e grupos em js/produtos.js); utilitarios de tela em js/ui.js
 // v4: usuarios separados em abas Ativos / Desativados
 // v3: mensagem de usuario desativado nao some mais; modal nao corta o titulo
@@ -16,8 +16,11 @@ import {
   $, mostrarTela, mostrarErro, ocupado, abrirModal, fecharModal, fecharTodosModais, aviso, escapar, focarSemRolar
 } from "./ui.js";
 import { configurarProdutos, abrirProdutos, encerrarProdutos } from "./produtos.js";
+import {
+  configurarEmissao, abrirEmitir, encerrarEmissao, definirModoAparelho, modoAparelhoSalvo
+} from "./emissao.js";
 
-const VERSAO_APP = "v6";
+const VERSAO_APP = "v7";
 const CHAVE_ULTIMO_USUARIO = "primusEtiquetas.ultimoUsuario";
 const ONLINE_ATE_SEG = 150; // agente manda sinal a cada 60 s
 
@@ -138,6 +141,7 @@ function abrirInicio(perfil) {
   $("inicio-nome").textContent = perfil.nome;
   $("inicio-papel").textContent = NOMES_PAPEL[perfil.papel] || perfil.papel;
 
+  desenharAparelho();
   const cartaoUsuarios = $("acao-usuarios");
   if (podeGerenciarUsuarios(perfil)) {
     cartaoUsuarios.hidden = false;
@@ -157,11 +161,44 @@ function abrirInicio(perfil) {
   desenharStatus();
 }
 
+function desenharAparelho() {
+  const p = perfilAtual;
+  const cartao = $("acao-aparelho");
+  const podeConfigurar = !!p && (p.papel === "gestor" || p.papel === "chef");
+  cartao.hidden = !podeConfigurar;
+  if (!podeConfigurar) return;
+  const tablet = modoAparelhoSalvo() === "tablet";
+  $("aparelho-titulo").textContent = tablet ? "Este aparelho: tablet da cozinha" : "Este aparelho: celular pessoal";
+  $("aparelho-texto").textContent = tablet
+    ? "Cada sequência de etiquetas pede o PIN de quem está emitindo. Toque para mudar para celular pessoal."
+    : "As etiquetas saem no seu nome, sem pedir PIN. Toque para transformar em tablet da cozinha.";
+}
+
+function trocarModoAparelho() {
+  const tabletAgora = modoAparelhoSalvo() === "tablet";
+  const msg = tabletAgora
+    ? "Transformar este aparelho em celular pessoal? As etiquetas vão sair no nome de quem está logado, sem pedir PIN."
+    : "Transformar este aparelho em tablet da cozinha? Cada sequência de etiquetas vai pedir o PIN de quem está emitindo.";
+  if (!window.confirm(msg)) return;
+  definirModoAparelho(!tabletAgora);
+  desenharAparelho();
+  aviso(tabletAgora ? "Aparelho definido como celular pessoal." : "Aparelho definido como tablet da cozinha.");
+}
+
+// Online = sinal do agente mais recente com menos de ONLINE_ATE_SEG
+function impressoraOnline() {
+  const comSinal = agentesAtuais.filter((a) => a.ultimoSinal);
+  if (!comSinal.length) return false;
+  const maisRecente = Math.max(...comSinal.map((a) => a.ultimoSinal.getTime()));
+  return (Date.now() - maisRecente) / 1000 <= ONLINE_ATE_SEG;
+}
+
 function fecharSessaoLocal() {
   perfilAtual = null;
   if (cancelarAgentes) { cancelarAgentes(); cancelarAgentes = null; }
   if (cancelarUsuarios) { cancelarUsuarios(); cancelarUsuarios = null; }
   encerrarProdutos();
+  encerrarEmissao();
   clearInterval(timerStatus);
   agentesAtuais = [];
   usuariosAtuais = [];
@@ -427,6 +464,9 @@ async function iniciar() {
   $("botao-meu-pin").addEventListener("click", abrirMeuPin);
   $("acao-usuarios").addEventListener("click", abrirUsuarios);
   $("acao-produtos").addEventListener("click", abrirProdutos);
+  $("acao-emitir").addEventListener("click", abrirEmitir);
+  $("acao-aparelho").addEventListener("click", trocarModoAparelho);
+  configurarEmissao({ obterPerfil: () => perfilAtual, impressoraOnline, voltar: () => abrirInicio(perfilAtual) });
   configurarProdutos({ obterPerfil: () => perfilAtual, voltar: () => abrirInicio(perfilAtual) });
   $("usuarios-voltar").addEventListener("click", () => abrirInicio(perfilAtual));
   $("usuarios-novo").addEventListener("click", () => abrirFormUsuario(null));
