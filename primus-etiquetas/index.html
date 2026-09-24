@@ -245,6 +245,98 @@
   }
   .aba.atual { background: #fff; color: var(--bordo); box-shadow: 0 1px 3px rgba(60, 0, 30, .15); }
   .aba:focus-visible { outline: 3px solid var(--bordo); outline-offset: 1px; }
+  .abas.tres { grid-template-columns: 1fr 1fr 1fr; }
+  .abas.tres .aba { font-size: 15px; }
+
+  /* ---------- produtos ---------- */
+  .busca {
+    font-size: 20px;
+    padding: 14px 16px 14px 48px;
+    background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='%236B5F64' stroke-width='2.4' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M20 20l-4.5-4.5'/%3E%3C/svg%3E") no-repeat 16px center;
+    margin-bottom: 12px;
+  }
+  .chips {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 2px 2px 10px;
+    margin-bottom: 6px;
+    scrollbar-width: thin;
+  }
+  .chip {
+    flex: 0 0 auto;
+    border: 2px solid var(--linha);
+    background: #fff;
+    border-radius: 999px;
+    padding: 9px 16px;
+    font: 600 15px var(--texto);
+    color: var(--tinta);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .chip.atual { background: var(--bordo); border-color: var(--bordo); color: #fff; }
+  .linha-produto {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: #fff;
+    border: 2px solid var(--linha);
+    border-radius: 14px;
+    padding: 12px 16px 14px;
+    font: inherit;
+    color: var(--tinta);
+    cursor: pointer;
+  }
+  .linha-produto:hover { border-color: var(--bordo); }
+  .linha-produto.inativo { background: #F1ECEE; }
+  .linha-produto.inativo .nome-produto { text-decoration: line-through; color: var(--tinta-suave); }
+  .nome-produto { display: block; font-weight: 600; font-size: 19px; line-height: 1.25; }
+  .grupo-produto { display: block; color: var(--tinta-suave); font-size: 14px; margin: 2px 0 8px; }
+  .pilulas { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pilula { font-size: 13px; font-weight: 700; padding: 4px 10px; border-radius: 8px; }
+  .modo-congelado { background: #E3EEF9; color: #1F4E82; }
+  .modo-resfriado { background: #E1F3EE; color: #1B6150; }
+  .modo-ambiente { background: #F7EBD8; color: #7A4B0B; }
+  .pilula.revisar { background: var(--dourado); color: var(--bordo-escuro); }
+
+  .validades { display: grid; gap: 10px; margin-bottom: 16px; }
+  .linha-validade {
+    display: grid;
+    grid-template-columns: 1fr 96px 110px;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 12px;
+  }
+  .linha-validade span { font-weight: 700; font-size: 16px; }
+  .linha-validade input, .linha-validade select { font-size: 20px; padding: 10px 10px; text-align: center; }
+  .linha-validade.modo-congelado, .linha-validade.modo-resfriado, .linha-validade.modo-ambiente { color: inherit; }
+  .aviso-caixa {
+    background: #FFF6D6;
+    border-left: 5px solid var(--dourado);
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 15px;
+    margin: 0 0 16px;
+  }
+  .acoes-revisor { display: grid; gap: 10px; margin-top: 12px; }
+  .botao.aprovar { background: var(--ok); color: #fff; }
+  .botao.aprovar:hover { background: #17663F; }
+  .botao.perigo { background: #fff; color: var(--alerta); border: 2px solid var(--alerta); }
+  .botao.perigo:hover { background: #FDECEA; }
+  .historico { margin-top: 20px; border-top: 2px dashed var(--linha); padding-top: 14px; }
+  .historico h2 { font-family: var(--titulo); font-size: 22px; margin: 0 0 8px; }
+  .historico ul { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+  .historico > ul > li { padding: 8px 0; border-bottom: 1px solid var(--linha); }
+  .historico ul ul { margin-top: 4px; padding-left: 12px; color: var(--tinta-suave); }
+  .historico .quando { display: block; color: var(--tinta-suave); font-size: 13px; }
+  .vazio-hist { color: var(--tinta-suave); padding: 6px 0; }
+  .lista-grupos { list-style: none; margin: 0 0 16px; padding: 0; max-height: 45vh; overflow-y: auto; }
+  .lista-grupos li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--linha); }
+  .lista-grupos small { color: var(--tinta-suave); }
+  .botao-link { background: none; border: 0; color: var(--bordo); font: 600 15px var(--texto); cursor: pointer; padding: 8px; }
+  .linha-grupo-novo { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+  .linha-grupo-novo .botao { width: auto; padding: 0 18px; min-height: 56px; font-size: 20px; }
   .linha-usuario {
     display: grid;
     grid-template-columns: 1fr auto;
@@ -415,7 +507,7 @@
       </div>
       <div class="acoes">
         <div class="acao"><strong>Emitir etiqueta</strong>Em construção</div>
-        <div class="acao"><strong>Produtos</strong>Em construção</div>
+        <button id="acao-produtos" class="acao" type="button"><strong>Produtos</strong>Cadastro, grupos e prazos de validade</button>
         <button id="acao-usuarios" class="acao" type="button" hidden><strong>Usuários</strong>Cadastrar funcionários e definir quem pode fazer o quê</button>
       </div>
     </div>
@@ -442,6 +534,98 @@
     </div>
   </main>
 </section>
+
+<!-- Produtos -->
+<section id="tela-produtos" class="tela" hidden>
+  <header class="topo">
+    <button id="produtos-voltar" class="botao-sec" type="button">Voltar</button>
+    <button id="produtos-grupos" class="botao-sec" type="button" hidden>Grupos</button>
+  </header>
+  <main class="conteudo">
+    <div class="largura">
+      <div class="barra">
+        <h2>Produtos</h2>
+        <button id="produtos-novo" class="botao compacto" type="button">Novo produto</button>
+      </div>
+      <input id="produtos-busca" class="busca" type="search" placeholder="Buscar produto" autocomplete="off" spellcheck="false">
+      <div id="produtos-abas" class="abas" role="tablist">
+        <button id="aba-ativos-prod" class="aba atual" type="button" role="tab" data-aba="ativos">Ativos</button>
+        <button id="aba-revisao" class="aba" type="button" role="tab" data-aba="revisao" hidden>Revisar</button>
+        <button id="aba-excluidos" class="aba" type="button" role="tab" data-aba="excluidos" hidden>Excluídos</button>
+      </div>
+      <div id="produtos-filtro-grupos" class="chips"></div>
+      <div id="lista-produtos" class="lista"></div>
+    </div>
+  </main>
+</section>
+
+<!-- Modal: produto -->
+<div id="modal-produto" class="modal" hidden>
+  <div class="rolo">
+    <form id="form-produto" class="etiqueta" autocomplete="off" novalidate>
+      <h1 id="produto-titulo">Novo produto</h1>
+      <hr class="corte">
+      <div id="produto-erro" class="erro" hidden></div>
+      <p id="produto-dica-cozinha" class="aviso-caixa" hidden>O produto já pode ser usado. A chef confere os prazos depois.</p>
+      <p id="produto-dica-leitura" class="aviso-caixa" hidden>Só o gestor e a chef alteram produtos. Viu algo errado? Avise a chef.</p>
+      <p id="produto-sem-grupos" class="aviso-caixa" hidden>Ainda não há grupos. O gestor ou a chef precisa criar pelo botão Grupos.</p>
+      <div class="campo">
+        <label for="produto-nome">Nome</label>
+        <input id="produto-nome" type="text" maxlength="60" autocapitalize="characters">
+      </div>
+      <div class="campo">
+        <label for="produto-grupo">Grupo</label>
+        <select id="produto-grupo"></select>
+      </div>
+      <label>Validade por modo de conservação</label>
+      <p class="dica" style="margin:0 0 8px">Deixe em branco o modo que não se aplica.</p>
+      <div class="validades">
+        <div class="linha-validade modo-congelado"><span>Congelado</span>
+          <input id="val-congelado" type="text" inputmode="numeric" maxlength="4" aria-label="Validade congelado">
+          <select id="uni-congelado" aria-label="Unidade congelado"><option value="dias">dias</option><option value="horas">horas</option></select>
+        </div>
+        <div class="linha-validade modo-resfriado"><span>Resfriado</span>
+          <input id="val-resfriado" type="text" inputmode="numeric" maxlength="4" aria-label="Validade resfriado">
+          <select id="uni-resfriado" aria-label="Unidade resfriado"><option value="dias">dias</option><option value="horas">horas</option></select>
+        </div>
+        <div class="linha-validade modo-ambiente"><span>Temp. ambiente</span>
+          <input id="val-ambiente" type="text" inputmode="numeric" maxlength="4" aria-label="Validade temperatura ambiente">
+          <select id="uni-ambiente" aria-label="Unidade ambiente"><option value="dias">dias</option><option value="horas">horas</option></select>
+        </div>
+      </div>
+      <div class="linha-botoes">
+        <button id="produto-cancelar" class="botao neutro" type="button">Cancelar</button>
+        <button id="produto-salvar" class="botao" type="submit">Cadastrar</button>
+      </div>
+      <div id="produto-acoes-revisor" class="acoes-revisor" hidden>
+        <button id="produto-revisado" class="botao aprovar" type="button">Salvar e marcar como revisado</button>
+        <button id="produto-excluir" class="botao perigo" type="button">Excluir produto</button>
+      </div>
+      <div id="produto-historico" class="historico" hidden>
+        <h2>Histórico</h2>
+        <ul id="produto-historico-lista"></ul>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: grupos -->
+<div id="modal-grupos" class="modal" hidden>
+  <div class="rolo">
+    <form id="form-grupo" class="etiqueta" autocomplete="off" novalidate>
+      <h1>Grupos</h1>
+      <hr class="corte">
+      <div id="grupo-erro" class="erro" hidden></div>
+      <ul id="lista-grupos" class="lista-grupos"></ul>
+      <label for="grupo-nome">Novo grupo</label>
+      <div class="linha-grupo-novo campo">
+        <input id="grupo-nome" type="text" maxlength="40">
+        <button id="grupo-adicionar" class="botao" type="submit">Criar</button>
+      </div>
+      <button id="grupos-fechar" class="botao neutro" type="button">Fechar</button>
+    </form>
+  </div>
+</div>
 
 <!-- Modal: novo/editar usuario -->
 <div id="modal-usuario" class="modal" hidden>

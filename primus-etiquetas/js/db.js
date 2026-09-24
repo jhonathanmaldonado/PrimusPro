@@ -1,8 +1,9 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/db.js (v2)
+// PRIMUS ETIQUETAS - js/db.js (v3)
 // Firebase: inicializacao, login usuario+PIN, perfil, setup inicial, usuarios
 // Projeto Firebase proprio: primus-etiquetas (independente dos outros sistemas)
 // v2: cadastro/edicao de usuarios (gestor e chef) e troca do proprio PIN
+// v3: grupos, produtos (validade em horas por modo de conservacao) e historico
 // ============================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
@@ -10,7 +11,8 @@ import {
   signOut, onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential, updatePassword
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import {
-  getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch, collection, onSnapshot, serverTimestamp
+  getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch, collection, onSnapshot, serverTimestamp,
+  addDoc, getDocs, query, orderBy, limit
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -232,4 +234,111 @@ export function observarAgentes(callback, callbackErro) {
     });
     callback(lista);
   }, callbackErro);
+}
+
+// ---------------------------------------------------------------- texto para busca
+export function normalizarBusca(texto) {
+  return String(texto || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+// ---------------------------------------------------------------- grupos
+export function observarGrupos(callback, callbackErro) {
+  return onSnapshot(collection(db, "grupos"), (snap) => {
+    const lista = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    lista.sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"));
+    callback(lista);
+  }, callbackErro);
+}
+
+export function criarGrupo(nome) {
+  return addDoc(collection(db, "grupos"), {
+    nome: nome.trim(),
+    nomeBusca: normalizarBusca(nome),
+    criadoEm: serverTimestamp(),
+    criadoPor: auth.currentUser.uid
+  });
+}
+
+export function renomearGrupo(id, nome) {
+  return updateDoc(doc(db, "grupos", id), {
+    nome: nome.trim(),
+    nomeBusca: normalizarBusca(nome),
+    atualizadoEm: serverTimestamp(),
+    atualizadoPor: auth.currentUser.uid
+  });
+}
+
+// ---------------------------------------------------------------- produtos
+// Modos de conservacao. A validade e SEMPRE guardada em horas (o "quente" futuro vence em horas).
+export const MODOS = [
+  { id: "congelado", nome: "Congelado" },
+  { id: "resfriado", nome: "Resfriado" },
+  { id: "ambiente", nome: "Temp. ambiente" }
+];
+
+export function observarProdutos(callback, callbackErro) {
+  return onSnapshot(collection(db, "produtos"), (snap) => {
+    const lista = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    lista.sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"));
+    callback(lista);
+  }, callbackErro);
+}
+
+function registroHistorico(perfil, acao, mudancas) {
+  return {
+    quando: serverTimestamp(),
+    autorUid: auth.currentUser.uid,
+    autorNome: perfil.nome,
+    acao,
+    mudancas: mudancas || []
+  };
+}
+
+// dados: { nome, grupoId, validades: {congelado, resfriado, ambiente} } (horas ou null)
+export async function criarProduto(dados, perfil, mudancas) {
+  const revisor = perfil.papel === "gestor" || perfil.papel === "chef";
+  const ref = doc(collection(db, "produtos"));
+  const lote = writeBatch(db);
+  lote.set(ref, {
+    nome: dados.nome.trim(),
+    nomeBusca: normalizarBusca(dados.nome),
+    grupoId: dados.grupoId,
+    validades: dados.validades,
+    ativo: true,
+    pendenteRevisao: !revisor,
+    criadoEm: serverTimestamp(),
+    criadoPor: auth.currentUser.uid,
+    criadoPorNome: perfil.nome
+  });
+  lote.set(doc(collection(db, "produtos", ref.id, "historico")),
+    registroHistorico(perfil, revisor ? "criou" : "criou (aguardando revisão)", mudancas));
+  await lote.commit();
+  return ref.id;
+}
+
+// campos: qualquer combinacao de nome, grupoId, validades, ativo, pendenteRevisao
+export async function atualizarProduto(id, campos, perfil, acao, mudancas) {
+  const dados = { ...campos };
+  if (dados.nome !== undefined) {
+    dados.nome = dados.nome.trim();
+    dados.nomeBusca = normalizarBusca(dados.nome);
+  }
+  dados.atualizadoEm = serverTimestamp();
+  dados.atualizadoPor = auth.currentUser.uid;
+  dados.atualizadoPorNome = perfil.nome;
+  const lote = writeBatch(db);
+  lote.update(doc(db, "produtos", id), dados);
+  lote.set(doc(collection(db, "produtos", id, "historico")), registroHistorico(perfil, acao, mudancas));
+  await lote.commit();
+}
+
+export async function lerHistorico(id, maximo) {
+  const q = query(collection(db, "produtos", id, "historico"), orderBy("quando", "desc"), limit(maximo || 20));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => {
+    const h = d.data();
+    return { id: d.id, ...h, quando: h.quando && h.quando.toDate ? h.quando.toDate() : null };
+  });
 }

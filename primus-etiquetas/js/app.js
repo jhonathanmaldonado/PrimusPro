@@ -1,5 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/app.js (v4)
+// PRIMUS ETIQUETAS - js/app.js (v5)
+// v5: Fase 2c (produtos e grupos em js/produtos.js); utilitarios de tela em js/ui.js
 // v4: usuarios separados em abas Ativos / Desativados
 // v3: mensagem de usuario desativado nao some mais; modal nao corta o titulo
 // Fase 2a: setup inicial, login usuario+PIN, tela inicial com status da impressora
@@ -10,14 +11,17 @@ import {
   setupFeito, fazerSetup, entrar, sair, observarSessao, carregarPerfil, observarAgentes,
   observarUsuarios, criarUsuario, atualizarUsuario, trocarMeuPin
 } from "./db.js";
+import {
+  $, mostrarTela, mostrarErro, ocupado, abrirModal, fecharModal, fecharTodosModais, aviso, escapar, focarSemRolar
+} from "./ui.js";
+import { configurarProdutos, abrirProdutos, encerrarProdutos } from "./produtos.js";
 
-const VERSAO_APP = "v4";
+const VERSAO_APP = "v5";
 const CHAVE_ULTIMO_USUARIO = "primusEtiquetas.ultimoUsuario";
 const ONLINE_ATE_SEG = 150; // agente manda sinal a cada 60 s
 
 const NOMES_PAPEL = { gestor: "Gestor", chef: "Chef", cozinha: "Cozinha" };
 
-const $ = (id) => document.getElementById(id);
 
 let perfilAtual = null;
 let cancelarAgentes = null;
@@ -49,59 +53,13 @@ function podeEditarUsuario(p, alvo) {
   return false;
 }
 
-// ---------------------------------------------------------------- utilitarios de tela
-function mostrarTela(id) {
-  for (const t of document.querySelectorAll(".tela")) t.hidden = t.id !== id;
-  window.scrollTo(0, 0);
-}
-
-function mostrarErro(idCaixa, msg) {
-  const el = $(idCaixa);
-  el.textContent = msg || "";
-  el.hidden = !msg;
-}
-
-function ocupado(botao, sim, textoOcupado) {
-  if (sim) {
-    botao.dataset.texto = botao.textContent;
-    botao.textContent = textoOcupado || "Aguarde...";
-    botao.disabled = true;
-  } else {
-    botao.textContent = botao.dataset.texto || botao.textContent;
-    botao.disabled = false;
-  }
-}
-
-function abrirModal(id) {
-  $(id).hidden = false;
-  document.body.classList.add("com-modal");
-}
-
-function fecharModal(id) {
-  $(id).hidden = true;
-  if (!document.querySelector(".modal:not([hidden])")) document.body.classList.remove("com-modal");
-}
-
-let timerAviso = null;
-function aviso(msg) {
-  const el = $("aviso");
-  el.textContent = msg;
-  el.hidden = false;
-  clearTimeout(timerAviso);
-  timerAviso = setTimeout(() => { el.hidden = true; }, 3000);
-}
-
+// ---------------------------------------------------------------- memoria do ultimo usuario
 function lerUltimoUsuario() {
   try { return localStorage.getItem(CHAVE_ULTIMO_USUARIO) || ""; } catch (e) { return ""; }
 }
 
 function gravarUltimoUsuario(usuario) {
   try { localStorage.setItem(CHAVE_ULTIMO_USUARIO, usuario); } catch (e) { /* ignora */ }
-}
-
-function escapar(texto) {
-  return String(texto == null ? "" : texto)
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 // ---------------------------------------------------------------- setup
@@ -202,11 +160,11 @@ function fecharSessaoLocal() {
   perfilAtual = null;
   if (cancelarAgentes) { cancelarAgentes(); cancelarAgentes = null; }
   if (cancelarUsuarios) { cancelarUsuarios(); cancelarUsuarios = null; }
+  encerrarProdutos();
   clearInterval(timerStatus);
   agentesAtuais = [];
   usuariosAtuais = [];
-  for (const m of document.querySelectorAll(".modal")) m.hidden = true;
-  document.body.classList.remove("com-modal");
+  fecharTodosModais();
 }
 
 function tempoDesde(data) {
@@ -362,8 +320,7 @@ function abrirFormUsuario(usuario) {
 
   $("usuario-salvar").textContent = novo ? "Cadastrar" : "Salvar alterações";
   abrirModal("modal-usuario");
-  $("modal-usuario").scrollTop = 0;
-  $("usuario-nome").focus({ preventScroll: true });
+  focarSemRolar("usuario-nome");
 }
 
 async function salvarUsuario(ev) {
@@ -432,8 +389,7 @@ function abrirMeuPin() {
   $("pin-novo").value = "";
   $("pin-novo2").value = "";
   abrirModal("modal-pin");
-  $("modal-pin").scrollTop = 0;
-  $("pin-atual").focus({ preventScroll: true });
+  focarSemRolar("pin-atual");
 }
 
 async function salvarMeuPin(ev) {
@@ -469,6 +425,8 @@ async function iniciar() {
   $("botao-sair").addEventListener("click", clicarSair);
   $("botao-meu-pin").addEventListener("click", abrirMeuPin);
   $("acao-usuarios").addEventListener("click", abrirUsuarios);
+  $("acao-produtos").addEventListener("click", abrirProdutos);
+  configurarProdutos({ obterPerfil: () => perfilAtual, voltar: () => abrirInicio(perfilAtual) });
   $("usuarios-voltar").addEventListener("click", () => abrirInicio(perfilAtual));
   $("usuarios-novo").addEventListener("click", () => abrirFormUsuario(null));
   $("lista-usuarios").addEventListener("click", clicarListaUsuarios);
