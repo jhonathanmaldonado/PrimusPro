@@ -1,6 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/app.js (v8)
-// v8: so versao (correcao de estilo no index: nome do usuario no topo)
+// PRIMUS ETIQUETAS - js/app.js (v9)
+// v9: importacao da planilha (js/importacao.js)
 // v7: Fase 3 (emissao em js/emissao.js) e configuracao do aparelho (tablet da cozinha x celular pessoal)
 // v5: Fase 2c (produtos e grupos em js/produtos.js); utilitarios de tela em js/ui.js
 // v4: usuarios separados em abas Ativos / Desativados
@@ -17,11 +17,12 @@ import {
   $, mostrarTela, mostrarErro, ocupado, abrirModal, fecharModal, fecharTodosModais, aviso, escapar, focarSemRolar
 } from "./ui.js";
 import { configurarProdutos, abrirProdutos, encerrarProdutos } from "./produtos.js";
+import { configurarImportacao, abrirImportacao } from "./importacao.js";
 import {
   configurarEmissao, abrirEmitir, encerrarEmissao, definirModoAparelho, modoAparelhoSalvo
 } from "./emissao.js";
 
-const VERSAO_APP = "v8";
+const VERSAO_APP = "v9";
 const CHAVE_ULTIMO_USUARIO = "primusEtiquetas.ultimoUsuario";
 const ONLINE_ATE_SEG = 150; // agente manda sinal a cada 60 s
 
@@ -466,6 +467,8 @@ async function iniciar() {
   $("acao-usuarios").addEventListener("click", abrirUsuarios);
   $("acao-produtos").addEventListener("click", abrirProdutos);
   $("acao-emitir").addEventListener("click", abrirEmitir);
+  $("produtos-importar").addEventListener("click", abrirImportacao);
+  configurarImportacao({ obterPerfil: () => perfilAtual });
   $("acao-aparelho").addEventListener("click", trocarModoAparelho);
   configurarEmissao({ obterPerfil: () => perfilAtual, impressoraOnline, voltar: () => abrirInicio(perfilAtual) });
   configurarProdutos({ obterPerfil: () => perfilAtual, voltar: () => abrirInicio(perfilAtual) });

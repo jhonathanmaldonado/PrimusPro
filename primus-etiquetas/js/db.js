@@ -1,10 +1,11 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/db.js (v4)
+// PRIMUS ETIQUETAS - js/db.js (v5)
 // Firebase: inicializacao, login usuario+PIN, perfil, setup inicial, usuarios
 // Projeto Firebase proprio: primus-etiquetas (independente dos outros sistemas)
 // v2: cadastro/edicao de usuarios (gestor e chef) e troca do proprio PIN
 // v3: grupos, produtos (validade em horas por modo de conservacao) e historico
 // v4: emissao de etiquetas (codigo sequencial + fila de impressao) e conferencia de PIN do responsavel
+// v5: importacao em lote de grupos e produtos (planilha revisada)
 // ============================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
@@ -405,4 +406,67 @@ export function observarEtiqueta(num, callback) {
   return onSnapshot(doc(db, "filaImpressao", String(num)), (snap) => {
     callback(snap.exists() ? snap.data() : null);
   }, () => callback(null));
+}
+
+// ---------------------------------------------------------------- importacao em lote
+// plano: { gruposNovos: [nome], mapaGrupos: {nomeBusca: id}, itens: [{acao:"criar"|"atualizar", id?, nome, grupo, validades, mudancas}] }
+const POR_LOTE = 50; // cada produto = 2 gravacoes (produto + historico); lotes pequenos por seguranca
+
+export async function executarImportacao(plano, perfil, aoProgredir) {
+  const uid = auth.currentUser.uid;
+  const mapaGrupos = { ...plano.mapaGrupos };
+
+  if (plano.gruposNovos.length) {
+    const lote = writeBatch(db);
+    for (const nome of plano.gruposNovos) {
+      const ref = doc(collection(db, "grupos"));
+      lote.set(ref, { nome, nomeBusca: normalizarBusca(nome), criadoEm: serverTimestamp(), criadoPor: uid });
+      mapaGrupos[normalizarBusca(nome)] = ref.id;
+    }
+    await lote.commit();
+  }
+
+  const itens = plano.itens;
+  let feitos = 0;
+  for (let i = 0; i < itens.length; i += POR_LOTE) {
+    const lote = writeBatch(db);
+    for (const item of itens.slice(i, i + POR_LOTE)) {
+      const grupoId = mapaGrupos[normalizarBusca(item.grupo)];
+      if (!grupoId) throw erroTela(`Grupo não encontrado: ${item.grupo}`);
+      if (item.acao === "criar") {
+        const ref = doc(collection(db, "produtos"));
+        lote.set(ref, {
+          nome: item.nome,
+          nomeBusca: normalizarBusca(item.nome),
+          grupoId,
+          validades: item.validades,
+          ativo: true,
+          pendenteRevisao: false,
+          criadoEm: serverTimestamp(),
+          criadoPor: uid,
+          criadoPorNome: perfil.nome
+        });
+        lote.set(doc(collection(db, "produtos", ref.id, "historico")),
+          registroHistorico(perfil, "importou da planilha revisada", item.mudancas));
+      } else {
+        lote.update(doc(db, "produtos", item.id), {
+          nome: item.nome,
+          nomeBusca: normalizarBusca(item.nome),
+          grupoId,
+          validades: item.validades,
+          ativo: true,
+          pendenteRevisao: false,
+          atualizadoEm: serverTimestamp(),
+          atualizadoPor: uid,
+          atualizadoPorNome: perfil.nome
+        });
+        lote.set(doc(collection(db, "produtos", item.id, "historico")),
+          registroHistorico(perfil, "atualizou pela importação da planilha", item.mudancas));
+      }
+    }
+    await lote.commit();
+    feitos = Math.min(itens.length, i + POR_LOTE);
+    if (aoProgredir) aoProgredir(feitos, itens.length);
+  }
+  return feitos;
 }

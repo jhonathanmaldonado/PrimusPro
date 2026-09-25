@@ -1,5 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/produtos.js (v3)
+// PRIMUS ETIQUETAS - js/produtos.js (v4)
+// v4: botao Importar (so gestor)
 // v3: dados de produtos/grupos compartilhados com a emissao (garantirDados); botao Fechar largura total
 // v2: filtros de grupo aparecem apos carregar produtos; botao Grupos junto do titulo;
 //     cozinha nao ve a barra de abas (so tem uma)
@@ -133,6 +134,7 @@ export function configurarProdutos({ obterPerfil, voltar }) {
 export function abrirProdutos() {
   const revisor = ehRevisor();
   $("produtos-grupos").hidden = !revisor;
+  $("produtos-importar").hidden = !(getPerfil() && getPerfil().papel === "gestor");
   $("aba-revisao").hidden = !revisor;
   $("aba-excluidos").hidden = !revisor;
   $("produtos-abas").hidden = !revisor;

@@ -339,6 +339,11 @@
   .botao-link { background: none; border: 0; color: var(--bordo); font: 600 15px var(--texto); cursor: pointer; padding: 8px; }
   .linha-grupo-novo { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
   .linha-botoes.unico { grid-template-columns: 1fr; }
+  .resumo-importacao { font-size: 16px; }
+  .resumo-importacao ul { margin: 6px 0 12px; padding-left: 20px; }
+  .lista-mudancas { max-height: 30vh; overflow-y: auto; }
+  .lista-mudancas li { margin-bottom: 8px; }
+  input[type="file"] { font-size: 16px; padding: 12px; }
 
   /* ---------- home: cartoes especiais ---------- */
   button.acao.principal { background: var(--bordo); border-color: var(--bordo); border-left-color: var(--dourado); color: rgba(255,255,255,.85); padding: 22px 18px; }
@@ -613,6 +618,7 @@
       <div class="barra">
         <h2>Produtos</h2>
         <div class="barra-botoes">
+          <button id="produtos-importar" class="botao compacto neutro" type="button" hidden>Importar</button>
           <button id="produtos-grupos" class="botao compacto neutro" type="button" hidden>Grupos</button>
           <button id="produtos-novo" class="botao compacto" type="button">Novo produto</button>
         </div>
@@ -752,6 +758,28 @@
         <ul id="produto-historico-lista"></ul>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Modal: importacao (so gestor) -->
+<div id="modal-importar" class="modal" hidden>
+  <div class="rolo">
+    <div class="etiqueta">
+      <h1>Importar produtos</h1>
+      <hr class="corte">
+      <div id="importar-erro" class="erro" hidden></div>
+      <div class="campo">
+        <label for="importar-arquivo">Arquivo de importação (.json)</label>
+        <input id="importar-arquivo" type="file" accept=".json,application/json">
+        <div class="dica">Nada é gravado até você confirmar.</div>
+      </div>
+      <div id="importar-resumo" class="resumo-importacao"></div>
+      <p id="importar-progresso" class="dica"></p>
+      <div class="linha-botoes">
+        <button id="importar-cancelar" class="botao neutro" type="button">Cancelar</button>
+        <button id="importar-confirmar" class="botao" type="button" disabled>Importar</button>
+      </div>
+    </div>
   </div>
 </div>
 
