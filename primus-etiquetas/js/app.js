@@ -1,6 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/app.js (v9)
-// v9: importacao da planilha (js/importacao.js)
+// PRIMUS ETIQUETAS - js/app.js (v10)
+// v10: Fase 4 (historico e reimpressao em js/historico.js); QR da etiqueta abre o detalhe (?e=NUM)
 // v7: Fase 3 (emissao em js/emissao.js) e configuracao do aparelho (tablet da cozinha x celular pessoal)
 // v5: Fase 2c (produtos e grupos em js/produtos.js); utilitarios de tela em js/ui.js
 // v4: usuarios separados em abas Ativos / Desativados
@@ -18,11 +18,20 @@ import {
 } from "./ui.js";
 import { configurarProdutos, abrirProdutos, encerrarProdutos } from "./produtos.js";
 import { configurarImportacao, abrirImportacao } from "./importacao.js";
+import { configurarHistorico, abrirHistorico, abrirDetalhe, encerrarHistorico } from "./historico.js";
+
+// QR da etiqueta: ?e=NUM abre o detalhe depois do login
+let etiquetaDoQr = null;
+(function lerQr() {
+  const n = parseInt(new URLSearchParams(window.location.search).get("e"), 10);
+  if (Number.isInteger(n) && n > 0) etiquetaDoQr = n;
+  if (window.location.search) window.history.replaceState(null, "", window.location.pathname);
+})();
 import {
   configurarEmissao, abrirEmitir, encerrarEmissao, definirModoAparelho, modoAparelhoSalvo
 } from "./emissao.js";
 
-const VERSAO_APP = "v9";
+const VERSAO_APP = "v10";
 const CHAVE_ULTIMO_USUARIO = "primusEtiquetas.ultimoUsuario";
 const ONLINE_ATE_SEG = 150; // agente manda sinal a cada 60 s
 
@@ -161,6 +170,12 @@ function abrirInicio(perfil) {
   clearInterval(timerStatus);
   timerStatus = setInterval(() => desenharStatus(), 15000);
   desenharStatus();
+
+  if (etiquetaDoQr) {
+    const n = etiquetaDoQr;
+    etiquetaDoQr = null;
+    abrirDetalhe(n);
+  }
 }
 
 function desenharAparelho() {
@@ -201,6 +216,7 @@ function fecharSessaoLocal() {
   if (cancelarUsuarios) { cancelarUsuarios(); cancelarUsuarios = null; }
   encerrarProdutos();
   encerrarEmissao();
+  encerrarHistorico();
   clearInterval(timerStatus);
   agentesAtuais = [];
   usuariosAtuais = [];
@@ -467,6 +483,8 @@ async function iniciar() {
   $("acao-usuarios").addEventListener("click", abrirUsuarios);
   $("acao-produtos").addEventListener("click", abrirProdutos);
   $("acao-emitir").addEventListener("click", abrirEmitir);
+  $("acao-historico").addEventListener("click", abrirHistorico);
+  configurarHistorico({ impressoraOnline, voltar: () => abrirInicio(perfilAtual) });
   $("produtos-importar").addEventListener("click", abrirImportacao);
   configurarImportacao({ obterPerfil: () => perfilAtual });
   $("acao-aparelho").addEventListener("click", trocarModoAparelho);

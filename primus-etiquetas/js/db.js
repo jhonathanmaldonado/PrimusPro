@@ -1,11 +1,12 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/db.js (v5)
+// PRIMUS ETIQUETAS - js/db.js (v6)
 // Firebase: inicializacao, login usuario+PIN, perfil, setup inicial, usuarios
 // Projeto Firebase proprio: primus-etiquetas (independente dos outros sistemas)
 // v2: cadastro/edicao de usuarios (gestor e chef) e troca do proprio PIN
 // v3: grupos, produtos (validade em horas por modo de conservacao) e historico
 // v4: emissao de etiquetas (codigo sequencial + fila de impressao) e conferencia de PIN do responsavel
 // v5: importacao em lote de grupos e produtos (planilha revisada)
+// v6: historico de etiquetas e reimpressao (2a via)
 // ============================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
@@ -14,7 +15,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-auth.js";
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, writeBatch, collection, onSnapshot, serverTimestamp,
-  addDoc, getDocs, query, orderBy, limit, runTransaction, Timestamp
+  addDoc, getDocs, query, orderBy, limit, runTransaction, Timestamp, where
 } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -469,4 +470,96 @@ export async function executarImportacao(plano, perfil, aoProgredir) {
     if (aoProgredir) aoProgredir(feitos, itens.length);
   }
   return feitos;
+}
+
+// ---------------------------------------------------------------- historico e reimpressao
+function paraDataOuNula(v) {
+  return v && typeof v.toDate === "function" ? v.toDate() : null;
+}
+
+function montarEtiqueta(id, d) {
+  const dados = d.dados || {};
+  return {
+    id,
+    tipo: d.tipo,
+    status: d.status,
+    erro: d.erro || "",
+    codigoNum: d.codigoNum,
+    codigo: d.codigo || "",
+    copias: d.copias || 1,
+    produtoId: d.produtoId,
+    modo: d.modo,
+    segundaVia: !!d.segundaVia,
+    criadoEm: paraDataOuNula(d.criadoEm),
+    finalizadoEm: paraDataOuNula(d.finalizadoEm),
+    reimpressoPorNome: d.reimpressoPorNome || "",
+    produto: dados.produto || "",
+    conservacao: dados.conservacao || "",
+    manipulacaoEm: paraDataOuNula(dados.manipulacaoEm),
+    validadeEm: paraDataOuNula(dados.validadeEm),
+    responsavel: dados.responsavel || "",
+    responsavelUid: dados.responsavelUid || "",
+    bruto: d
+  };
+}
+
+// Etiquetas emitidas num dia (00:00 ate 24:00 no horario do aparelho), mais novas primeiro
+export function observarEtiquetasDoDia(dia, callback, callbackErro) {
+  const inicio = new Date(dia); inicio.setHours(0, 0, 0, 0);
+  const fim = new Date(inicio); fim.setDate(fim.getDate() + 1);
+  const q = query(collection(db, "filaImpressao"),
+    where("criadoEm", ">=", Timestamp.fromDate(inicio)),
+    where("criadoEm", "<", Timestamp.fromDate(fim)),
+    orderBy("criadoEm", "desc"));
+  return onSnapshot(q, (snap) => {
+    callback(snap.docs.map((x) => montarEtiqueta(x.id, x.data())));
+  }, callbackErro);
+}
+
+export async function lerEtiqueta(num) {
+  const snap = await getDoc(doc(db, "filaImpressao", String(num)));
+  if (!snap.exists()) return null;
+  const e = montarEtiqueta(snap.id, snap.data());
+  return e.tipo === "etiqueta" ? e : null;
+}
+
+// Original + reimpressoes de um codigo, em tempo real
+export function observarCodigo(num, callback, callbackErro) {
+  const q = query(collection(db, "filaImpressao"), where("codigoNum", "==", Number(num)));
+  return onSnapshot(q, (snap) => {
+    const lista = snap.docs.map((x) => montarEtiqueta(x.id, x.data()));
+    lista.sort((a, b) => (a.criadoEm ? a.criadoEm.getTime() : 0) - (b.criadoEm ? b.criadoEm.getTime() : 0));
+    callback(lista);
+  }, callbackErro);
+}
+
+// Reimpressao: mesmos dados da original. "2a via" so se a original chegou a ser impressa.
+export async function reimprimirEtiqueta(original, copias, quem) {
+  const o = original.bruto;
+  const ref = await addDoc(collection(db, "filaImpressao"), {
+    status: "pendente",
+    tipo: "reimpressao",
+    codigoNum: o.codigoNum,
+    codigo: o.codigo,
+    copias,
+    produtoId: o.produtoId,
+    modo: o.modo,
+    segundaVia: o.status === "impresso",
+    criadoEm: serverTimestamp(),
+    solicitadoEm: Timestamp.fromMillis(Date.now()),
+    emitidoPor: auth.currentUser.uid,
+    reimpressoPorUid: quem.uid,
+    reimpressoPorNome: quem.nome,
+    dados: {
+      produto: o.dados.produto,
+      conservacao: o.dados.conservacao,
+      manipulacaoEm: o.dados.manipulacaoEm,
+      validadeEm: o.dados.validadeEm,
+      responsavel: o.dados.responsavel,
+      responsavelUid: o.dados.responsavelUid,
+      lote: o.dados.lote,
+      qr: o.dados.qr
+    }
+  });
+  return ref.id;
 }

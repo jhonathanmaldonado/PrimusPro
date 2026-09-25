@@ -1,5 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/emissao.js (v1)
+// PRIMUS ETIQUETAS - js/emissao.js (v2)
+// v2: comResponsavel() e acompanhar() exportados para a reimpressao (Fase 4)
 // Fase 3: emissao de etiquetas
 // - escolher produto (busca + grupos), modo de conservacao, quantidade e hora de manipulacao
 // - no tablet da cozinha, cada sequencia de etiquetas pede o PIN de quem esta emitindo
@@ -292,13 +293,33 @@ async function enviar() {
   }
 }
 
+// ---------------------------------------------------------------- responsavel para outras telas
+// Chama fn({uid, nome}) com quem esta operando: no tablet pede o PIN (se o anterior expirou)
+export function comResponsavel(fn) {
+  const executar = async () => {
+    const r = { uid: responsavel.uid, nome: responsavel.nome };
+    await fn(r);
+    if (aparelhoEhTablet() && responsavel) responsavel.validoAte = Date.now() + RESPONSAVEL_VALE_MS;
+  };
+  if (aparelhoEhTablet()) {
+    if (responsavel && responsavel.validoAte > Date.now()) return executar();
+    pedirResponsavel(executar);
+    return;
+  }
+  const p = getPerfil();
+  responsavel = { uid: p.uid, nome: p.nome, validoAte: Infinity };
+  return executar();
+}
+
 // ---------------------------------------------------------------- acompanhamento do pedido
-function acompanhar(num, nome, qtd) {
+// id = id do documento na fila (numero da etiqueta ou id da reimpressao)
+export function acompanhar(id, nome, qtd, rotulo) {
+  const num = id;
   const alvo = $("acompanhamento");
   const card = document.createElement("div");
   card.className = "status-envio enviando";
   card.id = `envio-${num}`;
-  card.innerHTML = `<div><strong>#${formatarCodigo(num)} ${escapar(nome)}</strong><span class="status-texto">Enviando para a impressora...</span></div>`;
+  card.innerHTML = `<div><strong>${escapar(rotulo || "#" + formatarCodigo(num))} ${escapar(nome)}</strong><span class="status-texto">Enviando para a impressora...</span></div>`;
   alvo.prepend(card);
 
   const cancelar = observarEtiqueta(num, (d) => {

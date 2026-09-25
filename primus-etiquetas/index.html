@@ -340,6 +340,26 @@
   .linha-grupo-novo { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
   .linha-botoes.unico { grid-template-columns: 1fr; }
   .resumo-importacao { font-size: 16px; }
+
+  /* ---------- historico ---------- */
+  .seletor-dia { display: grid; grid-template-columns: 56px 1fr 56px; gap: 8px; margin-bottom: 12px; }
+  .seletor-dia .botao { width: 100%; padding: 0; font-size: 30px; }
+  .seletor-dia input { text-align: center; }
+  .filtro-select { margin-bottom: 8px; font-size: 18px; }
+  .linha-etiqueta .topo-etiqueta { display: flex; justify-content: space-between; margin-bottom: 2px; }
+  .linha-etiqueta .codigo { font-family: var(--titulo); font-weight: 700; color: var(--bordo); font-size: 18px; }
+  .linha-etiqueta .hora { color: var(--tinta-suave); font-size: 15px; font-weight: 600; }
+  .linha-etiqueta.vencida { background: #FBF3F2; }
+  .selo-validade { background: #EFE7EB; color: var(--tinta); }
+  .selo-vencida { background: var(--alerta); color: #fff; }
+  .selo-erro { background: #FDECEA; color: var(--alerta); }
+  .selo-fila { background: #FFF6D6; color: #7A4B0B; }
+  .linha-detalhe { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--linha); font-size: 16px; }
+  .linha-detalhe span { color: var(--tinta-suave); }
+  .linha-detalhe strong { text-align: right; }
+  .linha-detalhe.destaque strong { color: var(--bordo); font-size: 18px; }
+  .linha-detalhe.venceu strong { color: var(--alerta); font-size: 18px; }
+  .bloco-reimprimir { margin-top: 18px; }
   .resumo-importacao ul { margin: 6px 0 12px; padding-left: 20px; }
   .lista-mudancas { max-height: 30vh; overflow-y: auto; }
   .lista-mudancas li { margin-bottom: 8px; }
@@ -579,6 +599,7 @@
       </div>
       <div class="acoes">
         <button id="acao-emitir" class="acao principal" type="button"><strong>Emitir etiqueta</strong>Escolher o produto e imprimir</button>
+        <button id="acao-historico" class="acao" type="button"><strong>Histórico</strong>Etiquetas emitidas, reimpressão e 2ª via</button>
         <button id="acao-produtos" class="acao" type="button"><strong>Produtos</strong>Cadastro, grupos e prazos de validade</button>
         <button id="acao-aparelho" class="acao discreta" type="button" hidden><strong id="aparelho-titulo">Este aparelho</strong><span id="aparelho-texto"></span></button>
         <button id="acao-usuarios" class="acao" type="button" hidden><strong>Usuários</strong>Cadastrar funcionários e definir quem pode fazer o quê</button>
@@ -653,7 +674,6 @@
       <div style="height:120px"></div>
     </div>
   </main>
-  <div id="acompanhamento" class="acompanhamento" aria-live="polite"></div>
 </section>
 
 <!-- Modal: emissao -->
@@ -688,6 +708,52 @@
         <button id="emissao-imprimir" class="botao" type="submit">Imprimir</button>
       </div>
     </form>
+  </div>
+</div>
+
+<!-- Historico -->
+<section id="tela-historico" class="tela" hidden>
+  <header class="topo">
+    <button id="historico-voltar" class="botao-sec" type="button">Voltar</button>
+  </header>
+  <main class="conteudo">
+    <div class="largura">
+      <div class="barra"><h2>Histórico</h2></div>
+      <div class="seletor-dia">
+        <button id="historico-anterior" class="botao compacto neutro" type="button" aria-label="Dia anterior">‹</button>
+        <input id="historico-dia" type="date">
+        <button id="historico-proximo" class="botao compacto neutro" type="button" aria-label="Próximo dia">›</button>
+      </div>
+      <input id="historico-busca" class="busca" type="search" placeholder="Filtrar por produto" autocomplete="off" spellcheck="false">
+      <select id="historico-responsavel" class="filtro-select" aria-label="Filtrar por responsável"></select>
+      <p id="historico-total" class="dica-tela"></p>
+      <div id="historico-lista" class="lista"></div>
+      <div style="height:120px"></div>
+    </div>
+  </main>
+</section>
+
+<!-- Modal: detalhe da etiqueta -->
+<div id="modal-detalhe" class="modal" hidden>
+  <div class="rolo">
+    <div class="etiqueta">
+      <h1 id="detalhe-codigo">#000000</h1>
+      <hr class="corte">
+      <div id="detalhe-erro" class="erro" hidden></div>
+      <div id="detalhe-corpo"></div>
+      <div id="bloco-reimprimir" class="bloco-reimprimir" hidden>
+        <label>Reimprimir (sai idêntica à original)</label>
+        <div class="contador">
+          <button id="detalhe-menos" type="button" aria-label="Menos uma">−</button>
+          <output id="detalhe-copias">1</output>
+          <button id="detalhe-mais" type="button" aria-label="Mais uma">+</button>
+        </div>
+        <p id="detalhe-motivo" class="aviso-caixa" hidden></p>
+        <button id="detalhe-reimprimir" class="botao" type="button">Reimprimir</button>
+      </div>
+      <div id="detalhe-reimpressoes" class="historico"></div>
+      <button id="detalhe-fechar" class="botao neutro" type="button" style="margin-top:16px">Fechar</button>
+    </div>
   </div>
 </div>
 
@@ -871,6 +937,7 @@
   </div>
 </div>
 
+<div id="acompanhamento" class="acompanhamento" aria-live="polite"></div>
 <div id="aviso" class="aviso" role="status" hidden></div>
 
 <script type="module" src="js/app.js"></script>
