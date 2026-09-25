@@ -88,6 +88,15 @@
     letter-spacing: .02em;
   }
   .marca b { color: var(--dourado); font-weight: 700; }
+  .logo {
+    display: inline-block; flex: 0 0 auto;
+    background: #fff url("data:image/png;base64,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") no-repeat center / 78%;
+    border-radius: 12px;
+  }
+  .marca { display: flex; align-items: center; gap: 10px; }
+  .marca .logo { width: 40px; height: 40px; }
+  .identidade { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .identidade .logo { width: 46px; height: 46px; }
 
   label { display: block; font-weight: 600; font-size: 16px; margin: 0 0 6px; }
   .campo { margin-bottom: 16px; }
@@ -524,7 +533,7 @@
 
 <!-- Primeiro acesso: cria o gestor -->
 <section id="tela-setup" class="tela palco" hidden>
-  <p class="marca">Primus <b>Etiquetas</b></p>
+  <p class="marca"><span class="logo" aria-hidden="true"></span><span>Primus <b>Etiquetas</b></span></p>
   <div class="rolo">
     <form id="form-setup" class="etiqueta" autocomplete="off" novalidate>
       <h1>Primeiro acesso</h1>
@@ -555,7 +564,7 @@
 
 <!-- Login -->
 <section id="tela-login" class="tela palco" hidden>
-  <p class="marca">Primus <b>Etiquetas</b></p>
+  <p class="marca"><span class="logo" aria-hidden="true"></span><span>Primus <b>Etiquetas</b></span></p>
   <div class="rolo">
     <form id="form-login" class="etiqueta" autocomplete="off" novalidate>
       <h1>Entrar</h1>
@@ -579,9 +588,12 @@
 <!-- Inicio -->
 <section id="tela-inicio" class="tela" hidden>
   <header class="topo">
-    <div>
-      <div id="inicio-nome" class="quem"></div>
-      <div id="inicio-papel" class="papel"></div>
+    <div class="identidade">
+      <span class="logo" aria-hidden="true"></span>
+      <div>
+        <div id="inicio-nome" class="quem"></div>
+        <div id="inicio-papel" class="papel"></div>
+      </div>
     </div>
     <div class="topo-botoes">
       <button id="botao-meu-pin" class="botao-sec" type="button">Meu PIN</button>
