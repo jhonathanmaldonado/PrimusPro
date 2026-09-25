@@ -1,5 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/historico.js (v1)
+// PRIMUS ETIQUETAS - js/historico.js (v2)
+// v2: aberto pelo QR = so consulta (reimpressao so pelo Historico)
 // Fase 4: historico de etiquetas (filtro por dia, produto e responsavel),
 // detalhe da etiqueta (tambem aberto pelo QR) e reimpressao (2a via).
 // Regras: reimpressao sai identica a original; etiqueta vencida nao reimprime.
@@ -24,6 +25,7 @@ let cancelarDetalhe = null;
 let detalhe = null;       // etiqueta original aberta
 let copiasReimp = 1;
 let timerRelogio = null;
+let somenteConsulta = false; // true quando aberto pelo QR
 
 const fmt = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const fmtHora = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" });
@@ -144,8 +146,9 @@ function desenharLista() {
 }
 
 // ---------------------------------------------------------------- detalhe (lista ou QR)
-export async function abrirDetalhe(num) {
+export async function abrirDetalhe(num, opcoes) {
   fecharDetalhe();
+  somenteConsulta = !!(opcoes && opcoes.somenteConsulta);
   detalhe = null;
   copiasReimp = 1;
   mostrarErro("detalhe-erro", "");
@@ -208,6 +211,12 @@ function desenharDetalhe(reimpressoes) {
 
 function desenharReimpressao() {
   if (!detalhe) return;
+  if (somenteConsulta) {
+    $("bloco-reimprimir").hidden = true;
+    $("detalhe-so-consulta").hidden = false;
+    return;
+  }
+  $("detalhe-so-consulta").hidden = true;
   const venc = vencida(detalhe);
   const online = getImpressoraOnline();
   const bloco = $("bloco-reimprimir");
@@ -228,7 +237,7 @@ function desenharReimpressao() {
 
 function clicarReimprimir() {
   mostrarErro("detalhe-erro", "");
-  if (!detalhe) return;
+  if (!detalhe || somenteConsulta) return;
   if (vencida(detalhe)) return mostrarErro("detalhe-erro", "Etiqueta vencida não pode ser reimpressa.");
   if (!getImpressoraOnline()) return mostrarErro("detalhe-erro", "Impressora offline.");
   const original = detalhe;

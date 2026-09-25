@@ -1,6 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/app.js (v11)
-// v11: so versao (logo no index)
+// PRIMUS ETIQUETAS - js/app.js (v12)
+// v12: QR abre a etiqueta so para consulta
 // v10: Fase 4 (historico e reimpressao em js/historico.js); QR da etiqueta abre o detalhe (?e=NUM)
 // v7: Fase 3 (emissao em js/emissao.js) e configuracao do aparelho (tablet da cozinha x celular pessoal)
 // v5: Fase 2c (produtos e grupos em js/produtos.js); utilitarios de tela em js/ui.js
@@ -32,7 +32,7 @@ import {
   configurarEmissao, abrirEmitir, encerrarEmissao, definirModoAparelho, modoAparelhoSalvo
 } from "./emissao.js";
 
-const VERSAO_APP = "v11";
+const VERSAO_APP = "v12";
 const CHAVE_ULTIMO_USUARIO = "primusEtiquetas.ultimoUsuario";
 const ONLINE_ATE_SEG = 150; // agente manda sinal a cada 60 s
 
@@ -175,7 +175,7 @@ function abrirInicio(perfil) {
   if (etiquetaDoQr) {
     const n = etiquetaDoQr;
     etiquetaDoQr = null;
-    abrirDetalhe(n);
+    abrirDetalhe(n, { somenteConsulta: true });
   }
 }
 
