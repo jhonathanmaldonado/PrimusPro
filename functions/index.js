@@ -200,6 +200,72 @@ async function enviarDiferencasD1(cIni, token, chatId) {
   await enviarTelegram(token, chatId, texto);
 }
 
+// Campos de sorvete por slug (ini e fin separados, da folha 'sorv').
+function extrairCamposSorvetes(contagem) {
+  const out = {};
+  const itens = (contagem && contagem.itens) || {};
+  Object.entries(itens).forEach(([chave, v]) => {
+    if (!v || typeof v !== "object") return;
+    if (chave.endsWith("__ini")) {
+      const slug = chave.replace(/__ini$/, "");
+      (out[slug] = out[slug] || {}).ini = v.qtd || 0;
+    } else if (chave.endsWith("__fin")) {
+      const slug = chave.replace(/__fin$/, "");
+      (out[slug] = out[slug] || {}).fin = v.final || 0;
+    }
+  });
+  return out;
+}
+
+// Virada D-1 dos SORVETES/EMBALAGENS: dispara ao lançar a folha 'sorv'.
+// Compara o início desta folha com o FINAL da folha de sorvete anterior.
+// (Sem desconto de consumo — igual à auditoria de virada dos sorvetes.)
+async function enviarDiferencasD1Sorvetes(cSorv, token, chatId) {
+  const dataAtual = cSorv && cSorv.data;
+  if (!dataAtual) return;
+
+  const snap = await db.collection("primus_contagens").where("tipo", "==", "sorv").get();
+  let sorvAnt = null;
+  snap.forEach((d) => {
+    const c = d.data();
+    if (!c.data || c.data >= dataAtual) return;
+    const maisNovo = !sorvAnt
+      || c.data > sorvAnt.data
+      || (c.data === sorvAnt.data && ((c.criadoEm && c.criadoEm.toMillis && c.criadoEm.toMillis()) || 0) > ((sorvAnt.criadoEm && sorvAnt.criadoEm.toMillis && sorvAnt.criadoEm.toMillis()) || 0));
+    if (maisNovo) sorvAnt = c;
+  });
+  if (!sorvAnt) { console.log("[D-1 sorv] sem folha anterior \u2014 nada a comparar"); return; }
+
+  const atu = extrairCamposSorvetes(cSorv);
+  const ant = extrairCamposSorvetes(sorvAnt);
+
+  const linhas = [];
+  new Set([...Object.keys(atu), ...Object.keys(ant)]).forEach((slug) => {
+    const fimAnterior = (ant[slug] && ant[slug].fin) || 0;
+    const iniAtual = (atu[slug] && atu[slug].ini) || 0;
+    const dif = iniAtual - fimAnterior;
+    if (dif !== 0) linhas.push({ nome: nomeLegivel(slug), fim: fimAnterior, ini: iniAtual, dif });
+  });
+  linhas.sort((a, b) => a.dif - b.dif);
+
+  const fmt = (iso) => { const p = String(iso).split("-"); return p.length === 3 ? `${p[2]}/${p[1]}` : iso; };
+  const dataFmt = fmt(dataAtual);
+  const finFmt = fmt(sorvAnt.data);
+
+  let texto;
+  if (!linhas.length) {
+    texto = `\u2705 <b>Virada D-1 Sorvetes/Embalagens \u2014 ${dataFmt}</b>\nTudo bateu! Nenhuma diferen\u00e7a entre o final de ${finFmt} e o in\u00edcio de hoje.`;
+  } else {
+    const corpo = linhas.map((l) => {
+      const sinal = l.dif > 0 ? `+${l.dif}` : `${l.dif}`;
+      const emoji = l.dif < 0 ? "\ud83d\udd34" : "\ud83d\udfe1";
+      return `${emoji} <b>${l.nome}</b>: ${sinal}  <i>(fim ${l.fim} \u2192 in\u00ed ${l.ini})</i>`;
+    }).join("\n");
+    texto = `\ud83c\udf68 <b>Virada D-1 Sorvetes/Embalagens \u2014 ${dataFmt}</b>\nFinal de ${finFmt} \u00d7 in\u00edcio de hoje.\n\n${corpo}\n\n\ud83d\udd34 faltou \u00b7 \ud83d\udfe1 sobrou`;
+  }
+  await enviarTelegram(token, chatId, texto);
+}
+
 // ===== GATILHO: contagem criada =====
 exports.notificarContagem = onDocumentCreated(
   { document: "primus_contagens/{id}", region: REGIAO, secrets: [TELEGRAM_TOKEN, TELEGRAM_CHAT_ID] },
@@ -234,12 +300,21 @@ exports.notificarContagem = onDocumentCreated(
       console.error("[notificarContagem] erro:", e);
     }
 
-    // INÍCIO do dia: manda no Telegram a virada D-1 (final anterior × início de hoje).
+    // INÍCIO do dia: manda no Telegram a virada D-1 das bebidas (final anterior × início).
     if (c.tipo === "ini") {
       try {
         await enviarDiferencasD1(c, TELEGRAM_TOKEN.value(), TELEGRAM_CHAT_ID.value());
       } catch (e) {
         console.error("[D-1 telegram] erro:", e);
+      }
+    }
+
+    // Folha de SORVETE/EMBALAGEM: manda a virada D-1 dos sorvetes.
+    if (c.tipo === "sorv") {
+      try {
+        await enviarDiferencasD1Sorvetes(c, TELEGRAM_TOKEN.value(), TELEGRAM_CHAT_ID.value());
+      } catch (e) {
+        console.error("[D-1 sorv telegram] erro:", e);
       }
     }
   }
