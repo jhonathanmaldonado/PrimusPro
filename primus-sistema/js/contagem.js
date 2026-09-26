@@ -4,7 +4,7 @@
 import { slugify } from './produtos.js';
 import { obterBebidas, obterSorvetes } from './produtos-store.js';
 import { exigirPerfil, logout } from './auth.js';
-import { salvarContagem, hoje, listarContagens, atualizarContagem, buscarAuditoriaFechada } from './db.js';
+import { salvarContagem, hoje, listarContagens, atualizarContagem, buscarAuditoriaFechada, ultimaContagem } from './db.js';
 
 // Garante sessão válida — barman, gerente ou gestor podem contar
 const sessao = exigirPerfil(['barman', 'gerente', 'gestor']);
@@ -347,12 +347,26 @@ document.getElementById('btn-salvar').onclick = async () => {
       // Edição de dia existente: atualiza o doc (não cria duplicado)
       await atualizarContagem(editandoContagemId, itens, { editadoPor: sessao.nome });
     } else {
-      await salvarContagem({
-        tipo: tipoAtual,
-        data,
-        autor: { id: sessao.id, nome: sessao.nome, perfil: sessao.perfil },
-        itens
-      });
+      // Anti-duplicata: se já existe contagem deste dia+tipo, SUBSTITUI (atualiza) em
+      // vez de criar outro doc — impede o salvamento em dobro (2 docs do mesmo dia/tipo).
+      const existente = await ultimaContagem({ tipo: tipoAtual, data });
+      if (existente) {
+        const rotulo = { ini: 'INÍCIO', fin: 'FINAL', sorv: 'SORVETE' }[tipoAtual] || tipoAtual;
+        const ok = confirm(`Já existe uma contagem de ${rotulo} de ${data} (por ${existente.autorNome || 'alguém'}). Deseja SUBSTITUIR?`);
+        if (!ok) {
+          btn.disabled = false;
+          btn.innerHTML = '💾 Salvar Contagem';
+          return;
+        }
+        await atualizarContagem(existente.id, itens, { editadoPor: sessao.nome });
+      } else {
+        await salvarContagem({
+          tipo: tipoAtual,
+          data,
+          autor: { id: sessao.id, nome: sessao.nome, perfil: sessao.perfil },
+          itens
+        });
+      }
     }
     mostrarToast(editandoContagemId ? 'Contagem atualizada!' : 'Contagem salva com sucesso!', 'ok');
     btn.innerHTML = '✓ Salvo!';
