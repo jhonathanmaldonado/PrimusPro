@@ -2,7 +2,7 @@
 // Dispara uma notificação para os gestores quando uma contagem é salva.
 // Lê os tokens de primus_push_tokens e envia via FCM.
 
-const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
@@ -266,14 +266,17 @@ async function enviarDiferencasD1Sorvetes(cSorv, token, chatId) {
   await enviarTelegram(token, chatId, texto);
 }
 
-// ===== GATILHO: contagem criada =====
-exports.notificarContagem = onDocumentCreated(
+// ===== GATILHO: contagem criada OU atualizada =====
+// onDocumentWritten pega create E update — pra notificar também quando a contagem
+// é substituída/editada (que virou update depois de liberarmos update nas regras).
+// Delete é ignorado; correção do gestor (origem='correcao') continua sem notificar.
+exports.notificarContagem = onDocumentWritten(
   { document: "primus_contagens/{id}", region: REGIAO, secrets: [TELEGRAM_TOKEN, TELEGRAM_CHAT_ID] },
   async (event) => {
-    const snap = event.data;
-    if (!snap) return;
+    const after = event.data && event.data.after;
+    if (!after || !after.exists) return; // delete (ou sem doc) → ignora
 
-    const c = snap.data() || {};
+    const c = after.data() || {};
 
     // Correções/edições do gestor NÃO notificam (não são contagens novas).
     if (c.origem === "correcao") {
