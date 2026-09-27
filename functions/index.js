@@ -2,7 +2,7 @@
 // Dispara uma notificação para os gestores quando uma contagem é salva.
 // Lê os tokens de primus_push_tokens e envia via FCM.
 
-const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { onDocumentWritten, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
@@ -544,9 +544,19 @@ const msDe = (ts) => (ts && ts.toMillis ? ts.toMillis() : 0);
 const momentoContagem = (c) => Math.max(msDe(c && c.criadoEm), msDe(c && c.editadoEm));
 
 // Monta o texto da diferença do dia (ou null se nada estiver completo).
-async function montarDiferencaDia(dia) {
+// sobDemanda = pedido pelo botao 📋 Diferenca no Telegram: sempre devolve um texto
+// (explica o que falta em vez de ficar em silencio) e nao trava venda "parcial"
+// (so avisa). O automatico (sobDemanda=false) continua conservador.
+async function montarDiferencaDia(dia, sobDemanda = false) {
+  const p0 = dia.split("-");
+  const dataFmt0 = p0.length === 3 ? `${p0[2]}/${p0[1]}` : dia;
   const vSnap = await db.collection("primus_vendas").doc(dia).get();
-  if (!vSnap.exists) { console.log(`[diferenca ${dia}] sem vendas — aguardando`); return null; }
+  if (!vSnap.exists) {
+    console.log(`[diferenca ${dia}] sem vendas — aguardando`);
+    return sobDemanda
+      ? `\ud83d\udccb <b>Diferen\u00e7a do dia \u2014 ${dataFmt0}</b>\n\n\u23f3 As vendas desse dia ainda n\u00e3o foram lan\u00e7adas. Lance com \ud83d\udcca Vendas primeiro.`
+      : null;
+  }
   const vendasDia = vSnap.data() || {};
   const vendasMs = msDe(vendasDia.atualizadoEm); // 0 = sem horário → não bloqueia
 
@@ -560,12 +570,16 @@ async function montarDiferencaDia(dia) {
   });
   const cIni = ultima.ini, cFin = ultima.fin, cSorv = ultima.sorv;
 
-  const vendaAtrasada = (c) => vendasMs > 0 && vendasMs < momentoContagem(c);
+  // Venda gravada ANTES da contagem = parcial. Excecao: contagem de CORRECAO
+  // (ajuste na auditoria) — ela nasce com horario novo, mas as vendas nao ficaram
+  // velhas por isso. Sob demanda nao trava: calcula e avisa no topo.
+  const atrasadaReal = (c) => !!c && c.origem !== "correcao" && vendasMs > 0 && vendasMs < momentoContagem(c);
+  const vendaAtrasada = (c) => !sobDemanda && atrasadaReal(c);
   const avisoParcial = "vendas gravadas antes da contagem final (parcial) \u2014 mande /vendas de novo";
 
   const temBebidas = !!(cIni && cFin) && !vendaAtrasada(cFin);
   const temSorvetes = !!cSorv && !vendaAtrasada(cSorv);
-  if (!temBebidas && !temSorvetes) {
+  if (!temBebidas && !temSorvetes && !sobDemanda) {
     console.log(`[diferenca ${dia}] dia ainda incompleto (ini:${!!cIni} fin:${!!cFin} sorv:${!!cSorv} vendas-parcial:${cFin ? vendaAtrasada(cFin) : "-"})`);
     return null;
   }
@@ -605,7 +619,9 @@ async function montarDiferencaDia(dia) {
 
   const p = dia.split("-");
   const dataFmt = p.length === 3 ? `${p[2]}/${p[1]}` : dia;
-  return `\ud83d\udccb <b>Diferen\u00e7a do dia \u2014 ${dataFmt}</b>\n` +
+  const alertaParcial = sobDemanda && (atrasadaReal(cFin) || atrasadaReal(cSorv))
+    ? `\u26a0\ufe0f <i>vendas lan\u00e7adas antes da contagem final \u2014 podem estar parciais</i>\n` : "";
+  return `\ud83d\udccb <b>Diferen\u00e7a do dia \u2014 ${dataFmt}</b>\n` + alertaParcial +
     `<i>in\u00edcio + entradas \u2212 vendas \u2212 consumo \u00d7 final contado</i>\n\n` +
     partes.join("\n\n") +
     `\n\n\ud83d\udd34 faltou \u00b7 \ud83d\udfe1 sobrou \u00b7 \u26a0\ufe0f cr\u00edtico (5+)`;
@@ -696,6 +712,29 @@ exports.notificarContagem = onDocumentWritten(
 
     // DIFERENÇA DO DIA: se com esta contagem o dia ficou completo, manda.
     await verificarDiferencaDiaSeguro(c.data);
+  }
+);
+
+// ===== DIFERENÇA SOB DEMANDA (botão 📋 Diferença do Primus Vendas) =====
+// O ouvinte cria primus_pedidos_diferenca/{id} = { dia } e espera; esta função
+// calcula com a MESMA conta do aviso automático e grava { texto } no pedido.
+// O ouvinte responde pra quem pediu e apaga o pedido. Não usa trava de repetição.
+exports.diferencaSobDemanda = onDocumentCreated(
+  { document: "primus_pedidos_diferenca/{id}", region: REGIAO },
+  async (event) => {
+    const snap = event.data;
+    if (!snap) return;
+    const dia = (snap.data() || {}).dia;
+    let texto;
+    try {
+      texto = /^\d{4}-\d{2}-\d{2}$/.test(dia || "")
+        ? await montarDiferencaDia(dia, true)
+        : "\u2753 Dia inv\u00e1lido.";
+    } catch (e) {
+      console.error(`[diferenca sob demanda ${dia}] erro:`, e);
+      texto = `\u274c Erro ao calcular a diferen\u00e7a: ${String(e.message || e).slice(0, 200)}`;
+    }
+    await snap.ref.update({ texto, respondidoEm: new Date().toISOString() });
   }
 );
 
