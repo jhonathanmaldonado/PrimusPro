@@ -41,6 +41,8 @@ export async function inicializarDashboard() {
   container.innerHTML = `
     <div class="filtro-periodo">
       <label>Período:</label>
+      <button class="periodo-btn" data-periodo="hoje">Hoje</button>
+      <button class="periodo-btn" data-periodo="ontem">Ontem</button>
       <button class="periodo-btn" data-periodo="semana">Essa semana</button>
       <button class="periodo-btn active" data-periodo="7d">7 dias</button>
       <button class="periodo-btn" data-periodo="30d">30 dias</button>
@@ -251,12 +253,22 @@ async function carregarDados() {
 }
 
 // ===== FILTRO DE PERÍODO =====
+let ultimoTipoPeriodo = '7d';   // pra mensagem de "sem dados" saber se é hoje/ontem
+
 function aplicarPeriodo(tipo, de = null, ate = null) {
   let inicio, fim;
   const hoje = new Date();
   fim = toIso(hoje);
 
-  if (tipo === 'semana') {
+  ultimoTipoPeriodo = tipo;
+
+  if (tipo === 'hoje') {
+    inicio = toIso(hoje);
+  } else if (tipo === 'ontem') {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate() - 1);
+    inicio = toIso(d);
+    fim    = toIso(d);
+  } else if (tipo === 'semana') {
     // Semana corrente: SEGUNDA a DOMINGO (domingo conta como fim da semana, não início)
     const dow = hoje.getDay();               // 0=Dom .. 6=Sáb
     const ateSegunda = (dow === 0 ? -6 : 1 - dow);
@@ -290,6 +302,20 @@ function aplicarPeriodo(tipo, de = null, ate = null) {
   renderizarDashboard(vendasFiltradas);
 }
 
+// Dica quando Hoje/Ontem ainda não foram lançados
+function dicaSemDados() {
+  const estilo = 'margin-top:10px;font-size:13px;color:var(--cinza-texto);line-height:1.5';
+  if (ultimoTipoPeriodo === 'hoje') {
+    return `<div style="${estilo}">As vendas de hoje ainda não foram lançadas.<br>
+      No Telegram: <b>📊 Vendas → Hoje</b> (parcial). Se já lançou, recarregue a página.</div>`;
+  }
+  if (ultimoTipoPeriodo === 'ontem') {
+    return `<div style="${estilo}">As vendas de ontem ainda não foram lançadas.<br>
+      No Telegram: <b>📊 Vendas → Ontem</b>. Se já lançou, recarregue a página.</div>`;
+  }
+  return '';
+}
+
 // ===== RENDERIZAÇÃO =====
 function renderizarDashboard(vendas) {
   if (!vendas.length) {
@@ -297,6 +323,7 @@ function renderizarDashboard(vendas) {
       <div class="kpi-card" style="grid-column:1/-1;text-align:center;padding:30px">
         <div style="font-size:30px;margin-bottom:10px">📅</div>
         <div class="kpi-label">Sem dados neste período</div>
+        ${dicaSemDados()}
       </div>`;
     // Limpa gráficos antigos
     Object.values(chartsAtivos).forEach(c => c?.destroy?.());
