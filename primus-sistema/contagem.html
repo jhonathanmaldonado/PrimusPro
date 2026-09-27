@@ -290,6 +290,8 @@
     background:rgba(255,255,255,0.1); color:rgba(255,255,255,0.7);
     font-family:'Raleway',sans-serif; font-weight:700; font-size:13px; cursor:pointer; }
   .modo-btn.active { background:var(--amarelo); color:var(--vinho); }
+  /* Atalho pro painel (gestor/gerente) — na barra, facil de tocar no celular */
+  .modo-btn.modo-painel { flex:0 0 auto; padding:10px 16px; background:rgba(255,255,255,0.18); color:#fff; }
 
   .edit-banner { background:#fff4e0; color:#8a5a00; border-left:4px solid var(--amarelo);
     padding:10px 14px; font-size:12.5px; font-weight:600; font-family:'DM Sans',sans-serif;
@@ -352,9 +354,6 @@
         </div>
       </div>
       <div class="user-menu" id="user-menu">
-        <button id="btn-painel-gestor" style="display:none;color:var(--vinho);font-weight:600" onclick="location.href='gestor.html'">
-          📊 Painel do Gestor
-        </button>
         <button class="danger" id="btn-logout">Sair</button>
       </div>
     </div>
@@ -363,6 +362,7 @@
   <div class="modo-bar">
     <button class="modo-btn active" id="modo-contar" onclick="trocarModo('contar')">📝 Contar</button>
     <button class="modo-btn" id="modo-cal" onclick="trocarModo('calendario')">📅 Calendário</button>
+    <button class="modo-btn modo-painel" id="btn-painel" style="display:none">📊 Painel</button>
   </div>
 
   <div class="tipo-selector">

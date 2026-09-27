@@ -27,9 +27,16 @@ document.getElementById('user-avatar').textContent = iniciais(sessao.nome);
 document.getElementById('user-name').textContent = sessao.nome;
 document.getElementById('user-perfil').textContent = sessao.perfil;
 
-// Se for gestor, mostra botão pra ir pro painel
-if (sessao.perfil === 'gestor') {
-  document.getElementById('btn-painel-gestor').style.display = 'inline-flex';
+// Gestor e gerente: botão 📊 Painel na barra de cima (volta pro Dashboard).
+// Pergunta antes se tiver contagem digitada e não salva (não existe rascunho).
+if (['gestor', 'gerente'].includes(sessao.perfil)) {
+  const btnPainel = document.getElementById('btn-painel');
+  btnPainel.style.display = '';
+  btnPainel.onclick = () => {
+    const digitou = [...document.querySelectorAll('.num-input')].some(i => i.value !== '' && Number(i.value) !== 0);
+    if (digitou && !confirm('Você tem números digitados que ainda não foram salvos.\n\nSair pro Painel e perder essa contagem?')) return;
+    location.href = 'gestor.html';
+  };
 }
 
 // Menu dropdown

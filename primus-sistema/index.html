@@ -348,7 +348,7 @@
   // Se já tem sessão, redireciona
   const sess = getSessao();
   if (sess) {
-    window.location.href = sess.perfil === 'gestor' ? 'gestor.html' : 'contagem.html';
+    window.location.href = ['gestor', 'gerente'].includes(sess.perfil) ? 'gestor.html' : 'contagem.html';
   }
 
   const $listaUsuarios = document.getElementById('users-list');
@@ -497,7 +497,7 @@
       // sucesso
       mostrarToast('Entrando...', 'ok');
       setTimeout(() => {
-        window.location.href = r.sessao.perfil === 'gestor' ? 'gestor.html' : 'contagem.html';
+        window.location.href = ['gestor', 'gerente'].includes(r.sessao.perfil) ? 'gestor.html' : 'contagem.html';
       }, 400);
     } catch (e) {
       console.error(e);

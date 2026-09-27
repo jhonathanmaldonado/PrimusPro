@@ -13,7 +13,7 @@ import { inicializarAuditoria } from './auditoria.js';
 import { inicializarCatalogo } from './catalogo.js';
 import { inicializarPush } from './push.js';
 
-const sessao = exigirPerfil(['gestor']);
+const sessao = exigirPerfil(['gestor', 'gerente']);
 if (!sessao) throw new Error('sem sessão');
 
 // ===== HEADER DO USUÁRIO =====
@@ -41,7 +41,54 @@ const views = {
   'usuarios':  { titulo: 'Usuários', icon: '👥' },
 };
 
+// ===== PERMISSÕES POR PERFIL =====
+// Gestor vê tudo. Gerente vê só o Dashboard (sem auditoria, compras, vendas,
+// catálogo e usuários) e ganha um atalho visível pra contagem.
+const ABAS_POR_PERFIL = {
+  gestor:  Object.keys(views),
+  gerente: ['dashboard'],
+};
+const abasPermitidas = ABAS_POR_PERFIL[sessao.perfil] || ['dashboard'];
+
+function aplicarPermissoesMenu() {
+  Object.keys(views).forEach(id => {
+    const btn = document.getElementById('nav-' + id);
+    if (btn && !abasPermitidas.includes(id)) btn.style.display = 'none';
+  });
+  // Esconde títulos de seção que ficaram sem nenhum botão visível
+  document.querySelectorAll('#side-nav .side-nav-section').forEach(sec => {
+    let el = sec.nextElementSibling, temVisivel = false;
+    while (el && !el.classList.contains('side-nav-section')) {
+      if (el.tagName === 'BUTTON' && el.style.display !== 'none') temVisivel = true;
+      el = el.nextElementSibling;
+    }
+    if (!temVisivel) sec.style.display = 'none';
+  });
+  if (sessao.perfil === 'gerente') {
+    const sub = document.querySelector('.logo-text p');
+    if (sub) sub.textContent = 'PAINEL DO GERENTE';
+  }
+}
+aplicarPermissoesMenu();
+
+// ===== ATALHO VISÍVEL PRA CONTAGEM (gestor e gerente) =====
+// No celular, o "Fazer contagem" do menu do canto era ruim de tocar. Fica à
+// mostra na linha do título, do lado direito, em todas as abas do painel.
+(function criarAtalhoContagem() {
+  const ch = document.querySelector('.content-header');
+  if (!ch) return;
+  ch.style.flexWrap = 'wrap';
+  const b = document.createElement('button');
+  b.className = 'btn btn-primary';
+  b.style.marginLeft = 'auto';
+  b.innerHTML = '📋 Fazer contagem';
+  b.onclick = () => { location.href = 'contagem.html'; };
+  ch.appendChild(b);
+})();
+
 function mostrarView(id) {
+  // Trava: aba fora do perfil (ex.: botão "Ir para Vendas" do dashboard vazio) cai no Dashboard
+  if (!abasPermitidas.includes(id)) id = 'dashboard';
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.side-nav button').forEach(b => b.classList.remove('active'));
   const view = document.getElementById('view-' + id);
@@ -122,8 +169,9 @@ Object.keys(views).forEach(id => {
 // Abre o dashboard por padrão
 mostrarView('dashboard');
 
-// Notificações push (mostra o botão de ativar só pra gestor)
-inicializarPush();
+// Notificações push — SÓ gestor. O token é gravado num doc fixo (gestor_padrao):
+// se o gerente ativasse, o push passaria a ir pro celular dele em vez do seu.
+if (sessao.perfil === 'gestor') inicializarPush();
 
 // Menu mobile
 document.getElementById('btn-menu-mobile').onclick = () => {

@@ -131,7 +131,7 @@ function setupEventos() {
       hint.textContent = '⚠️ Gestores têm acesso a tudo, inclusive gestão de usuários.';
       hint.style.color = 'var(--amarelo-status)';
     } else if (e.target.value === 'gerente') {
-      hint.textContent = 'Gerentes fazem contagens, mas não acessam o painel.';
+      hint.textContent = 'Gerentes fazem contagens e veem o Dashboard (sem auditoria, compras, vendas, catálogo e usuários).';
       hint.style.color = 'var(--cinza-texto)';
     } else {
       hint.textContent = 'Barmen só fazem contagens de estoque.';
