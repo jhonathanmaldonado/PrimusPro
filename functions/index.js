@@ -131,7 +131,7 @@ function extrairEstoque(contagem) {
   return estoque;
 }
 
-async function enviarTelegram(token, chatId, texto) {
+async function enviarTelegramPara(token, chatId, texto) {
   if (!token || !chatId) { console.error("[telegram] token/chatId ausente (secrets)"); return; }
   try {
     const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
@@ -144,6 +144,37 @@ async function enviarTelegram(token, chatId, texto) {
     console.error("[telegram] erro de rede:", e);
   }
 }
+
+// ===== QUEM RECEBE OS AVISOS =====
+// Lista do painel (Usuarios -> Telegram): primus_config/telegram.destinatarios,
+// [{ nome, id, avisos }]. Recebe quem estiver com avisos = true, cada um no seu
+// privado. Sem lista cadastrada (ou erro ao ler) -> so o chat do secret
+// TELEGRAM_CHAT_ID (o dono), como era antes.
+async function destinatariosAvisos(chatPadrao) {
+  try {
+    const snap = await db.collection("primus_config").doc("telegram").get();
+    const lista = snap.exists && Array.isArray(snap.data().destinatarios) ? snap.data().destinatarios : [];
+    if (!lista.length) return chatPadrao ? [String(chatPadrao)] : [];
+    return [...new Set(lista
+      .filter((d) => d && d.avisos && /^-?\d{5,20}$/.test(String(d.id || "").trim()))
+      .map((d) => String(d.id).trim()))];
+  } catch (e) {
+    console.error("[telegram] erro lendo a lista de destinatarios (usa o padrao):", e);
+    return chatPadrao ? [String(chatPadrao)] : [];
+  }
+}
+
+// Envia um AVISO pra todos da lista com avisos ligados.
+// (chatPadrao = secret TELEGRAM_CHAT_ID, usado so se a lista estiver vazia.)
+async function enviarTelegram(token, chatPadrao, texto) {
+  const ids = await destinatariosAvisos(chatPadrao);
+  if (!ids.length) { console.log("[telegram] ninguem com avisos ligados — nada enviado"); return; }
+  for (const id of ids) {
+    await enviarTelegramPara(token, id, texto);
+  }
+  console.log(`[telegram] aviso enviado pra ${ids.length} destinatario(s)`);
+}
+
 
 async function enviarDiferencasD1(cIni, token, chatId) {
   const dataIni = cIni && cIni.data;
