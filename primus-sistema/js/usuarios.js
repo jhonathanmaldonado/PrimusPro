@@ -9,6 +9,14 @@ import {
   setAtivoUsuario,
   getSessao
 } from './auth.js';
+import { db, doc, getDoc, setDoc } from './firebase-config.js';
+
+// Lista de quem usa os bots do Telegram (Primus Vendas e Primus Avisos).
+// Um doc so: primus_config/telegram -> { destinatarios: [{ nome, id, avisos }] }
+// - id: chat id do Telegram (a pessoa descobre mandando /meuid no Primus Vendas)
+// - avisos: true = recebe os automaticos (diferenca do dia, virada D-1)
+const REF_TELEGRAM = () => doc(db, 'primus_config', 'telegram');
+let telegramCache = [];
 
 let usuariosCache = [];
 let usuarioEditando = null;
@@ -35,6 +43,35 @@ export async function inicializarUsuarios() {
           <span class="spinner"></span>
         </div>
       </div>
+    </div>
+
+    <!-- Telegram: quem usa os bots -->
+    <div class="card" style="margin-top:18px">
+      <div class="grafico-head" style="border:none;margin:0 0 6px;padding:0">
+        <h3>📨 Telegram — quem usa os bots</h3>
+        <span class="grafico-sub" id="sub-telegram"></span>
+      </div>
+      <p style="font-size:13px;color:var(--cinza-texto);margin:0 0 14px;line-height:1.5">
+        Cada pessoa aqui pode consultar <b>Vendas</b> e <b>Ranking</b> no bot Primus Vendas, no privado dela.
+        Com <b>Avisos</b> ligado, recebe também os automáticos (diferença do dia, virada D-1).<br>
+        Pra descobrir o número: a pessoa dá <b>/start</b> nos dois bots e manda <b>/meuid</b> no Primus Vendas.
+      </p>
+      <div id="telegram-lista"><span class="spinner"></span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:14px">
+        <div class="form-group" style="flex:1 1 160px;margin:0">
+          <label>Nome</label>
+          <input type="text" id="tg-nome" placeholder="Ex: Maria" maxlength="40">
+        </div>
+        <div class="form-group" style="flex:1 1 160px;margin:0">
+          <label>Chat id</label>
+          <input type="text" id="tg-id" placeholder="Ex: 8829509051" inputmode="numeric" maxlength="20">
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:14px;padding-bottom:10px">
+          <input type="checkbox" id="tg-avisos" checked> Recebe avisos
+        </label>
+        <button class="btn btn-primary" id="tg-adicionar">+ Adicionar</button>
+      </div>
+      <div class="form-erro" id="tg-erro" style="display:none;margin-top:10px"></div>
     </div>
 
     <!-- Modal de criar/editar -->
@@ -101,7 +138,119 @@ export async function inicializarUsuarios() {
   `;
 
   setupEventos();
+  document.getElementById('tg-adicionar').onclick = adicionarTelegram;
+  document.getElementById('tg-id').addEventListener('input', e => {
+    e.target.value = e.target.value.replace(/[^\d-]/g, '');   // so digitos (e o - de grupo)
+  });
   await recarregar();
+  await carregarTelegram();
+}
+
+// ===== TELEGRAM (destinatarios dos bots) =====
+async function carregarTelegram() {
+  const lista = document.getElementById('telegram-lista');
+  try {
+    const snap = await getDoc(REF_TELEGRAM());
+    telegramCache = snap.exists() && Array.isArray(snap.data().destinatarios) ? snap.data().destinatarios : [];
+    renderTelegram();
+  } catch (e) {
+    console.error(e);
+    lista.innerHTML = `<div class="preview-err">Erro ao carregar: ${e.message}</div>`;
+  }
+}
+
+function renderTelegram() {
+  const lista = document.getElementById('telegram-lista');
+  const comAvisos = telegramCache.filter(d => d.avisos).length;
+  document.getElementById('sub-telegram').textContent = telegramCache.length
+    ? `${telegramCache.length} ${telegramCache.length === 1 ? 'pessoa' : 'pessoas'} · ${comAvisos} com avisos`
+    : '';
+  if (!telegramCache.length) {
+    lista.innerHTML = `<p style="font-size:13px;color:var(--cinza-texto);margin:0">
+      Ninguém cadastrado ainda. <b>Comece por você</b> — enquanto a lista estiver vazia, os bots continuam só no seu Telegram.</p>`;
+    return;
+  }
+  lista.innerHTML = telegramCache.map((d, i) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--cinza-borda)">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600">${escHtml(d.nome)}</div>
+        <div style="font-size:12px;color:var(--cinza-texto)">chat id ${escHtml(d.id)}</div>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:13px;white-space:nowrap">
+        <input type="checkbox" ${d.avisos ? 'checked' : ''} onchange="tgToggleAvisos(${i}, this.checked)"> Avisos
+      </label>
+      <button class="icon-btn danger" title="Remover" onclick="tgRemover(${i})">🗑️</button>
+    </div>`).join('');
+}
+
+async function salvarTelegram(nova) {
+  const sessao = getSessao();
+  await setDoc(REF_TELEGRAM(), {
+    destinatarios: nova,
+    atualizadoEm: new Date().toISOString(),
+    atualizadoPor: sessao?.nome || ''
+  });
+  telegramCache = nova;
+  renderTelegram();
+}
+
+async function adicionarTelegram() {
+  const erro = document.getElementById('tg-erro');
+  erro.style.display = 'none';
+  const nome = document.getElementById('tg-nome').value.trim();
+  const id = document.getElementById('tg-id').value.trim();
+  const avisos = document.getElementById('tg-avisos').checked;
+  if (!nome) return tgErro('Coloque o nome.');
+  if (!/^-?\d{5,20}$/.test(id)) return tgErro('Chat id inválido — só números (a pessoa pega com /meuid).');
+  if (telegramCache.some(d => String(d.id) === id)) return tgErro('Esse chat id já está na lista.');
+  const btn = document.getElementById('tg-adicionar');
+  btn.disabled = true;
+  try {
+    await salvarTelegram([...telegramCache, { nome, id, avisos }]);
+    document.getElementById('tg-nome').value = '';
+    document.getElementById('tg-id').value = '';
+    document.getElementById('tg-avisos').checked = true;
+    mostrarToast(`${nome} adicionado ao Telegram!`, 'ok');
+  } catch (e) {
+    console.error(e);
+    tgErro('Erro ao salvar: ' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+window.tgToggleAvisos = async function(i, ligado) {
+  const nova = telegramCache.map((d, j) => j === i ? { ...d, avisos: !!ligado } : d);
+  try {
+    await salvarTelegram(nova);
+    mostrarToast(`Avisos ${ligado ? 'ligados' : 'desligados'} pra ${nova[i].nome}.`, 'ok');
+  } catch (e) {
+    console.error(e);
+    mostrarToast('Erro: ' + e.message, 'err');
+    renderTelegram();   // volta a caixinha pro estado real
+  }
+};
+
+window.tgRemover = async function(i) {
+  const d = telegramCache[i];
+  if (!d || !confirm(`Tirar ${d.nome} dos bots do Telegram?\n\nA pessoa para de receber avisos e não consegue mais consultar.`)) return;
+  try {
+    await salvarTelegram(telegramCache.filter((_, j) => j !== i));
+    mostrarToast(`${d.nome} removido.`, 'ok');
+  } catch (e) {
+    console.error(e);
+    mostrarToast('Erro: ' + e.message, 'err');
+  }
+};
+
+function tgErro(msg) {
+  const el = document.getElementById('tg-erro');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // ===== EVENTOS =====
