@@ -2,7 +2,8 @@
 // Dispara uma notificação para os gestores quando uma contagem é salva.
 // Lê os tokens de primus_push_tokens e envia via FCM.
 
-const { onDocumentWritten, onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
@@ -18,6 +19,9 @@ const REGIAO = "southamerica-east1"; // mesma região do Firestore
 const { defineSecret } = require("firebase-functions/params");
 const TELEGRAM_TOKEN = defineSecret("TELEGRAM_TOKEN");
 const TELEGRAM_CHAT_ID = defineSecret("TELEGRAM_CHAT_ID");
+// Senha que o Telegram manda no cabecalho de cada chamada do webhook do Primus
+// Avisos (setWebhook ... &secret_token=). Sem ela, a funcao recusa a chamada.
+const TELEGRAM_WEBHOOK_SECRET = defineSecret("TELEGRAM_WEBHOOK_SECRET");
 
 const TIPO_LABEL = { ini: "INÍCIO", fin: "FINAL", sorv: "SORVETE" };
 
@@ -544,7 +548,7 @@ const msDe = (ts) => (ts && ts.toMillis ? ts.toMillis() : 0);
 const momentoContagem = (c) => Math.max(msDe(c && c.criadoEm), msDe(c && c.editadoEm));
 
 // Monta o texto da diferença do dia (ou null se nada estiver completo).
-// sobDemanda = pedido pelo botao 📋 Diferenca no Telegram: sempre devolve um texto
+// sobDemanda = pedido pelo botao 📋 Diferenca do Primus Avisos: sempre devolve um texto
 // (explica o que falta em vez de ficar em silencio) e nao trava venda "parcial"
 // (so avisa). O automatico (sobDemanda=false) continua conservador.
 async function montarDiferencaDia(dia, sobDemanda = false) {
@@ -715,26 +719,122 @@ exports.notificarContagem = onDocumentWritten(
   }
 );
 
-// ===== DIFERENÇA SOB DEMANDA (botão 📋 Diferença do Primus Vendas) =====
-// O ouvinte cria primus_pedidos_diferenca/{id} = { dia } e espera; esta função
-// calcula com a MESMA conta do aviso automático e grava { texto } no pedido.
-// O ouvinte responde pra quem pediu e apaga o pedido. Não usa trava de repetição.
-exports.diferencaSobDemanda = onDocumentCreated(
-  { document: "primus_pedidos_diferenca/{id}", region: REGIAO },
-  async (event) => {
-    const snap = event.data;
-    if (!snap) return;
-    const dia = (snap.data() || {}).dia;
-    let texto;
+// ===== PRIMUS AVISOS: WEBHOOK (botão 📋 Diferença, /diferenca, /meuid) =====
+// O Telegram chama esta URL a cada mensagem/clique no bot Primus Avisos
+// (configurado 1x com setWebhook + secret_token). Quem pode usar: qualquer um da
+// lista do painel (Usuarios -> Telegram); lista vazia -> so o TELEGRAM_CHAT_ID.
+// A diferença usa a MESMA conta do aviso automático, sem trava de repetição.
+const BOTAO_DIFERENCA = "\ud83d\udccb Diferen\u00e7a";
+const TECLADO_AVISOS = { keyboard: [[{ text: BOTAO_DIFERENCA }]], resize_keyboard: true, is_persistent: true };
+const DIAS_SEMANA_PT = ["dom", "seg", "ter", "qua", "qui", "sex", "s\u00e1b"];
+
+async function tgApi(token, metodo, params) {
+  try {
+    const r = await fetch(`https://api.telegram.org/bot${token}/${metodo}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(params),
+    });
+    if (!r.ok) console.error(`[avisos ${metodo}] falha:`, r.status, await r.text().catch(() => ""));
+  } catch (e) {
+    console.error(`[avisos ${metodo}] erro de rede:`, e);
+  }
+}
+
+async function chatsAutorizados(chatPadrao) {
+  try {
+    const snap = await db.collection("primus_config").doc("telegram").get();
+    const lista = snap.exists && Array.isArray(snap.data().destinatarios) ? snap.data().destinatarios : [];
+    const ids = lista.map((d) => String((d && d.id) || "").trim()).filter((id) => /^-?\d{5,20}$/.test(id));
+    if (ids.length) return new Set(ids);
+  } catch (e) {
+    console.error("[avisos] erro lendo a lista (usa o padrao):", e);
+  }
+  return new Set(chatPadrao ? [String(chatPadrao)] : []);
+}
+
+// Botoes: [Ontem][Hoje parcial] + 6 dias anteriores (datas no fuso de Cuiaba).
+function menuDiasDiferenca() {
+  const [y, m, d] = hojeCuiaba().split("-").map(Number);
+  const dia = (n) => new Date(Date.UTC(y, m - 1, d - n));
+  const iso = (dt) => dt.toISOString().slice(0, 10);
+  const ddmm = (dt) => `${String(dt.getUTCDate()).padStart(2, "0")}/${String(dt.getUTCMonth() + 1).padStart(2, "0")}`;
+  const b = (dt, rotulo) => ({ text: rotulo, callback_data: "df:" + iso(dt) });
+  const linhas = [[b(dia(1), `Ontem ${ddmm(dia(1))}`), b(dia(0), "Hoje (parcial)")]];
+  const ant = [2, 3, 4, 5, 6, 7].map(dia);
+  for (let i = 0; i < ant.length; i += 3) {
+    linhas.push(ant.slice(i, i + 3).map((dt) => b(dt, `${DIAS_SEMANA_PT[dt.getUTCDay()]} ${ddmm(dt)}`)));
+  }
+  return { inline_keyboard: linhas };
+}
+
+async function tratarUpdateAvisos(upd, token, chatPadrao) {
+  const cb = upd.callback_query;
+  const msg = upd.message;
+  const chat = String((cb ? (cb.message && cb.message.chat && cb.message.chat.id) : (msg && msg.chat && msg.chat.id)) || "");
+  if (!chat) return;
+  const texto = ((msg && msg.text) || "").trim();
+
+  // /meuid responde pra qualquer um (e como a pessoa se cadastra)
+  if (/^\/meuid(@\w+)?$/i.test(texto)) {
+    await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML", text: `\ud83c\udd94 Seu chat id: <code>${chat}</code>` });
+    return;
+  }
+
+  const autorizados = await chatsAutorizados(chatPadrao);
+  if (!autorizados.has(chat)) {
+    if (cb) await tgApi(token, "answerCallbackQuery", { callback_query_id: cb.id, text: "Voc\u00ea n\u00e3o est\u00e1 autorizado." });
+    else await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML",
+      text: `\ud83d\udd12 Voc\u00ea ainda n\u00e3o tem acesso.\n\ud83c\udd94 Seu chat id: <code>${chat}</code>\nPe\u00e7a pro gestor cadastrar no Primus Pro (Usu\u00e1rios \u2192 Telegram).` });
+    console.log(`[avisos] chat nao autorizado: ${chat}`);
+    return;
+  }
+
+  if (cb) {
+    const dado = cb.data || "";
+    const mid = cb.message && cb.message.message_id;
+    await tgApi(token, "answerCallbackQuery", { callback_query_id: cb.id });
+    const dia = dado.startsWith("df:") ? dado.slice(3) : "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || !mid) return;
+    const p = dia.split("-");
+    await tgApi(token, "editMessageText", { chat_id: chat, message_id: mid, parse_mode: "HTML",
+      text: `\u23f3 Calculando a diferen\u00e7a de <b>${p[2]}/${p[1]}</b>...` });
+    let resposta;
     try {
-      texto = /^\d{4}-\d{2}-\d{2}$/.test(dia || "")
-        ? await montarDiferencaDia(dia, true)
-        : "\u2753 Dia inv\u00e1lido.";
+      resposta = await montarDiferencaDia(dia, true);
     } catch (e) {
-      console.error(`[diferenca sob demanda ${dia}] erro:`, e);
-      texto = `\u274c Erro ao calcular a diferen\u00e7a: ${String(e.message || e).slice(0, 200)}`;
+      console.error(`[avisos diferenca ${dia}] erro:`, e);
+      resposta = `\u274c Erro ao calcular a diferen\u00e7a: ${String(e.message || e).slice(0, 200)}`;
     }
-    await snap.ref.update({ texto, respondidoEm: new Date().toISOString() });
+    await tgApi(token, "editMessageText", { chat_id: chat, message_id: mid, parse_mode: "HTML", text: resposta });
+    return;
+  }
+
+  if (texto === BOTAO_DIFERENCA || /^\/diferenca(@\w+)?$/i.test(texto)) {
+    await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML",
+      text: "\ud83d\udccb <b>Diferen\u00e7a de qual dia?</b>", reply_markup: menuDiasDiferenca() });
+    return;
+  }
+
+  // /start, /ajuda ou qualquer outra coisa: explica e (re)mostra o teclado
+  await tgApi(token, "setMyCommands", { commands: [
+    { command: "diferenca", description: "Diferen\u00e7a do dia (estoque x vendas)" },
+    { command: "meuid", description: "Mostra o seu chat id" }] });
+  await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML", reply_markup: TECLADO_AVISOS,
+    text: "\ud83d\udd14 <b>Primus Avisos</b>\nAqui chegam os avisos autom\u00e1ticos (diferen\u00e7a do dia, virada D-1).\nToque em <b>\ud83d\udccb Diferen\u00e7a</b> pra ver a de qualquer dia, quando quiser." });
+}
+
+exports.telegramAvisos = onRequest(
+  { region: REGIAO, secrets: [TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET] },
+  async (req, res) => {
+    if (req.method !== "POST") { res.status(200).send("ok"); return; }
+    if (req.get("X-Telegram-Bot-Api-Secret-Token") !== TELEGRAM_WEBHOOK_SECRET.value()) {
+      res.status(403).send("forbidden"); return;
+    }
+    try {
+      await tratarUpdateAvisos(req.body || {}, TELEGRAM_TOKEN.value(), TELEGRAM_CHAT_ID.value());
+    } catch (e) {
+      console.error("[avisos webhook] erro:", e);
+    }
+    res.status(200).send("ok"); // sempre 200: senao o Telegram fica reenviando
   }
 );
 
