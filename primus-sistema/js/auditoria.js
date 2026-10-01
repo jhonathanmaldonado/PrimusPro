@@ -13,7 +13,7 @@ import {
   listarContagens, listarVendas, listarRecebimentos,
   salvarAuditoriaFechada, buscarAuditoriaFechada,
   listarAuditoriasFechadas, excluirAuditoriaFechada,
-  corrigirItemContagem,
+  corrigirItemContagem as corrigirItemContagemDB,
   registrarRecebimento, excluirRecebimento, atualizarRecebimento,
   salvarConsumoInterno, listarConsumoInternoDia
 } from './db.js';
@@ -32,6 +32,173 @@ let resultadoSorvetesVirada = []; // resultado dos SORVETES + EMBALAGENS (modo v
 let contextoAuditoria = {};      // { contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior, contagemSorv, contagemSorvAnterior }
 let logoDataURL = null;          // logo da Primus em base64 (carregada uma vez)
 let auditoriaFechadaAtual = null; // preenchido quando a auditoria do período já está fechada
+
+// ===== AJUSTES PENDENTES (editar várias coisas e gravar de uma vez) =====
+// Correções de item NÃO gravam na hora: ficam anotadas aqui e a auditoria é
+// refeita na tela aplicando-as por cima (sem buscar tudo de novo no Firebase).
+// Só gravam no "💾 Salvar ajustes" (barra de baixo) ou ao fechar a auditoria —
+// UMA correção por contagem, então chega UMA diferença no Telegram, não uma por item.
+// Exceção: edição de RECEBIDO grava na hora (mexe em 2 lugares; meio-salvo
+// contaria o recebido em dobro).
+const ajustesPendentes = new Map();   // idContagem -> { itens, correcoes: [] }
+const _originaisPorId = new Map();    // idContagem -> itens como estão no Firebase
+const _memo = new Map();              // cache das leituras da última auditoria
+let _usarMemoNaProxima = false;       // próxima executarAuditoria reaproveita o cache
+let _memoAtivo = false;
+const CAMPOS_AJUSTE = ['est', 'frPrinc', 'frAux', 'fr', 'rec', 'qtd', 'abast', 'final', 'total'];
+const clonar = o => JSON.parse(JSON.stringify(o || {}));
+
+async function lerComCache(chave, fn) {
+  if (_memoAtivo && _memo.has(chave)) return _memo.get(chave);
+  const v = await fn();
+  _memo.set(chave, v);
+  return v;
+}
+
+// Contagens do Firebase (ou do cache) com os ajustes pendentes aplicados por cima
+async function contagensComPendentes() {
+  const brutas = await lerComCache('contagens', () => listarContagens({ limite: 500 }));
+  return brutas.map(c => {
+    if (!_originaisPorId.has(c.id)) _originaisPorId.set(c.id, clonar(c.itens));
+    const pend = ajustesPendentes.get(c.id);
+    return { ...c, itens: pend ? clonar(pend.itens) : clonar(c.itens) };
+  });
+}
+
+// Substitui a gravação: anota o ajuste (mesma assinatura da função do db.js)
+async function corrigirItemContagem(idContagem, novosItens, correcao) {
+  const originais = _originaisPorId.get(idContagem) || {};
+  const itens = clonar(novosItens);
+  const agora = new Date().toISOString();
+  Object.keys(itens).forEach(k => {
+    const nv = itens[k];
+    if (!nv || typeof nv !== 'object') return;
+    const ov = originais[k] || {};
+    const mudou = CAMPOS_AJUSTE.some(c => (Number(nv[c]) || 0) !== (Number(ov[c]) || 0));
+    if (mudou) {
+      nv._pendente = true;
+      nv._editado = { por: 'ajuste pendente (não salvo)', em: agora };
+    } else if (nv._pendente) {
+      delete nv._pendente;
+      if (ov._editado) nv._editado = ov._editado; else delete nv._editado;
+    }
+  });
+  const atual = ajustesPendentes.get(idContagem);
+  ajustesPendentes.set(idContagem, { itens, correcoes: [...(atual ? atual.correcoes : []), correcao || {}] });
+  _usarMemoNaProxima = true;
+  atualizarBarraPendentes();
+  return idContagem;
+}
+
+// Tira as marcas de "pendente" antes de gravar (o db.js marca o _editado real)
+function limparMarcasPendente(id, itens) {
+  const originais = _originaisPorId.get(id) || {};
+  const limpo = clonar(itens);
+  Object.keys(limpo).forEach(k => {
+    const v = limpo[k];
+    if (!v || typeof v !== 'object' || !v._pendente) return;
+    delete v._pendente;
+    const ov = originais[k] || {};
+    if (ov._editado) v._editado = ov._editado; else delete v._editado;
+  });
+  return limpo;
+}
+
+function metaDasCorrecoes(correcoes) {
+  const cs = correcoes.filter(Boolean);
+  const ultima = cs[cs.length - 1] || {};
+  if (cs.length <= 1) return ultima;
+  const motivos = cs.map(c => c.motivo).filter(Boolean).join(' | ');
+  return {
+    responsavel: ultima.responsavel || 'Gestor',
+    motivo: `${cs.length} ajustes: ${motivos}`.slice(0, 1500),
+    itemSlug: null, valorAntigo: null, valorNovo: null
+  };
+}
+
+// Grava AGORA uma contagem (usado na edição de Recebido). Leva junto o que
+// estava pendente nela (os itens já vêm da contagem com os pendentes aplicados).
+async function corrigirAgora(idContagem, novosItens, correcao) {
+  const anteriores = (ajustesPendentes.get(idContagem) || {}).correcoes || [];
+  await corrigirItemContagemDB(idContagem, limparMarcasPendente(idContagem, novosItens),
+    metaDasCorrecoes([...anteriores, correcao]));
+  ajustesPendentes.delete(idContagem);
+  _usarMemoNaProxima = false;
+  atualizarBarraPendentes();
+}
+
+// Grava todos os pendentes: UMA correção por contagem. Devolve true se gravou.
+async function salvarAjustesPendentes({ recalcular = true } = {}) {
+  if (!ajustesPendentes.size) return true;
+  const btn = document.getElementById('aud-pend-salvar');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Salvando...'; }
+  try {
+    for (const [id, p] of [...ajustesPendentes.entries()]) {
+      await corrigirItemContagemDB(id, limparMarcasPendente(id, p.itens), metaDasCorrecoes(p.correcoes));
+      ajustesPendentes.delete(id);     // gravou: sai da lista (se a próxima falhar, as outras ficam)
+    }
+    _originaisPorId.clear();
+    _usarMemoNaProxima = false;
+    atualizarBarraPendentes();
+    mostrarToastAud('✅ Ajustes salvos!', 'ok');
+    if (recalcular) await executarAuditoria();
+    return true;
+  } catch (e) {
+    console.error(e);
+    alert(`❌ Erro ao salvar os ajustes: ${e.message}\n\nO que não gravou continua pendente.`);
+    _usarMemoNaProxima = false;
+    atualizarBarraPendentes();
+    return false;
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '💾 Salvar ajustes'; }
+  }
+}
+
+function descartarAjustesPendentes() {
+  const n = contarAjustesPendentes();
+  if (!n || !confirm(`Descartar ${n} ajuste(s) que ainda não foram salvos?`)) return;
+  ajustesPendentes.clear();
+  _usarMemoNaProxima = false;
+  atualizarBarraPendentes();
+  executarAuditoria();
+}
+
+function contarAjustesPendentes() {
+  let n = 0;
+  ajustesPendentes.forEach(p => { n += p.correcoes.length; });
+  return n;
+}
+
+// Barra fixa embaixo (fica dentro da tela de auditoria: some nas outras abas)
+function atualizarBarraPendentes() {
+  const container = document.getElementById('auditoria-container');
+  if (!container) return;
+  let barra = document.getElementById('aud-pend-barra');
+  if (!barra) {
+    barra = document.createElement('div');
+    barra.id = 'aud-pend-barra';
+    barra.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:900;' +
+      'display:none;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;' +
+      'background:#2b2b2b;color:#fff;padding:10px 14px;border-radius:12px;box-shadow:0 6px 24px rgba(0,0,0,.25);' +
+      'max-width:calc(100vw - 24px);font-size:14px';
+    barra.innerHTML = `
+      <span id="aud-pend-txt" style="font-weight:600"></span>
+      <button class="btn btn-ghost" id="aud-pend-descartar" style="background:transparent;color:#fff;border-color:rgba(255,255,255,.35)">Descartar</button>
+      <button class="btn btn-primary" id="aud-pend-salvar">💾 Salvar ajustes</button>`;
+    container.appendChild(barra);
+    document.getElementById('aud-pend-salvar').onclick = () => salvarAjustesPendentes();
+    document.getElementById('aud-pend-descartar').onclick = descartarAjustesPendentes;
+  }
+  const n = contarAjustesPendentes();
+  document.getElementById('aud-pend-txt').textContent =
+    `✏️ ${n} ajuste${n === 1 ? '' : 's'} pendente${n === 1 ? '' : 's'} (não salvo${n === 1 ? '' : 's'})`;
+  barra.style.display = n ? 'flex' : 'none';
+}
+
+// Fechar/recarregar a página com ajuste pendente: o navegador pergunta antes
+window.addEventListener('beforeunload', e => {
+  if (ajustesPendentes.size) { e.preventDefault(); e.returnValue = ''; }
+});
 
 const fmtMoeda = v => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtInt   = v => Math.round(v || 0).toLocaleString('pt-BR');
@@ -520,6 +687,12 @@ async function executarAuditoria() {
   const acoes   = document.getElementById('aud-acoes');
   const banner  = document.getElementById('aud-fechada-banner');
 
+  // Depois de anotar um ajuste, refaz a conta com os dados já lidos (rápido).
+  // Qualquer outra execução busca tudo de novo no Firebase.
+  _memoAtivo = _usarMemoNaProxima;
+  _usarMemoNaProxima = false;
+  if (!_memoAtivo) { _memo.clear(); _originaisPorId.clear(); }
+
   loading.style.display = 'block';
   erro.style.display    = 'none';
   resumo.style.display  = 'none';
@@ -537,12 +710,14 @@ async function executarAuditoria() {
 
     // Verifica se essa auditoria já foi fechada antes (tolerante a falha)
     try {
-      auditoriaFechadaAtual = await buscarAuditoriaFechada(modoAtual, dataInicio, dataFim);
+      auditoriaFechadaAtual = await lerComCache(`fechada|${modoAtual}|${dataInicio}|${dataFim}`,
+        () => buscarAuditoriaFechada(modoAtual, dataInicio, dataFim));
     } catch (errFechada) {
       console.warn('Não foi possível verificar auditoria fechada (pode ser regra Firestore ausente):', errFechada.message);
       auditoriaFechadaAtual = null;
     }
     renderizarBannerFechamento();
+    atualizarBarraPendentes();
 
     loading.style.display = 'none';
     resumo.style.display  = 'block';
@@ -587,8 +762,8 @@ function renderizarBannerFechamento() {
 
 // ===== MODO OPERACIONAL =====
 async function executarModoOperacional() {
-  // 1) Busca contagens no período
-  const todasContagens = await listarContagens({ limite: 500 });
+  // 1) Busca contagens no período (com os ajustes pendentes aplicados)
+  const todasContagens = await contagensComPendentes();
 
   // Pega a contagem INI na data de início (bebidas)
   const contagemIni = todasContagens.find(c =>
@@ -622,23 +797,23 @@ async function executarModoOperacional() {
     .sort((a, b) => b.data.localeCompare(a.data))[0] || null;
 
   // 3) Busca vendas no período
-  const vendas = await listarVendas({
+  const vendas = await lerComCache(`vendas|${dataInicio}|${dataFim}`, () => listarVendas({
     dataInicio,
     dataFim,
     limite: 365
-  });
+  }));
 
   // 4) Busca recebimentos no período
-  const recebimentos = await listarRecebimentos(dataInicio, dataFim);
+  const recebimentos = await lerComCache(`receb|${dataInicio}|${dataFim}`, () => listarRecebimentos(dataInicio, dataFim));
 
   // 5) Calcula auditoria de bebidas (com D-1 e diagnóstico)
   // Consumo interno do dia anterior (abatido do FIN anterior no D-1)
   const consumoInternoAnt = contagemFinAnterior
-    ? (await listarConsumoInternoDia(contagemFinAnterior.data)).itens
+    ? (await lerComCache(`consumo|${contagemFinAnterior.data}`, () => listarConsumoInternoDia(contagemFinAnterior.data))).itens
     : {};
   // Consumo interno do PRÓPRIO dia (abatido do esperado — retiradas fora do PDV
   // no mesmo dia; sem isso, o consumo do dia aparece como falta na contagem).
-  const consumoInternoDia = (await listarConsumoInternoDia(dataInicio)).itens;
+  const consumoInternoDia = (await lerComCache(`consumo|${dataInicio}`, () => listarConsumoInternoDia(dataInicio))).itens;
   resultadoAuditoria = await calcularAuditoriaOperacional(contagemIni, contagemFin, vendas, recebimentos, contagemFinAnterior, consumoInternoAnt, consumoInternoDia);
 
   // 5b) Calcula auditoria de sorvetes (se houver contagem)
@@ -664,8 +839,8 @@ async function executarModoOperacional() {
 
 // ===== MODO VIRADA =====
 async function executarModoVirada() {
-  // 1) Busca a FIN do "dia 1" e a INI do "dia 2"
-  const todasContagens = await listarContagens({ limite: 500 });
+  // 1) Busca a FIN do "dia 1" e a INI do "dia 2" (com os ajustes pendentes aplicados)
+  const todasContagens = await contagensComPendentes();
 
   const contagemFinAnterior = todasContagens.find(c =>
     c.tipo === 'fin' && c.data === dataInicio
@@ -692,14 +867,16 @@ async function executarModoVirada() {
   // 2) Busca auditoria operacional FECHADA do dia anterior (pro cruzamento de erro de contagem)
   let auditoriaOperacionalDiaAnterior = null;
   try {
-    auditoriaOperacionalDiaAnterior = await buscarAuditoriaFechada('operacional', dataInicio, dataInicio);
+    auditoriaOperacionalDiaAnterior = await lerComCache(`fechada|operacional|${dataInicio}|${dataInicio}`,
+      () => buscarAuditoriaFechada('operacional', dataInicio, dataInicio));
   } catch (e) {
     console.warn('Não foi possível buscar auditoria operacional do dia anterior:', e);
   }
 
   // 3) Calcula auditoria de virada com cruzamento (bebidas)
   // Consumo interno do dia anterior (abatido do FIN anterior)
-  const consumoInternoViradaAnt = (await listarConsumoInternoDia(contagemFinAnterior.data)).itens;
+  const consumoInternoViradaAnt = (await lerComCache(`consumo|${contagemFinAnterior.data}`,
+    () => listarConsumoInternoDia(contagemFinAnterior.data))).itens;
   resultadoAuditoria = await calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, auditoriaOperacionalDiaAnterior, consumoInternoViradaAnt);
 
   // 3b) Calcula virada de sorvetes (se houver as duas contagens)
@@ -2771,7 +2948,7 @@ window.__aud_corrigirErro = async function(slug, alvo, confirmadoAuto) {
       valorNovo: valorNovo
     });
 
-    alert(`✅ Correção aplicada!\n\n${descricao}\n\nRecalculando auditoria...`);
+    mostrarToastAud(`✏️ Ajuste anotado: ${descricao} — salve na barra de baixo`, 'ok');
 
     // Re-executa a auditoria pra atualizar a tela
     await executarAuditoria();
@@ -2925,7 +3102,7 @@ window.__aud_corrigirOpErro = async function(slug, alvo) {
       valorNovo: valorNovo
     });
 
-    alert(`✅ Correção aplicada!\n\n${descricao}\n\nRecalculando auditoria...`);
+    mostrarToastAud(`✏️ Ajuste anotado: ${descricao} — salve na barra de baixo`, 'ok');
 
     // Re-executa a auditoria pra atualizar a tela
     await executarAuditoria();
@@ -3022,7 +3199,7 @@ window.__aud_corrigirSorvErro = async function(slug, alvo) {
       valorNovo: valorNovo
     });
 
-    alert(`✅ Correção aplicada!\n\n${descricao}\n\nRecalculando auditoria...`);
+    mostrarToastAud(`✏️ Ajuste anotado: ${descricao} — salve na barra de baixo`, 'ok');
     await executarAuditoria();
 
   } catch (e) {
@@ -3292,7 +3469,7 @@ async function confirmarEdicao() {
       await aplicarEdicaoRecebimento(slug, item.nome, rec, motivo, sessaoNome);
     }
 
-    alert(`✅ Edição salva!\n\nRecalculando auditoria...`);
+    mostrarToastAud('✏️ Ajuste anotado — salve na barra de baixo', 'ok');
     fecharModalEditar();
     await executarAuditoria();
 
@@ -3391,7 +3568,7 @@ async function confirmarEdicaoSorv() {
       valorNovo: `INI ${ini}/ABAST ${abast}/FIN ${fin}`
     });
 
-    alert(`✅ Edição salva!\n\nRecalculando auditoria...`);
+    mostrarToastAud('✏️ Ajuste anotado — salve na barra de baixo', 'ok');
     fecharModalEditar();
     await executarAuditoria();
 
@@ -3457,6 +3634,7 @@ async function aplicarEdicaoContagem(contagem, slug, novoValor, motivo, responsa
  */
 async function aplicarEdicaoRecebimento(slug, nomeProduto, novoValor, motivo, responsavel) {
   const { contagemFin } = contextoAuditoria;
+  _usarMemoNaProxima = false;   // recebimentos mudam no banco: a próxima conta busca tudo de novo
 
   // 1) Zera o campo "rec" dentro da contagem FIN (caso o barman tenha
   //    registrado lá direto)
@@ -3470,7 +3648,9 @@ async function aplicarEdicaoRecebimento(slug, nomeProduto, novoValor, motivo, re
       }
     });
     if (mudou) {
-      await corrigirItemContagem(contagemFin.id, novosItens, {
+      // Grava na HORA (com o que estiver pendente nesta contagem): REC mexe em
+      // 2 lugares e meio-salvo contaria o recebido em dobro.
+      await corrigirAgora(contagemFin.id, novosItens, {
         responsavel,
         motivo: `Edição de REC: zerou campo rec da contagem FIN. Motivo: ${motivo}`,
         itemSlug: slug,
@@ -3560,6 +3740,11 @@ function abrirModalFechar() {
     } catch { respEl.value = ''; }
   }
 
+  const nPend = contarAjustesPendentes();
+  if (nPend) {
+    resumoEl.innerHTML += `<div style="margin-top:8px;color:#8a5a00;font-weight:600">✏️ ${nPend} ajuste(s) pendente(s) serão salvos junto.</div>`;
+  }
+
   document.getElementById('aud-modal-fechar').classList.add('open');
 }
 
@@ -3580,6 +3765,14 @@ async function confirmarFechamento() {
   const txtOriginal = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Salvando...';
+
+  // Ajustes pendentes gravam ANTES do fechamento (o resultado na tela já os inclui)
+  const tinhaPendentes = ajustesPendentes.size > 0;
+  if (tinhaPendentes && !(await salvarAjustesPendentes({ recalcular: false }))) {
+    btn.innerHTML = txtOriginal;
+    btn.disabled = false;
+    return;
+  }
 
   try {
     const sessao = getSessao();
@@ -3626,6 +3819,8 @@ async function confirmarFechamento() {
       btn.innerHTML = txtOriginal;
       btn.disabled = false;
     }, 1200);
+    // As correções trocaram os ids das contagens: recarrega pra não editar id velho
+    if (tinhaPendentes) await executarAuditoria();
 
   } catch (e) {
     console.error(e);
