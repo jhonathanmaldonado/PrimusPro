@@ -54,6 +54,7 @@ export async function inicializarDashboard() {
         <input type="date" id="periodo-ate">
         <button class="btn btn-ghost btn-sm" id="btn-aplicar-periodo">Aplicar</button>
       </div>
+      <button class="btn btn-ghost btn-sm" id="btn-atualizar-dash" title="Busca de novo as vendas no Firebase">🔄 Atualizar</button>
     </div>
 
     <div id="dash-loading" style="text-align:center;padding:60px">
@@ -230,9 +231,33 @@ export async function inicializarDashboard() {
     aplicarPeriodo('custom', de, ate);
   };
 
+  // 🔄 Atualizar: busca as vendas de novo (ex.: depois de um /vendas no Telegram)
+  // e reaplica o período que estiver selecionado, sem recarregar a página.
+  document.getElementById('btn-atualizar-dash').onclick = atualizarDados;
+
   // Carrega os dados na primeira vez
   await carregarDados();
   aplicarPeriodo('7d');
+}
+
+async function atualizarDados() {
+  const btn = document.getElementById('btn-atualizar-dash');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Atualizando...';
+  try {
+    await carregarDados();
+    const ativo = document.querySelector('#dashboard-container .periodo-btn.active, .periodo-btn.active');
+    const de  = document.getElementById('periodo-de').value;
+    const ate = document.getElementById('periodo-ate').value;
+    if (ativo) aplicarPeriodo(ativo.dataset.periodo);
+    else if (de && ate) aplicarPeriodo('custom', de, ate);
+    else aplicarPeriodo('7d');
+    const hora = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    btn.title = `Atualizado às ${hora}`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '🔄 Atualizar';
+  }
 }
 
 async function carregarDados() {
@@ -249,6 +274,7 @@ async function carregarDados() {
     return;
   }
 
+  document.getElementById('dash-vazio').style.display = 'none';
   document.getElementById('dash-conteudo').style.display = 'block';
 }
 
@@ -307,11 +333,11 @@ function dicaSemDados() {
   const estilo = 'margin-top:10px;font-size:13px;color:var(--cinza-texto);line-height:1.5';
   if (ultimoTipoPeriodo === 'hoje') {
     return `<div style="${estilo}">As vendas de hoje ainda não foram lançadas.<br>
-      No Telegram: <b>📊 Vendas → Hoje</b> (parcial). Se já lançou, recarregue a página.</div>`;
+      No Telegram: <b>📊 Vendas → Hoje</b> (parcial). Se já lançou, toque em 🔄 Atualizar.</div>`;
   }
   if (ultimoTipoPeriodo === 'ontem') {
     return `<div style="${estilo}">As vendas de ontem ainda não foram lançadas.<br>
-      No Telegram: <b>📊 Vendas → Ontem</b>. Se já lançou, recarregue a página.</div>`;
+      No Telegram: <b>📊 Vendas → Ontem</b>. Se já lançou, toque em 🔄 Atualizar.</div>`;
   }
   return '';
 }
