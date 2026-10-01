@@ -74,6 +74,44 @@ export async function inicializarVendas() {
   injetarCssCalendario();
 
   container.innerHTML = `
+    <!-- Calendário de cobertura de vendas -->
+    <div class="card" style="margin-top:16px">
+      <div class="grafico-head">
+        <h3>📅 Cobertura de vendas</h3>
+        <span class="grafico-sub">Clique num dia verde para ver os detalhes</span>
+        <button class="btn btn-ghost btn-sm" id="vcal-atualizar" style="margin-left:auto">🔄 Atualizar</button>
+      </div>
+
+      <div class="info-vxp" style="margin-bottom:12px">
+        🤖 As vendas chegam pelo robô: no Telegram, <b>Primus Vendas → 📊 Vendas</b> e escolha o dia.
+        Dia faltando aqui? Lance por lá e toque em <b>🔄 Atualizar</b>. Se o robô estiver fora, use a importação manual abaixo.
+      </div>
+
+      <div id="vendas-cal-totais" class="vcal-totais"></div>
+
+      <div class="vcal-head">
+        <div class="vcal-mes" id="vcal-mes-label">—</div>
+        <div class="vcal-nav">
+          <button id="vcal-prev">◀ Anterior</button>
+          <button id="vcal-next">Próximo ▶</button>
+        </div>
+      </div>
+
+      <div id="vendas-cal-grid" class="vcal-grid"></div>
+
+      <div class="vcal-legenda">
+        <span class="lg"><span class="sw tem"></span> Com vendas importadas</span>
+        <span class="lg"><span class="sw vazio"></span> Sem importação</span>
+        <span class="lg">👥 = tem também o detalhado</span>
+      </div>
+    </div>
+
+    <!-- Importação manual: plano B se o robô falhar (fica recolhida) -->
+    <details id="vendas-manual" style="margin-top:16px">
+      <summary style="cursor:pointer;padding:12px 4px;font-weight:700;color:var(--cinza-texto);list-style-position:inside">
+        ✍️ Importação manual (só se o robô falhar)
+      </summary>
+      <div style="margin-top:8px">
     <div class="card">
       <div class="grafico-head">
         <h3>📤 Importar vendas do PDV</h3>
@@ -120,36 +158,19 @@ export async function inicializarVendas() {
       <div id="preview-vxp" style="display:none"></div>
     </div>
 
-    <!-- Calendário de cobertura de vendas -->
-    <div class="card" style="margin-top:16px">
-      <div class="grafico-head">
-        <h3>📅 Cobertura de vendas</h3>
-        <span class="grafico-sub">Clique num dia verde para ver os detalhes</span>
       </div>
-
-      <div id="vendas-cal-totais" class="vcal-totais"></div>
-
-      <div class="vcal-head">
-        <div class="vcal-mes" id="vcal-mes-label">—</div>
-        <div class="vcal-nav">
-          <button id="vcal-prev">◀ Anterior</button>
-          <button id="vcal-next">Próximo ▶</button>
-        </div>
-      </div>
-
-      <div id="vendas-cal-grid" class="vcal-grid"></div>
-
-      <div class="vcal-legenda">
-        <span class="lg"><span class="sw tem"></span> Com vendas importadas</span>
-        <span class="lg"><span class="sw vazio"></span> Sem importação</span>
-        <span class="lg">👥 = tem também o detalhado</span>
-      </div>
-    </div>
+    </details>
   `;
 
   setupColarTexto();
   setupColarTextoVxP();
 
+  document.getElementById('vcal-atualizar').onclick = async () => {
+    const btn = document.getElementById('vcal-atualizar');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+    try { await carregarCalendario(); } finally { btn.disabled = false; btn.innerHTML = '🔄 Atualizar'; }
+  };
   document.getElementById('vcal-prev').onclick = () => navegarMes(-1);
   document.getElementById('vcal-next').onclick = () => navegarMes(1);
 
@@ -604,6 +625,7 @@ window.verDetalheVendas = async function(dia) {
       <div class="modal-head">
         <h3>Vendas de ${fmtData(dia)}</h3>
         <p>${diaSemana(dia)} · Faturamento total: ${fmtMoeda(v.totais?.total)}</p>
+        <p style="font-size:12px;color:var(--cinza-texto);margin-top:2px">${v.origem === 'robo' ? '🤖 Lançado pelo robô' : '✍️ Importado manualmente'}${v.atualizadoEm?.toDate ? ' · ' + v.atualizadoEm.toDate().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : ''}</p>
       </div>
       <div class="items-detalhe">
         <h4 style="margin-bottom:8px;font-family:'Raleway',sans-serif">💰 Totais</h4>
