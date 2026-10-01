@@ -113,6 +113,8 @@
   input:focus { outline: none; border-color: var(--bordo); box-shadow: 0 0 0 3px rgba(124, 0, 71, .18); }
   input.pin { letter-spacing: .5em; font-family: var(--titulo); font-size: 30px; text-align: center; }
   .dica { color: var(--tinta-suave); font-size: 14px; margin-top: 4px; }
+  input.obs { text-transform: uppercase; }
+  input.obs::placeholder { text-transform: none; }
 
   .botao {
     width: 100%;
@@ -614,6 +616,7 @@
         <button id="acao-historico" class="acao" type="button"><strong>Histórico</strong>Etiquetas emitidas, reimpressão e 2ª via</button>
         <button id="acao-produtos" class="acao" type="button"><strong>Produtos</strong>Cadastro, grupos e prazos de validade</button>
         <button id="acao-aparelho" class="acao discreta" type="button" hidden><strong id="aparelho-titulo">Este aparelho</strong><span id="aparelho-texto"></span></button>
+        <button id="acao-hora" class="acao discreta" type="button" hidden><strong id="hora-titulo">Hora na etiqueta</strong><span id="hora-texto"></span></button>
         <button id="acao-usuarios" class="acao" type="button" hidden><strong>Usuários</strong>Cadastrar funcionários e definir quem pode fazer o quê</button>
       </div>
     </div>
@@ -698,6 +701,11 @@
       <p id="emissao-offline" class="erro" hidden>Impressora offline. Confira o PC da cozinha antes de imprimir.</p>
       <label>Modo de conservação</label>
       <div id="emissao-modos" class="modos"></div>
+      <div class="campo">
+        <label for="emissao-obs">Observação (opcional)</label>
+        <input id="emissao-obs" class="obs" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Ex.: SEM PIMENTA">
+        <div id="emissao-obs-conta" class="dica"></div>
+      </div>
       <label>Quantidade</label>
       <div class="contador">
         <button id="emissao-menos" type="button" aria-label="Menos uma">−</button>

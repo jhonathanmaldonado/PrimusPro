@@ -1,5 +1,5 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/db.js (v6)
+// PRIMUS ETIQUETAS - js/db.js (v7)
 // Firebase: inicializacao, login usuario+PIN, perfil, setup inicial, usuarios
 // Projeto Firebase proprio: primus-etiquetas (independente dos outros sistemas)
 // v2: cadastro/edicao de usuarios (gestor e chef) e troca do proprio PIN
@@ -7,6 +7,7 @@
 // v4: emissao de etiquetas (codigo sequencial + fila de impressao) e conferencia de PIN do responsavel
 // v5: importacao em lote de grupos e produtos (planilha revisada)
 // v6: historico de etiquetas e reimpressao (2a via)
+// v7: observacao na etiqueta, hora opcional (config/sistema.mostrarHora), sem QR
 // ============================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
 import {
@@ -349,6 +350,26 @@ export async function lerHistorico(id, maximo) {
 // ---------------------------------------------------------------- emissao
 export const URL_ETIQUETA = "https://gestao.primuspeixaria.com.br/primus-etiquetas/?e=";
 
+export const MAX_OBSERVACAO = 40;     // letras (o agente imprime em ate 2 linhas)
+export const HORAS_MIN_SO_DATA = 72;  // validade menor que isso sai sempre com hora
+
+// Configuracao geral (config/sistema), em tempo real. callback({ mostrarHora })
+export function observarConfig(callback) {
+  return onSnapshot(doc(db, "config", "sistema"), (snap) => {
+    const d = snap.exists() ? snap.data() : {};
+    callback({ mostrarHora: d.mostrarHora !== false });
+  }, () => callback(null));
+}
+
+// So gestor e chef (garantido pelas regras)
+export function salvarMostrarHora(valor) {
+  return updateDoc(doc(db, "config", "sistema"), {
+    mostrarHora: !!valor,
+    atualizadoEm: serverTimestamp(),
+    atualizadoPor: auth.currentUser.uid
+  });
+}
+
 export function formatarCodigo(num) {
   return String(num).padStart(6, "0");
 }
@@ -368,14 +389,26 @@ export async function verificarPin(usuario, pin) {
 }
 
 // Reserva o proximo codigo e cria o pedido na fila, na mesma transacao.
-// e: { produto, modo:{id,nome}, horas, manipulacao:Date, copias, responsavel:{uid,nome} }
+// e: { produto, modo:{id,nome}, horas, manipulacao:Date, copias, responsavel:{uid,nome}, observacao, mostrarHora }
 export async function emitirEtiqueta(e) {
   const refContador = doc(db, "config", "contador");
   const manipMs = e.manipulacao.getTime();
+  const observacao = String(e.observacao || "").trim().slice(0, MAX_OBSERVACAO);
   return runTransaction(db, async (t) => {
     const snap = await t.get(refContador);
     const num = (snap.exists() ? snap.data().ultimo : 0) + 1;
     const codigo = formatarCodigo(num);
+    const dados = {
+      produto: e.produto.nome,
+      conservacao: e.modo.nome,
+      manipulacaoEm: Timestamp.fromMillis(manipMs),
+      validadeEm: Timestamp.fromMillis(manipMs + e.horas * 3600000),
+      responsavel: e.responsavel.nome,
+      responsavelUid: e.responsavel.uid,
+      lote: codigo,
+      mostrarHora: e.mostrarHora !== false
+    };
+    if (observacao) dados.observacao = observacao;
     t.set(refContador, { ultimo: num, atualizadoEm: serverTimestamp() });
     t.set(doc(db, "filaImpressao", String(num)), {
       status: "pendente",
@@ -388,16 +421,7 @@ export async function emitirEtiqueta(e) {
       criadoEm: serverTimestamp(),
       solicitadoEm: Timestamp.fromMillis(Date.now()),
       emitidoPor: auth.currentUser.uid,
-      dados: {
-        produto: e.produto.nome,
-        conservacao: e.modo.nome,
-        manipulacaoEm: Timestamp.fromMillis(manipMs),
-        validadeEm: Timestamp.fromMillis(manipMs + e.horas * 3600000),
-        responsavel: e.responsavel.nome,
-        responsavelUid: e.responsavel.uid,
-        lote: codigo,
-        qr: URL_ETIQUETA + num
-      }
+      dados
     });
     return { num, codigo };
   });
@@ -499,6 +523,8 @@ function montarEtiqueta(id, d) {
     validadeEm: paraDataOuNula(dados.validadeEm),
     responsavel: dados.responsavel || "",
     responsavelUid: dados.responsavelUid || "",
+    observacao: dados.observacao || "",
+    mostrarHora: dados.mostrarHora !== false,
     bruto: d
   };
 }
@@ -536,6 +562,19 @@ export function observarCodigo(num, callback, callbackErro) {
 // Reimpressao: mesmos dados da original. "2a via" so se a original chegou a ser impressa.
 export async function reimprimirEtiqueta(original, copias, quem) {
   const o = original.bruto;
+  // Copia fiel: campos opcionais so vao se existirem na original (etiquetas antigas tem qr, novas nao)
+  const dados = {
+    produto: o.dados.produto,
+    conservacao: o.dados.conservacao,
+    manipulacaoEm: o.dados.manipulacaoEm,
+    validadeEm: o.dados.validadeEm,
+    responsavel: o.dados.responsavel,
+    responsavelUid: o.dados.responsavelUid,
+    lote: o.dados.lote
+  };
+  for (const campo of ["qr", "observacao", "mostrarHora"]) {
+    if (o.dados[campo] !== undefined) dados[campo] = o.dados[campo];
+  }
   const ref = await addDoc(collection(db, "filaImpressao"), {
     status: "pendente",
     tipo: "reimpressao",
@@ -550,16 +589,7 @@ export async function reimprimirEtiqueta(original, copias, quem) {
     emitidoPor: auth.currentUser.uid,
     reimpressoPorUid: quem.uid,
     reimpressoPorNome: quem.nome,
-    dados: {
-      produto: o.dados.produto,
-      conservacao: o.dados.conservacao,
-      manipulacaoEm: o.dados.manipulacaoEm,
-      validadeEm: o.dados.validadeEm,
-      responsavel: o.dados.responsavel,
-      responsavelUid: o.dados.responsavelUid,
-      lote: o.dados.lote,
-      qr: o.dados.qr
-    }
+    dados
   });
   return ref.id;
 }

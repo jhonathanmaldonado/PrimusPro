@@ -1,5 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/emissao.js (v2)
+// PRIMUS ETIQUETAS - js/emissao.js (v3)
+// v3: observacao (ate 40 letras) e hora opcional (chave geral; validade < 72 h sai com hora)
 // v2: comResponsavel() e acompanhar() exportados para a reimpressao (Fase 4)
 // Fase 3: emissao de etiquetas
 // - escolher produto (busca + grupos), modo de conservacao, quantidade e hora de manipulacao
@@ -8,7 +9,8 @@
 // ============================================================
 import {
   MODOS, normalizarBusca, traduzirErro, normalizarUsuario,
-  emitirEtiqueta, observarEtiqueta, verificarPin, observarUsuarios, formatarCodigo
+  emitirEtiqueta, observarEtiqueta, verificarPin, observarUsuarios, formatarCodigo,
+  MAX_OBSERVACAO, HORAS_MIN_SO_DATA
 } from "./db.js";
 import {
   $, mostrarTela, mostrarErro, ocupado, abrirModal, fecharModal, aviso, escapar, focarSemRolar
@@ -22,6 +24,7 @@ const MAX_ATRAS_HORAS = 24;
 
 let getPerfil = () => null;
 let getImpressoraOnline = () => false;
+let getMostrarHora = () => true;
 let filtroGrupo = "";
 let textoBusca = "";
 let produtoAtual = null;
@@ -54,9 +57,12 @@ export function modoAparelhoSalvo() {
 }
 
 // ---------------------------------------------------------------- configuracao
-export function configurarEmissao({ obterPerfil, impressoraOnline, voltar }) {
+export function configurarEmissao({ obterPerfil, impressoraOnline, mostrarHora, voltar }) {
   getPerfil = obterPerfil;
   getImpressoraOnline = impressoraOnline;
+  if (mostrarHora) getMostrarHora = mostrarHora;
+  $("emissao-obs").maxLength = MAX_OBSERVACAO;
+  $("emissao-obs").addEventListener("input", desenharObs);
   $("emitir-voltar").addEventListener("click", voltar);
   $("emitir-busca").addEventListener("input", (ev) => { textoBusca = ev.target.value; desenharProdutos(); });
   $("emitir-grupos").addEventListener("click", (ev) => {
@@ -185,6 +191,8 @@ function abrirEmissao(produto) {
   copias = 1;
   manipulacaoAgora = true;
   $("emissao-hora").value = "";
+  $("emissao-obs").value = "";
+  desenharObs();
   mostrarErro("emissao-erro", "");
   $("emissao-produto").textContent = produto.nome;
   $("emissao-modos").innerHTML = modos.map((m) => `
@@ -213,6 +221,22 @@ function calcularManipulacao() {
 }
 
 const fmtDataHora = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+const fmtData = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+// Texto da observacao como vai para a etiqueta (o agente poe em maiusculas)
+function textoObs() {
+  return $("emissao-obs").value.replace(/[\^~\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, MAX_OBSERVACAO);
+}
+
+function desenharObs() {
+  const n = $("emissao-obs").value.length;
+  $("emissao-obs-conta").textContent = `${n}/${MAX_OBSERVACAO} letras. Sai em destaque na etiqueta.`;
+}
+
+// Hora sai na etiqueta se a chave geral estiver ligada ou se a validade for curta
+function horaNaEtiqueta(horas) {
+  return getMostrarHora() || horas < HORAS_MIN_SO_DATA;
+}
 
 function desenharEmissao() {
   for (const b of $("emissao-modos").querySelectorAll("[data-modo]")) {
@@ -234,9 +258,14 @@ function desenharEmissao() {
   } else {
     const horas = produtoAtual.validades[modoAtual.id];
     const validade = new Date(m.data.getTime() + horas * 3600000);
+    const comHora = horaNaEtiqueta(horas);
+    const fmt = comHora ? fmtDataHora : fmtData;
+    let nota = "";
+    if (!getMostrarHora() && comHora) nota = '<span class="resumo-dica">Validade curta: a hora sai na etiqueta.</span>';
+    else if (!comHora) nota = '<span class="resumo-dica">A etiqueta sai só com a data.</span>';
     resumo.innerHTML = `
-      <span>Manipulação <strong>${escapar(fmtDataHora.format(m.data))}</strong></span>
-      <span class="resumo-validade">Validade <strong>${escapar(fmtDataHora.format(validade))}</strong></span>`;
+      <span>Manipulação <strong>${escapar(fmt.format(m.data))}</strong></span>
+      <span class="resumo-validade">Validade <strong>${escapar(fmt.format(validade))}</strong></span>${nota}`;
   }
 
   const online = getImpressoraOnline();
@@ -279,7 +308,9 @@ async function enviar() {
       horas: produtoAtual.validades[modoAtual.id],
       manipulacao: m.data,
       copias,
-      responsavel: { uid: responsavel.uid, nome: responsavel.nome }
+      responsavel: { uid: responsavel.uid, nome: responsavel.nome },
+      observacao: textoObs(),
+      mostrarHora: horaNaEtiqueta(produtoAtual.validades[modoAtual.id])
     });
     if (aparelhoEhTablet()) responsavel.validoAte = Date.now() + RESPONSAVEL_VALE_MS;
     fecharModal("modal-emissao");

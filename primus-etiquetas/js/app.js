@@ -1,5 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/app.js (v12)
+// PRIMUS ETIQUETAS - js/app.js (v13)
+// v13: chave geral "Hora na etiqueta" (gestor e chef), lida em tempo real de config/sistema
 // v12: QR abre a etiqueta so para consulta
 // v10: Fase 4 (historico e reimpressao em js/historico.js); QR da etiqueta abre o detalhe (?e=NUM)
 // v7: Fase 3 (emissao em js/emissao.js) e configuracao do aparelho (tablet da cozinha x celular pessoal)
@@ -12,7 +13,7 @@
 import {
   auth, PAPEIS, normalizarUsuario, validarUsuario, validarPin, traduzirErro,
   setupFeito, fazerSetup, entrar, sair, observarSessao, carregarPerfil, observarAgentes,
-  observarUsuarios, criarUsuario, atualizarUsuario, trocarMeuPin
+  observarUsuarios, criarUsuario, atualizarUsuario, trocarMeuPin, observarConfig, salvarMostrarHora
 } from "./db.js";
 import {
   $, mostrarTela, mostrarErro, ocupado, abrirModal, fecharModal, fecharTodosModais, aviso, escapar, focarSemRolar
@@ -32,7 +33,7 @@ import {
   configurarEmissao, abrirEmitir, encerrarEmissao, definirModoAparelho, modoAparelhoSalvo
 } from "./emissao.js";
 
-const VERSAO_APP = "v12";
+const VERSAO_APP = "v13";
 const CHAVE_ULTIMO_USUARIO = "primusEtiquetas.ultimoUsuario";
 const ONLINE_ATE_SEG = 150; // agente manda sinal a cada 60 s
 
@@ -41,6 +42,8 @@ const NOMES_PAPEL = { gestor: "Gestor", chef: "Chef", cozinha: "Cozinha" };
 
 let perfilAtual = null;
 let cancelarAgentes = null;
+let cancelarConfig = null;
+let configAtual = null; // { mostrarHora } ou null enquanto carrega
 let agentesAtuais = [];
 let timerStatus = null;
 let setupRodando = false; // enquanto o setup roda, o observador de sessao espera
@@ -154,6 +157,10 @@ function abrirInicio(perfil) {
   $("inicio-papel").textContent = NOMES_PAPEL[perfil.papel] || perfil.papel;
 
   desenharAparelho();
+  desenharHora();
+  if (!cancelarConfig) {
+    cancelarConfig = observarConfig((c) => { if (c) configAtual = c; desenharHora(); });
+  }
   const cartaoUsuarios = $("acao-usuarios");
   if (podeGerenciarUsuarios(perfil)) {
     cartaoUsuarios.hidden = false;
@@ -203,6 +210,39 @@ function trocarModoAparelho() {
   aviso(tabletAgora ? "Aparelho definido como celular pessoal." : "Aparelho definido como tablet da cozinha.");
 }
 
+// ---------------------------------------------------------------- hora na etiqueta (chave geral)
+function mostrarHoraAtual() {
+  return !configAtual || configAtual.mostrarHora !== false;
+}
+
+function desenharHora() {
+  const p = perfilAtual;
+  const cartao = $("acao-hora");
+  const pode = !!p && (p.papel === "gestor" || p.papel === "chef");
+  cartao.hidden = !pode;
+  if (!pode) return;
+  const ligada = mostrarHoraAtual();
+  $("hora-titulo").textContent = ligada ? "Hora na etiqueta: ligada" : "Hora na etiqueta: desligada";
+  $("hora-texto").textContent = ligada
+    ? "Manipulação e validade saem com data e hora. Toque para imprimir só a data."
+    : "Sai só a data (validade menor que 3 dias sai sempre com hora). Toque para voltar a hora.";
+}
+
+async function trocarHora() {
+  if (!configAtual) return;
+  const ligada = mostrarHoraAtual();
+  const msg = ligada
+    ? "Desligar a hora? As etiquetas vão sair só com a data. Validade menor que 3 dias continua saindo com hora. Vale para todos os aparelhos."
+    : "Ligar a hora? As etiquetas voltam a sair com data e hora. Vale para todos os aparelhos.";
+  if (!window.confirm(msg)) return;
+  try {
+    await salvarMostrarHora(!ligada);
+    aviso(ligada ? "Hora desligada: etiquetas só com a data." : "Hora ligada: etiquetas com data e hora.");
+  } catch (e) {
+    aviso(traduzirErro(e));
+  }
+}
+
 // Online = sinal do agente mais recente com menos de ONLINE_ATE_SEG
 function impressoraOnline() {
   const comSinal = agentesAtuais.filter((a) => a.ultimoSinal);
@@ -214,6 +254,8 @@ function impressoraOnline() {
 function fecharSessaoLocal() {
   perfilAtual = null;
   if (cancelarAgentes) { cancelarAgentes(); cancelarAgentes = null; }
+  if (cancelarConfig) { cancelarConfig(); cancelarConfig = null; }
+  configAtual = null;
   if (cancelarUsuarios) { cancelarUsuarios(); cancelarUsuarios = null; }
   encerrarProdutos();
   encerrarEmissao();
@@ -489,7 +531,8 @@ async function iniciar() {
   $("produtos-importar").addEventListener("click", abrirImportacao);
   configurarImportacao({ obterPerfil: () => perfilAtual });
   $("acao-aparelho").addEventListener("click", trocarModoAparelho);
-  configurarEmissao({ obterPerfil: () => perfilAtual, impressoraOnline, voltar: () => abrirInicio(perfilAtual) });
+  $("acao-hora").addEventListener("click", trocarHora);
+  configurarEmissao({ obterPerfil: () => perfilAtual, impressoraOnline, mostrarHora: mostrarHoraAtual, voltar: () => abrirInicio(perfilAtual) });
   configurarProdutos({ obterPerfil: () => perfilAtual, voltar: () => abrirInicio(perfilAtual) });
   $("usuarios-voltar").addEventListener("click", () => abrirInicio(perfilAtual));
   $("usuarios-novo").addEventListener("click", () => abrirFormUsuario(null));

@@ -1,5 +1,6 @@
 // ============================================================
-// PRIMUS ETIQUETAS - js/historico.js (v2)
+// PRIMUS ETIQUETAS - js/historico.js (v3)
+// v3: mostra a observacao (lista e detalhe) e as datas como sairam na etiqueta (com ou sem hora)
 // v2: aberto pelo QR = so consulta (reimpressao so pelo Historico)
 // Fase 4: historico de etiquetas (filtro por dia, produto e responsavel),
 // detalhe da etiqueta (tambem aberto pelo QR) e reimpressao (2a via).
@@ -29,6 +30,13 @@ let somenteConsulta = false; // true quando aberto pelo QR
 
 const fmt = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const fmtHora = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" });
+const fmtData = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric" });
+
+// Data como saiu na etiqueta
+function dataEtiqueta(e, data) {
+  if (!data) return "-";
+  return (e.mostrarHora ? fmt : fmtData).format(data);
+}
 
 function hojeTexto() {
   const d = new Date();
@@ -137,9 +145,10 @@ function desenharLista() {
     <button type="button" class="linha-produto linha-etiqueta${vencida(e) ? " vencida" : ""}" data-num="${e.codigoNum}">
       <span class="topo-etiqueta"><span class="codigo">#${escapar(e.codigo)}</span><span class="hora">${e.criadoEm ? escapar(fmtHora.format(e.criadoEm)) : ""}</span></span>
       <span class="nome-produto">${escapar(e.produto)}</span>
+      ${e.observacao ? `<span class="grupo-produto"><strong>OBS: ${escapar(e.observacao.toLocaleUpperCase("pt-BR"))}</strong></span>` : ""}
       <span class="grupo-produto">${escapar(e.conservacao)}, ${e.copias} ${e.copias === 1 ? "etiqueta" : "etiquetas"}, resp. ${escapar(e.responsavel)}</span>
       <span class="pilulas">
-        <span class="pilula ${vencida(e) ? "selo-vencida" : "selo-validade"}">${vencida(e) ? "Vencida" : "Vence"} ${e.validadeEm ? escapar(fmt.format(e.validadeEm)) : ""}</span>
+        <span class="pilula ${vencida(e) ? "selo-vencida" : "selo-validade"}">${vencida(e) ? "Vencida" : "Vence"} ${e.validadeEm ? escapar(dataEtiqueta(e, e.validadeEm)) : ""}</span>
         ${seloStatus(e)}
       </span>
     </button>`).join("");
@@ -192,9 +201,10 @@ function desenharDetalhe(reimpressoes) {
   $("detalhe-corpo").innerHTML = [
     `<p class="emissao-produto">${escapar(e.produto)}</p>`,
     venc ? '<p class="erro">Etiqueta vencida. O produto não deve ser usado.</p>' : "",
+    e.observacao ? linha("Observação", e.observacao.toLocaleUpperCase("pt-BR"), "destaque") : "",
     linha("Conservação", e.conservacao),
-    linha("Manipulação", e.manipulacaoEm ? fmt.format(e.manipulacaoEm) : "-"),
-    linha("Validade", e.validadeEm ? fmt.format(e.validadeEm) : "-", venc ? "venceu" : "destaque"),
+    linha("Manipulação", dataEtiqueta(e, e.manipulacaoEm)),
+    linha("Validade", dataEtiqueta(e, e.validadeEm), venc ? "venceu" : "destaque"),
     linha("Responsável", e.responsavel),
     linha("Emitida em", e.criadoEm ? fmt.format(e.criadoEm) : "-"),
     linha("Quantidade", String(e.copias)),
