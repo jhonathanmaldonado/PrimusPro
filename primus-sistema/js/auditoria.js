@@ -434,7 +434,7 @@ export async function inicializarAuditoria() {
 
           <div class="aud-pdf-botoes">
             <button class="btn btn-ghost" id="aud-edit-cancelar">Cancelar</button>
-            <button class="btn btn-primary" id="aud-edit-confirmar">💾 Salvar edição</button>
+            <button class="btn btn-primary" id="aud-edit-confirmar">✏️ Anotar ajuste</button>
           </div>
         </div>
       </div>
@@ -693,12 +693,19 @@ async function executarAuditoria() {
   _usarMemoNaProxima = false;
   if (!_memoAtivo) { _memo.clear(); _originaisPorId.clear(); }
 
-  loading.style.display = 'block';
-  erro.style.display    = 'none';
-  resumo.style.display  = 'none';
-  tabela.style.display  = 'none';
-  acoes.style.display   = 'none';
-  banner.style.display  = 'none';
+  // Depois de um ajuste anotado: atualiza a tabela NO LUGAR — sem "carregando",
+  // sem esconder nada e sem pular pro topo (a conta é refeita só com o que já foi lido).
+  const silencioso = _memoAtivo;
+  const scrollAntes = window.scrollY;
+
+  erro.style.display = 'none';
+  if (!silencioso) {
+    loading.style.display = 'block';
+    resumo.style.display  = 'none';
+    tabela.style.display  = 'none';
+    acoes.style.display   = 'none';
+    banner.style.display  = 'none';
+  }
   auditoriaFechadaAtual = null;
 
   try {
@@ -723,6 +730,7 @@ async function executarAuditoria() {
     resumo.style.display  = 'block';
     tabela.style.display  = 'block';
     acoes.style.display   = 'flex';
+    if (silencioso) window.scrollTo(0, scrollAntes);
   } catch (e) {
     console.error(e);
     mostrarErro('Erro: ' + e.message);
@@ -3435,7 +3443,7 @@ async function confirmarEdicao() {
   if (mudouFin) partes.push(`FIN: ${valOriginais.real} → ${fin}`);
 
   const confirmado = confirm(
-    `💾 SALVAR EDIÇÃO\n\n` +
+    `✏️ ANOTAR AJUSTE\n(só grava no 💾 Salvar ajustes, na barra de baixo)\n\n` +
     `Produto: ${item.nome}\n` +
     `Data: ${fmtData(dataInicio)}\n\n` +
     `Mudanças:\n  • ${partes.join('\n  • ')}\n\n` +
@@ -3531,7 +3539,7 @@ async function confirmarEdicaoSorv() {
   if (mudouFin)   partes.push(`FIN: ${orig.real} → ${fin}`);
 
   const confirmado = confirm(
-    `💾 SALVAR EDIÇÃO (SORVETE)\n\n` +
+    `✏️ ANOTAR AJUSTE (SORVETE)\n(só grava no 💾 Salvar ajustes, na barra de baixo)\n\n` +
     `Produto: ${item.nome}\n` +
     `Data: ${fmtData(dataInicio)}\n\n` +
     `Mudanças:\n  • ${partes.join('\n  • ')}\n\n` +
