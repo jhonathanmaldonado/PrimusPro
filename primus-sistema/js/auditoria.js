@@ -1029,6 +1029,8 @@ export async function calcularAuditoriaOperacional(contagemIni, contagemFin, ven
       const finAnt = (estoqueFinAnt[slug] || 0) - (consumoInternoAnt[slug] || 0);
       d1 = ini - finAnt;  // negativo = sumiu na virada; positivo = apareceu
     }
+    // Recontagem feita no INÍCIO (contagem.js): {antes, depois, confirmado}
+    const recontagem = ((contagemIni && contagemIni.itens) || {})[slug]?.recontagem || null;
 
     // DIAGNÓSTICO (cruzamento DIF x D-1)
     // Lógica correta:
@@ -1082,7 +1084,10 @@ export async function calcularAuditoriaOperacional(contagemIni, contagemFin, ven
       diferenca,
       d1,
       diagnostico,
-      status
+      status,
+      recontagem,
+      finAntBruto: estoqueFinAnt !== null ? (estoqueFinAnt[slug] || 0) : null,
+      consumoAnt: consumoInternoAnt[slug] || 0
     };
   });
 }
@@ -1214,7 +1219,10 @@ async function calcularAuditoriaVirada(contagemFinAnterior, contagemIniAtual, au
       diferenca,
       status,
       erroContagemConfirmado,
-      difOperacionalAnterior
+      difOperacionalAnterior,
+      recontagem: ((contagemIniAtual && contagemIniAtual.itens) || {})[slug]?.recontagem || null,
+      finAntBruto: estoqueFim[slug] || 0,
+      consumoAnt: consumoInternoAnt[slug] || 0
     };
   });
 }
@@ -1553,10 +1561,31 @@ function renderLinhaOperacional(r) {
       titulo: 'A virada foi perfeita (sem divergência entre fechamento anterior e abertura), mas a operação de hoje gerou divergência. Algo aconteceu só hoje.'
     }
   };
-  const diag = diagMap[r.diagnostico];
-  const diagHtml = diag
+  // Início CONFIRMADO na recontagem (contado 2x) e D-1 diferente: o erro tende a
+  // ser o FINAL de ontem. Troca o diagnóstico neutro por uma sugestão direta.
+  const inicioConfirmado = !!(r.recontagem && r.recontagem.confirmado && r.d1 && r.finAntBruto !== null
+    && contextoAuditoria.contagemFinAnterior);
+  const diag = inicioConfirmado ? null : diagMap[r.diagnostico];
+  let diagHtml = diag
     ? `<div class="aud-diag-cell ${diag.cls}" title="${diag.titulo}">${diag.txt}</div>`
     : '';
+  if (r.recontagem && !r.recontagem.confirmado) {
+    diagHtml += `<div class="aud-diag-cell" title="O barman recontou este item no início e mudou de ${fmtInt(r.recontagem.antes)} pra ${fmtInt(r.recontagem.depois)}.">🔁 Início corrigido na recontagem (${fmtInt(r.recontagem.antes)} → ${fmtInt(r.recontagem.depois)})</div>`;
+  }
+  let areaFinOntemHtml = '';
+  if (inicioConfirmado) {
+    const novoFinOntem = r.ini + (r.consumoAnt || 0);
+    const dataFinOntem = fmtData(contextoAuditoria.contagemFinAnterior.data);
+    diagHtml += `<div class="aud-diag-cell aud-diag-erro" title="O início foi contado duas vezes e deu o mesmo número. A diferença com o final anterior tende a ser erro do FINAL de ${dataFinOntem}.">✅ Início confirmado na recontagem (D-1 = ${fmtSgn(r.d1)})</div>`;
+    areaFinOntemHtml = `
+      <div class="aud-corrigir-manual">
+        <button class="btn btn-ghost btn-sm aud-btn-toggle-manual"
+                onclick="window.__aud_corrigirFinOntem('${r.slug}')"
+                title="Ajusta o FINAL de ${dataFinOntem} de ${fmtInt(r.finAntBruto)} pra ${fmtInt(novoFinOntem)} (início confirmado${r.consumoAnt ? ' + consumo interno de ' + fmtInt(r.consumoAnt) : ''})">
+          💡 Corrigir FINAL de ${dataFinOntem} (${fmtInt(r.finAntBruto)} → ${fmtInt(novoFinOntem)})
+        </button>
+      </div>`;
+  }
 
   // ===== ÁREA DE CORREÇÃO MANUAL =====
   // Aparece quando o sistema diagnosticou "erro_contagem" (D-1 e DIF com sinais
@@ -1568,8 +1597,8 @@ function renderLinhaOperacional(r) {
   //   - Corrigir FIN: assume que a FIN foi contada errada → ajusta a FIN pra
   //                   zerar a divergência. O D-1 continua existindo (foi erro
   //                   da contagem anterior, não desta).
-  let areaCorrecaoOpHtml = '';
-  if (r.diagnostico === 'erro_contagem') {
+  let areaCorrecaoOpHtml = areaFinOntemHtml;
+  if (r.diagnostico === 'erro_contagem' && !inicioConfirmado) {
     const novoIni = r.ini - r.d1;       // sobe/desce ini pra alinhar com FIN anterior
     const novoFin = r.real - r.diferenca; // sobe/desce fin pra zerar a divergência
     areaCorrecaoOpHtml = `
@@ -1765,7 +1794,26 @@ function renderLinhaVirada(r) {
   // que é raro e merece destaque vermelho.
   let areaCorrecaoHtml = '';
 
-  if (r.erroContagemConfirmado) {
+  if (r.recontagem && r.recontagem.confirmado && r.diferenca !== 0) {
+    // Início contado 2x e confirmado: só faz sentido corrigir o FINAL anterior
+    const novoFin = r.iniAtual + (r.consumoAnt || 0);
+    areaCorrecaoHtml = `
+      <div class="aud-erro-confirmado">
+        <span class="aud-erro-ico">✅</span>
+        <div class="aud-erro-txt">
+          <strong>Início confirmado na recontagem</strong>
+          <small>O início foi contado 2x e deu ${fmtInt(r.iniAtual)}. O erro tende a ser o FINAL anterior.</small>
+        </div>
+        <div class="aud-corrigir-botoes">
+          <button class="btn btn-primary btn-sm aud-btn-corrigir"
+                  onclick="window.__aud_corrigirErro('${r.slug}', 'fin', true)"
+                  title="Ajusta o FINAL anterior pra ${fmtInt(novoFin)}">
+            🔄 Corrigir FINAL (${fmtInt(r.finAntBruto)} → ${fmtInt(novoFin)})
+          </button>
+        </div>
+      </div>
+    `;
+  } else if (r.erroContagemConfirmado) {
     const difOp = r.difOperacionalAnterior;
     areaCorrecaoHtml = `
       <div class="aud-erro-confirmado">
@@ -1777,8 +1825,8 @@ function renderLinhaVirada(r) {
         <div class="aud-corrigir-botoes">
           <button class="btn btn-primary btn-sm aud-btn-corrigir"
                   onclick="window.__aud_corrigirErro('${r.slug}', 'fin', true)"
-                  title="Ajusta FIN do dia anterior pra ${fmtInt(r.iniAtual)}">
-            🔄 Corrigir FIN (${fmtInt(r.fimAnterior)} → ${fmtInt(r.iniAtual)})
+                  title="Ajusta FIN do dia anterior pra ${fmtInt(r.iniAtual + (r.consumoAnt || 0))}">
+            🔄 Corrigir FIN (${fmtInt(r.finAntBruto)} → ${fmtInt(r.iniAtual + (r.consumoAnt || 0))})
           </button>
           <button class="btn btn-ghost btn-sm aud-btn-corrigir"
                   onclick="window.__aud_corrigirErro('${r.slug}', 'ini', true)"
@@ -1791,7 +1839,7 @@ function renderLinhaVirada(r) {
   }
 
   return `
-    <div class="aud-linha aud-linha-virada aud-linha-${r.status}${r.erroContagemConfirmado ? ' aud-linha-erro-confirmado' : ''}">
+    <div class="aud-linha aud-linha-virada aud-linha-${r.status}${(r.erroContagemConfirmado || (r.recontagem && r.recontagem.confirmado && r.diferenca !== 0)) ? ' aud-linha-erro-confirmado' : ''}">
       <div class="aud-nome">
         ${r.nome}
         ${areaCorrecaoHtml}
@@ -2844,6 +2892,65 @@ function gerarPDFVirada(itens, conteudo) {
  *  - confirmadoAuto: true se o sistema confirmou matematicamente o erro;
  *                    false se o gestor está corrigindo na confiança
  */
+// ===== CORRIGIR O FINAL DE ONTEM (início confirmado na recontagem) =====
+// O início de hoje foi contado 2x e deu o mesmo número → a diferença D-1 tende a
+// ser erro do FINAL do dia anterior. Ajusta esse final pra (início + consumo interno
+// daquele dia), o que zera o D-1. Entra como ajuste pendente (salva na barra).
+window.__aud_corrigirFinOntem = async function(slug) {
+  const item = resultadoAuditoria.find(r => r.slug === slug);
+  const finAnt = contextoAuditoria.contagemFinAnterior;
+  if (!item || !finAnt || item.finAntBruto === null) {
+    alert('Final do dia anterior não disponível.');
+    return;
+  }
+  const valorAtual = item.finAntBruto;
+  const valorNovo  = item.ini + (item.consumoAnt || 0);
+  const dataFin = fmtData(finAnt.data);
+
+  // A auditoria do dia do final já foi fechada? Avisa que o registro vai ficar desatualizado
+  let avisoFechada = '';
+  try {
+    const fechada = await lerComCache(`fechada|operacional|${finAnt.data}|${finAnt.data}`,
+      () => buscarAuditoriaFechada('operacional', finAnt.data, finAnt.data));
+    if (fechada) avisoFechada = `\n\n⚠️ A auditoria de ${dataFin} já foi FECHADA. Depois de salvar, abra ${dataFin} e feche de novo pra atualizar o registro.`;
+  } catch (_) { /* sem aviso */ }
+
+  const ok = confirm(
+    `🔄 CORRIGIR FINAL DE ${dataFin}\n\n` +
+    `Produto: ${item.nome}\n` +
+    `O início de ${fmtData(dataInicio)} foi recontado e CONFIRMADO (${fmtInt(item.ini)}).\n\n` +
+    `Final de ${dataFin}: ${fmtInt(valorAtual)} → ${fmtInt(valorNovo)}` +
+    (item.consumoAnt ? `\n(início ${fmtInt(item.ini)} + consumo interno ${fmtInt(item.consumoAnt)})` : '') +
+    `\n\nIsso também corrige a auditoria de ${dataFin}.` + avisoFechada +
+    `\n\n✏️ Fica como ajuste pendente — grava no 💾 Salvar ajustes. Confirmar?`
+  );
+  if (!ok) return;
+
+  try {
+    const novosItens = { ...finAnt.itens };
+    const atual = novosItens[slug];
+    // Correção de TOTAL: vai pro Estoque e zera os bares (mesma regra das outras correções)
+    novosItens[slug] = {
+      ...(atual && typeof atual === 'object' ? atual : {}),
+      est: valorNovo, frPrinc: 0, frAux: 0, fr: 0, total: valorNovo
+    };
+    const sessao = getSessao();
+    const descricao = `FINAL de ${dataFin}: ${fmtInt(valorAtual)} → ${fmtInt(valorNovo)} (${item.nome})`;
+    await corrigirItemContagem(finAnt.id, novosItens, {
+      responsavel: sessao?.nome || 'Gestor',
+      motivo: `Início de ${fmtData(dataInicio)} confirmado na recontagem: ${descricao}`,
+      itemSlug: slug,
+      valorAntigo: valorAtual,
+      valorNovo
+    });
+    mostrarToastAud(`✏️ Ajuste anotado: ${descricao} — salve na barra de baixo`, 'ok');
+    await executarAuditoria();
+  } catch (e) {
+    console.error(e);
+    alert(`❌ Erro ao corrigir: ${e.message}`);
+  }
+};
+
 window.__aud_corrigirErro = async function(slug, alvo, confirmadoAuto) {
   const item = resultadoAuditoria.find(r => r.slug === slug);
   if (!item) {
@@ -2861,8 +2968,9 @@ window.__aud_corrigirErro = async function(slug, alvo, confirmadoAuto) {
       return;
     }
     contagemAlvo = contagemFinAnterior;
-    valorAtual = item.fimAnterior;
-    valorNovo  = item.iniAtual;
+    // fimAnterior já vem descontado do consumo interno; o FINAL gravado é o bruto
+    valorAtual = (item.finAntBruto != null) ? item.finAntBruto : item.fimAnterior;
+    valorNovo  = item.iniAtual + (item.consumoAnt || 0);
     dataAlvoLabel = fmtData(dataInicio);
     descricao = `FIN de ${fmtData(dataInicio)}: ${valorAtual} → ${valorNovo}`;
   } else if (alvo === 'ini') {
