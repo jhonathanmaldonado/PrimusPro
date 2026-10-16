@@ -159,6 +159,13 @@ async function carregarFreezers(forcar = false) {
     .fz-check input { width: 20px; height: 20px; }
     .fz-sem { font-size: 12px; color: #8a5a00; background: #fff6e0; padding: 10px 14px; line-height: 1.45; }
     .fz-rodape { position: sticky; bottom: 0; background: var(--cinza-bg, #f4f2ee); padding: 12px 0; display: flex; gap: 8px; }
+    .loc-linha.cx { flex-wrap: wrap; row-gap: 6px; }
+    .loc-linha.cx .prod-nome { flex: 1 1 100%; }
+    .cx-info { font-size: 11px; color: var(--cinza-texto, #777); margin-left: 6px; font-weight: 400; }
+    .cx-res { float: right; font-family: 'DM Mono', monospace; font-weight: 800; color: var(--vinho); }
+    .cx-campos { display: flex; align-items: center; gap: 8px; width: 100%; }
+    .cx-campos label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--cinza-texto, #777); }
+    .cx-campos .num-input { width: 84px; flex: 0 0 84px; font-size: 18px; padding: 10px 4px; }
   `;
   document.head.appendChild(st);
 })();
@@ -178,6 +185,35 @@ function linhaInput(item, loc, fz, rotulo, conta) {
              id="${idInput(id, loc, fz)}" data-id="${id}" data-loc="${loc}" data-fz="${fz || ''}"
              data-rotulo="${escH(rotulo)}" data-conta="${conta ? 1 : 0}"
              oninput="atualizarLocal(this)" onfocus="this.select()">
+    </div>`;
+}
+
+// Estoque de produto que vem em caixa/fardo: [caixas] + [soltas] = unidades.
+// Os 2 campos contam como 1 no progresso (data-par). Grava est (unidades) e
+// det.est = { cx, un, por } pra conferência.
+function porCaixaDe(item) {
+  const n = Number(item.porCaixa) || 0;
+  return item.unidCompra && n > 1 ? n : 0;
+}
+
+function linhaEstoque(item) {
+  const por = porCaixaDe(item);
+  if (!por) return linhaInput(item, 'est', '', 'Estoque', true);
+  const id = slugify(item.nome);
+  const emb = item.unidCompra === 'fardo' ? 'fardo' : 'cx';
+  const tags = (item.ks ? '<span class="tag-ks">KS</span>' : '') + (item.saindo ? '<span class="tag-saindo">saindo</span>' : '');
+  const campo = (fz, rot, ph) => `<input class="num-input loc-input" type="number" min="0" inputmode="numeric" placeholder="${ph}"
+      id="${id}_est_${fz}" data-id="${id}" data-loc="est" data-fz="${fz}" data-par="${id}" data-por="${por}"
+      data-rotulo="${escH(rot)}" data-conta="1" oninput="atualizarLocal(this)" onfocus="this.select()">`;
+  return `
+    <div class="loc-linha cx">
+      <div class="prod-nome">${escH(item.nome)}${tags}<span class="cx-info">${emb} de ${por}</span>
+        <span class="cx-res" id="${id}__cx_res"></span></div>
+      <div class="cx-campos">
+        <label>${campo('cx', `Estoque · ${emb === 'fardo' ? 'fardos' : 'caixas'} (de ${por})`, emb)} ${emb === 'fardo' ? 'fardos' : 'caixas'}</label>
+        <span style="font-weight:800">+</span>
+        <label>${campo('un', 'Estoque · soltas', 'un')} soltas</label>
+      </div>
     </div>`;
 }
 
@@ -205,7 +241,7 @@ async function renderizarBebidasPorLocal(main, lista) {
 
   // 📦 Estoque: por grupo do catálogo
   html += `<div class="loc-painel" id="painel-est">` + Object.entries(porGrupo(lista)).map(([g, itens]) =>
-    `<div class="grupo">${cabecalhoGrupo(g, itens.length)}${itens.map(i => linhaInput(i, 'est', '', 'Estoque', true)).join('')}</div>`
+    `<div class="grupo">${cabecalhoGrupo(g, itens.length)}${itens.map(i => linhaEstoque(i)).join('')}</div>`
   ).join('') + `</div>`;
 
   // 🍺 / 🧊 Bares: por freezer + "fora do lugar"
@@ -269,7 +305,22 @@ window.atualizarLocal = function(input) {
   const val = vazio ? null : Math.max(0, parseInt(input.value, 10) || 0);
   input.classList.toggle('filled', !vazio);
   const d = dados[id] || (dados[id] = {});
-  if (loc === 'est' || loc === 'rec') {
+  if (loc === 'est' && (fz === 'cx' || fz === 'un')) {
+    const por = Number(input.dataset.por) || 1;
+    const cxEl = document.getElementById(`${id}_est_cx`), unEl = document.getElementById(`${id}_est_un`);
+    const cx = cxEl && cxEl.value !== '' ? Math.max(0, parseInt(cxEl.value, 10) || 0) : null;
+    const un = unEl && unEl.value !== '' ? Math.max(0, parseInt(unEl.value, 10) || 0) : null;
+    d.det = d.det || {};
+    if (cx === null && un === null) {
+      delete d.est; delete d.det.est;
+    } else {
+      d.est = (cx || 0) * por + (un || 0);
+      d.det.est = { cx: cx || 0, un: un || 0, por };
+    }
+    if (!Object.keys(d.det).length) delete d.det;
+    const res = document.getElementById(`${id}__cx_res`);
+    if (res) res.textContent = d.est != null ? `= ${d.est} un` : '';
+  } else if (loc === 'est' || loc === 'rec') {
     if (vazio) delete d[loc]; else d[loc] = val;
   } else {
     d.det = d.det || {};
@@ -298,9 +349,16 @@ function atualizarConferir(id) {
 // Progresso só conta os campos "do lugar" (estoque + freezers configurados)
 function progressoPorLocal() {
   const r = { total: 0, feitos: 0, porLocal: {} };
+  const pares = {};   // caixas + soltas do mesmo item = 1 campo
   document.querySelectorAll('#main-content .loc-input[data-conta="1"]').forEach(el => {
     const loc = el.dataset.loc;
     const p = r.porLocal[loc] || (r.porLocal[loc] = { total: 0, feitos: 0 });
+    if (el.dataset.par) {
+      const k = loc + '|' + el.dataset.par;
+      if (!pares[k]) { pares[k] = { p, feito: false }; p.total++; r.total++; }
+      if (el.value !== '' && !pares[k].feito) { pares[k].feito = true; p.feitos++; r.feitos++; }
+      return;
+    }
     p.total++; r.total++;
     if (el.value !== '') { p.feitos++; r.feitos++; }
   });
@@ -402,7 +460,21 @@ function preencherBebidas(contagem) {
   };
   Object.entries(itens).forEach(([slug, v]) => {
     if (!v || typeof v !== 'object' || slug.includes('__')) return;
-    if (v.est != null) setar(`${slug}_est`, v.est);
+    if (v.est != null) {
+      const cxEl = document.getElementById(`${slug}_est_cx`);
+      if (cxEl) {
+        const de = v.det && v.det.est;
+        const por = Number(cxEl.dataset.por) || 1;
+        if (de && de.por === por && (de.cx || 0) * por + (de.un || 0) === v.est) {
+          setar(`${slug}_est_cx`, de.cx || 0);
+          setar(`${slug}_est_un`, de.un || 0);
+        } else {
+          setar(`${slug}_est_un`, v.est);   // sem detalhe (antiga/corrigida): tudo como soltas
+        }
+      } else {
+        setar(`${slug}_est`, v.est);
+      }
+    }
     if (v.rec != null) setar(`${slug}_rec`, v.rec);
     if (v.obs) {
       const o = document.getElementById(`${slug}_obs`);
