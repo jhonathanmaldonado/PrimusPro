@@ -212,7 +212,10 @@ async function enviarDiferencasD1(cIni, token, chatId) {
     const fimAdj = (fimPorSlug[slug] || 0) - (consumoAnt[slug] || 0);
     const ini = iniPorSlug[slug] || 0;
     const dif = ini - fimAdj;
-    if (dif !== 0) linhas.push({ nome: nomeLegivel(slug), fim: fimAdj, ini, dif });
+    // Recontagem feita no INICIO (contagem.js): confirmou o mesmo numero ou corrigiu
+    const rc = ((cIni.itens || {})[slug] || {}).recontagem;
+    const marca = rc ? (rc.confirmado ? "confirmado" : "corrigido") : "";
+    if (dif !== 0) linhas.push({ nome: nomeLegivel(slug), fim: fimAdj, ini, dif, marca });
   });
   linhas.sort((a, b) => a.dif - b.dif); // maior sumiço (mais negativo) primeiro
 
@@ -227,9 +230,14 @@ async function enviarDiferencasD1(cIni, token, chatId) {
     const corpo = linhas.map((l) => {
       const sinal = l.dif > 0 ? `+${l.dif}` : `${l.dif}`;
       const emoji = l.dif < 0 ? "\ud83d\udd34" : "\ud83d\udfe1";
-      return `${emoji} <b>${l.nome}</b>: ${sinal}  <i>(fim ${l.fim} \u2192 in\u00ed ${l.ini})</i>`;
+      const marca = l.marca === "confirmado" ? " \u2705" : l.marca === "corrigido" ? " \ud83d\udd01" : "";
+      return `${emoji} <b>${l.nome}</b>: ${sinal}${marca}  <i>(fim ${l.fim} \u2192 in\u00ed ${l.ini})</i>`;
     }).join("\n");
-    texto = `\ud83d\udcca <b>Virada D-1 \u2014 ${dataFmt}</b>\nFinal de ${finFmt} \u00d7 in\u00edcio de hoje.\n\n${corpo}\n\n\ud83d\udd34 faltou \u00b7 \ud83d\udfe1 sobrou`;
+    const temMarca = linhas.some((l) => l.marca);
+    const legendaRc = temMarca
+      ? "\n\u2705 in\u00edcio conferido 2x (o erro tende a ser o FINAL de ontem) \u00b7 \ud83d\udd01 corrigido na recontagem"
+      : "";
+    texto = `\ud83d\udcca <b>Virada D-1 \u2014 ${dataFmt}</b>\nFinal de ${finFmt} \u00d7 in\u00edcio de hoje.\n\n${corpo}\n\n\ud83d\udd34 faltou \u00b7 \ud83d\udfe1 sobrou${legendaRc}`;
   }
 
   await enviarTelegram(token, chatId, texto);

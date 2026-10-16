@@ -4,7 +4,7 @@
 import { slugify } from './produtos.js';
 import { obterBebidas, obterSorvetes } from './produtos-store.js';
 import { exigirPerfil, logout } from './auth.js';
-import { salvarContagem, hoje, listarContagens, atualizarContagem, buscarAuditoriaFechada, ultimaContagem } from './db.js';
+import { salvarContagem, hoje, listarContagens, atualizarContagem, buscarAuditoriaFechada, ultimaContagem, listarConsumoInternoDia } from './db.js';
 
 // Garante sessão válida — barman, gerente ou gestor podem contar
 const sessao = exigirPerfil(['barman', 'gerente', 'gestor']);
@@ -17,6 +17,8 @@ let editandoContagemId = null; // id do doc quando editando um dia existente (se
 let modoAtual = 'contar';      // 'contar' | 'calendario'
 let _calMes = null;            // mês exibido no calendário
 let _contagensCache = null;    // cache das contagens (recarrega ao abrir o calendário)
+let _listaForm = [];           // produtos do formulário atual (pra recontagem)
+let _recontagemFeita = false;  // a recontagem do INÍCIO roda 1 vez só por salvamento
 
 // ===== HEADER DO USUÁRIO =====
 function iniciais(nome) {
@@ -84,6 +86,7 @@ window.selecionarTipo = async function(tipo) {
   _bnr.style.background = ''; _bnr.style.color = ''; _bnr.style.borderLeftColor = '';
   document.getElementById('btn-salvar').innerHTML = '💾 Salvar Contagem';
   tipoAtual = tipo;
+  _recontagemFeita = false;
   ['ini','fin','sorv'].forEach(t => {
     document.getElementById('btn-'+t).classList.toggle('active', t===tipo);
   });
@@ -109,6 +112,7 @@ async function renderizarFormulario() {
 
   // Limpa o loading e parte pra renderização
   main.innerHTML = '';
+  _listaForm = lista;
 
   if (tipoAtual === 'sorv') {
     renderizarSorvetes(main, lista);
@@ -326,6 +330,98 @@ function atualizarProgresso() {
   document.getElementById('prog-pct').textContent = pct + '%';
 }
 
+// ===== RECONTAGEM DO INÍCIO =====
+// Com o restaurante fechado de noite, o INÍCIO tem que bater com o FINAL anterior
+// (descontado o consumo interno daquele dia — mesma conta da virada D-1).
+// Antes de salvar um INÍCIO novo, os itens que não bateram são pedidos de novo,
+// SEM mostrar o número esperado (contagem cega). Uma rodada só; o que ele digitar
+// vale. Cada item recontado ganha a marca `recontagem` (confirmou ou corrigiu),
+// que a auditoria e o Telegram usam pra apontar quem errou: o início ou o final de ontem.
+function totalDoItem(v) {
+  if (!v || typeof v !== 'object') return 0;
+  if (typeof v.total === 'number' && v.total > 0) return v.total;
+  return (v.est || 0) + (v.frPrinc || 0) + (v.frAux || 0) + (v.fr || 0);
+}
+
+async function itensParaRecontar(data) {
+  try {
+    const todas = await listarContagens({ limite: 500 });
+    // Último FINAL antes desta data (a lista vem do mais novo pro mais antigo)
+    const finAnt = todas.find(c => c.tipo === 'fin' && c.data && c.data < data);
+    if (!finAnt) return [];
+    const consumo = (await listarConsumoInternoDia(finAnt.data)).itens || {};
+    const pedir = [];
+    _listaForm.forEach(item => {
+      const id = slugify(item.nome);
+      const esperado = totalDoItem((finAnt.itens || {})[id]) - (consumo[id] || 0);
+      const contado = (dados[id] && dados[id].total) || 0;
+      if (contado !== esperado) pedir.push({ id, nome: item.nome, contado });
+    });
+    return pedir;
+  } catch (e) {
+    // Se não der pra comparar (sem internet etc.), não trava o salvamento
+    console.warn('[recontagem] não foi possível comparar com o final anterior:', e);
+    return [];
+  }
+}
+
+function abrirRecontagem(itens) {
+  const bg = document.createElement('div');
+  bg.className = 'cal-picker-bg';
+  bg.id = 'recontagem-bg';
+  const campo = (id, c, rotulo) => `
+    <label style="flex:1;min-width:0;font-size:11px;color:#666;text-align:center">${rotulo}
+      <input class="num-input" type="number" min="0" inputmode="numeric" placeholder="—"
+             id="rc_${id}_${c}" style="width:100%;margin-top:4px" onfocus="this.select()">
+    </label>`;
+  bg.innerHTML = `
+    <div class="cal-picker" style="max-height:88vh;overflow-y:auto">
+      <h3>🔁 Reconte antes de salvar</h3>
+      <p style="font-size:13px;color:#555;margin:0 0 12px;line-height:1.45">
+        ${itens.length === 1 ? 'Este item não bateu' : `Estes ${itens.length} itens não bateram`} com o final de ontem.
+        Vá até cada lugar, <b>conte de novo</b> e digite tudo outra vez.
+        Se der o mesmo número, tudo bem: salva assim mesmo.
+      </p>
+      ${itens.map(it => `
+        <div style="padding:10px 0;border-top:1px solid #eee">
+          <div style="font-weight:700;margin-bottom:6px">${it.nome}</div>
+          <div style="display:flex;gap:8px">
+            ${campo(it.id, 'est', 'Estoque')}
+            ${campo(it.id, 'frPrinc', 'Bar principal')}
+            ${campo(it.id, 'frAux', 'Bar de apoio')}
+          </div>
+        </div>`).join('')}
+      <button class="cal-picker-btn" id="rc-salvar" style="margin-top:14px;background:var(--vinho);color:#fff;border-color:var(--vinho)">
+        💾 Salvar com a recontagem
+      </button>
+      <button class="cal-picker-cancel" id="rc-voltar">Voltar e revisar</button>
+    </div>`;
+  document.body.appendChild(bg);
+  document.getElementById('rc-voltar').onclick = () => bg.remove();
+  document.getElementById('rc-salvar').onclick = () => {
+    // Item todo em branco: confirma que é zero mesmo (pode ter esquecido)
+    for (const it of itens) {
+      const vazio = ['est', 'frPrinc', 'frAux'].every(c => document.getElementById(`rc_${it.id}_${c}`).value === '');
+      if (vazio && !confirm(`${it.nome} ficou em branco na recontagem.\n\nSalvar como ZERO?`)) return;
+    }
+    const agora = new Date().toISOString();
+    itens.forEach(it => {
+      const antes = (dados[it.id] && dados[it.id].total) || 0;
+      // Joga a recontagem nos campos do formulário (atualiza total e tela)
+      ['est', 'frPrinc', 'frAux'].forEach(c => {
+        const v = document.getElementById(`rc_${it.id}_${c}`).value;
+        const alvo = document.getElementById(`${it.id}_${c}`);
+        if (alvo) { alvo.value = v === '' ? '0' : v; window.atualizar(it.id, c, alvo); }
+      });
+      const depois = dados[it.id].total || 0;
+      dados[it.id].recontagem = { antes, depois, confirmado: antes === depois, em: agora };
+    });
+    bg.remove();
+    _recontagemFeita = true;
+    document.getElementById('btn-salvar').click();   // segue o salvamento normal
+  };
+}
+
 // ===== SALVAR =====
 document.getElementById('btn-salvar').onclick = async () => {
   if (!tipoAtual) { alert('Selecione o tipo de contagem.'); return; }
@@ -341,9 +437,23 @@ document.getElementById('btn-salvar').onclick = async () => {
     return;
   }
 
-  // Só salva os itens que foram preenchidos
+  // INÍCIO novo: antes de salvar, pede pra recontar o que não bateu com o final anterior
+  if (tipoAtual === 'ini' && !editandoContagemId && !_recontagemFeita) {
+    const btnR = document.getElementById('btn-salvar');
+    btnR.disabled = true;
+    btnR.innerHTML = '<span class="spinner"></span> Conferindo...';
+    const pedir = await itensParaRecontar(data);
+    btnR.disabled = false;
+    btnR.innerHTML = '💾 Salvar Contagem';
+    if (pedir.length) { abrirRecontagem(pedir); return; }
+  }
+
+  // Só salva os itens que foram preenchidos (de novo: a recontagem pode ter mudado)
   const itens = {};
-  preenchidos.forEach(k => itens[k] = dados[k]);
+  Object.keys(dados).filter(k => {
+    const d = dados[k];
+    return Object.keys(d).some(kk => d[kk] !== 0 && d[kk] !== '' && d[kk] != null);
+  }).forEach(k => itens[k] = dados[k]);
 
   const btn = document.getElementById('btn-salvar');
   btn.disabled = true;
