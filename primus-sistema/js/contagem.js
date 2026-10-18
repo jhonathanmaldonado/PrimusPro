@@ -882,7 +882,7 @@ async function itensParaRecontar(data) {
       const id = slugify(item.nome);
       const esperado = totalDoItem((finAnt.itens || {})[id]) - (consumo[id] || 0);
       const contado = (dados[id] && dados[id].total) || 0;
-      if (contado !== esperado) pedir.push({ id, nome: item.nome, contado });
+      if (contado !== esperado) pedir.push({ id, nome: item.nome, contado, fin: (finAnt.itens || {})[id] || {}, consumo: consumo[id] || 0 });
     });
     return pedir;
   } catch (e) {
@@ -904,16 +904,63 @@ function camposDoItem(id) {
   });
 }
 
+// Só os lugares onde o número MUDOU desde o final anterior (estoque, cada freezer).
+// O total do item já não bateu (é o que dispara); aqui só aponta onde olhar.
+// Sem como apontar (final antigo sem detalhe, ou nada mudou de lugar) -> pede todos.
+function camposParaRecontar(it) {
+  const todos = camposDoItem(it.id);
+  const fin = it.fin || {};
+  const d = dados[it.id] || {};
+  const num = el => (el.value === '' ? 0 : Math.max(0, parseInt(el.value, 10) || 0));
+  const escolhidos = [];
+  let detalheBares = true;
+
+  // Estoque (campo único ou caixas + soltas): compara o total do estoque
+  const estEls = todos.filter(el => el.dataset.loc === 'est');
+  if (estEls.length && (d.est || 0) !== (fin.est || 0)) escolhidos.push(...estEls);
+
+  BARES.forEach(b => {
+    const els = todos.filter(el => el.dataset.loc === b.loc);
+    if (!els.length) return;
+    const detFin = fin.det && fin.det[b.loc];
+    const totFin = fin[b.loc] || 0;
+    const somaDet = detFin ? Object.values(detFin).reduce((a, x) => a + (Number(x) || 0), 0) : null;
+    if (detFin && somaDet === totFin) {
+      // Final de ontem tem o detalhe por freezer: compara freezer a freezer
+      els.forEach(el => { if (num(el) !== (Number(detFin[el.dataset.fz]) || 0)) escolhidos.push(el); });
+    } else {
+      // Sem detalhe: compara o bar inteiro
+      detalheBares = false;
+      if ((d[b.loc] || 0) !== totFin) escolhidos.push(...els);
+    }
+  });
+
+  // Consumo interno NUNCA sai do estoque (quente), só dos freezers: se teve consumo
+  // e nenhum freezer mudou, os freezers do item também são suspeitos.
+  if (it.consumo > 0 && !escolhidos.some(el => el.dataset.loc !== 'est')) {
+    const bares = todos.filter(el => el.dataset.loc !== 'est');
+    if (bares.length) {
+      if (!escolhidos.length) it._motivo = 'consumo';
+      escolhidos.push(...bares);
+    }
+  }
+
+  it._apontado = escolhidos.length > 0 && escolhidos.length < todos.length;
+  return escolhidos.length ? escolhidos : todos;
+}
+
 function abrirRecontagem(itens) {
   const bg = document.createElement('div');
   bg.className = 'cal-picker-bg';
   bg.id = 'recontagem-bg';
   const blocos = itens.map(it => {
-    const campos = camposDoItem(it.id);
+    const campos = camposParaRecontar(it);
     it._campos = campos.map(c => c.id);
     return `
       <div style="padding:10px 0;border-top:1px solid #eee">
-        <div style="font-weight:700;margin-bottom:6px">${escH(it.nome)}</div>
+        <div style="font-weight:700;margin-bottom:6px">${escH(it.nome)}${it._motivo === 'consumo'
+          ? ' <span style="font-weight:400;font-size:11px;color:#2e7d32">· nos freezers (consumo interno)</span>'
+          : (it._apontado ? ' <span style="font-weight:400;font-size:11px;color:#2e7d32">· só onde mudou</span>' : '')}</div>
         <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px">
           ${campos.map(c => `
             <label style="font-size:11px;color:#666;text-align:center">${escH(c.dataset.rotulo)}
@@ -928,7 +975,7 @@ function abrirRecontagem(itens) {
       <h3>🔁 Reconte antes de salvar</h3>
       <p style="font-size:13px;color:#555;margin:0 0 12px;line-height:1.45">
         ${itens.length === 1 ? 'Este item não bateu' : `Estes ${itens.length} itens não bateram`} com o final de ontem.
-        Vá até cada lugar, <b>conte de novo</b> e digite tudo outra vez.
+        Vá até os lugares indicados, <b>conte de novo</b> e digite outra vez.
         Se der o mesmo número, tudo bem: salva assim mesmo.
       </p>
       ${blocos}
