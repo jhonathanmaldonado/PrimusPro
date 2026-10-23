@@ -1160,6 +1160,7 @@ function abrirModalFicha(fichaId = null) {
       precoVenda: f.precoVenda ?? 0,
       cmvAlvoCustom: f.cmvAlvoCustom ?? null,
       ehPrePreparo: !!f.ehPrePreparo,
+      pessoasServidas: f.pessoasServidas ?? null,
       ingredientes: JSON.parse(JSON.stringify(f.ingredientes || [])),
       tempoPreparo: f.tempoPreparo || '',
       modoPreparo: f.modoPreparo || '',
@@ -1179,6 +1180,7 @@ function abrirModalFicha(fichaId = null) {
       precoVenda: 0,
       cmvAlvoCustom: null,
       ehPrePreparo: false,
+      pessoasServidas: null,
       ingredientes: [],
       tempoPreparo: '',
       modoPreparo: '',
@@ -1212,6 +1214,8 @@ function abrirModalFicha(fichaId = null) {
   $('ficha-preco-venda').value = fichaEmEdicao.precoVenda || '';
   $('ficha-cmv-custom').value = fichaEmEdicao.cmvAlvoCustom != null ? Math.round(fichaEmEdicao.cmvAlvoCustom * 100) : '';
   $('ficha-eh-pp').checked = fichaEmEdicao.ehPrePreparo;
+  $('ficha-pessoas-servidas').value = fichaEmEdicao.pessoasServidas != null ? fichaEmEdicao.pessoasServidas : '';
+  atualizarVisibilidadePessoas();
   $('ficha-tempo-preparo').value = fichaEmEdicao.tempoPreparo;
   $('ficha-modo-preparo').value = fichaEmEdicao.modoPreparo;
   $('ficha-observacoes').value = fichaEmEdicao.observacoes;
@@ -1234,6 +1238,13 @@ function fecharModalFicha() {
 
 // Atualiza o bloco "Tamanho da Porção": esconde se unidade é PORCOES,
 // e atualiza a label dinâmica (KG/L/und) ao lado do input
+function atualizarVisibilidadePessoas() {
+  const bloco = document.getElementById('bloco-pessoas-servidas');
+  if (!bloco) return;
+  // Só pratos servem pessoas; em pré-preparo o campo não aparece
+  bloco.style.display = $('ficha-eh-pp').checked ? 'none' : 'block';
+}
+
 function atualizarVisibilidadeTamanhoPorcao() {
   if (!fichaEmEdicao) return;
   const bloco = $('bloco-tamanho-porcao');
@@ -1644,6 +1655,9 @@ async function salvarFicha() {
   fichaEmEdicao.cmvAlvoCustom = isNaN(cmvCustomPct) ? null : (cmvCustomPct / 100);
 
   fichaEmEdicao.ehPrePreparo = $('ficha-eh-pp').checked;
+  const pessoasStr = ($('ficha-pessoas-servidas').value || '').trim().replace(',', '.');
+  const pessoasNum = parseFloat(pessoasStr);
+  fichaEmEdicao.pessoasServidas = (fichaEmEdicao.ehPrePreparo || isNaN(pessoasNum) || pessoasNum <= 0) ? null : pessoasNum;
   fichaEmEdicao.tempoPreparo = $('ficha-tempo-preparo').value.trim();
   fichaEmEdicao.modoPreparo = $('ficha-modo-preparo').value.trim();
   fichaEmEdicao.observacoes = $('ficha-observacoes').value.trim();
@@ -6731,6 +6745,7 @@ function setupEventos() {
 
   // Selects de unidade: handlers dedicados (fora do sincronizador genérico)
   if ($('ficha-unidade-rendimento')) $('ficha-unidade-rendimento').addEventListener('change', onTrocarUnidadeRendimento);
+  if ($('ficha-eh-pp')) $('ficha-eh-pp').addEventListener('change', atualizarVisibilidadePessoas);
   if ($('ficha-rendimento-display')) $('ficha-rendimento-display').addEventListener('change', onTrocarDisplayRendimento);
   if ($('ficha-tamanho-porcao-display')) $('ficha-tamanho-porcao-display').addEventListener('change', onTrocarDisplayTamanho);
 

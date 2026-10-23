@@ -564,6 +564,7 @@ export async function criarFicha(dados) {
     precoVenda: parseFloat(dados.precoVenda) || 0,
     cmvAlvoCustom: dados.cmvAlvoCustom ?? null,
     ehPrePreparo: !!dados.ehPrePreparo,
+    pessoasServidas: dados.pessoasServidas ?? null,
     ingredientes: dados.ingredientes || [],
     tempoPreparo: dados.tempoPreparo || '',
     modoPreparo: dados.modoPreparo || '',
