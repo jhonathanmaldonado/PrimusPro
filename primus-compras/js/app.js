@@ -1037,6 +1037,51 @@ function switchSubTabCardapio(sub) {
 // FICHAS TÉCNICAS - render + modal completo (Sub-fase 2A)
 // ============================================================================
 
+async function tratarPreencherPessoasFichas() {
+  let pessoas = {};
+  try {
+    pessoas = await getPessoasPorProduto();
+  } catch (e) {
+    showToast('⚠ Não consegui ler as pessoas por produto', 'error');
+    return;
+  }
+
+  // Só pratos ainda SEM o campo preenchido, que tenham número no cardápio.
+  // Não sobrescreve quem você já ajustou na mão.
+  const alvo = [];
+  for (const f of fichas) {
+    if (f.ehPrePreparo) continue;
+    if (f.pessoasServidas != null) continue;
+    const chave = (f.nomeNoPDV || f.nome || '').trim().toUpperCase();
+    const n = pessoas[chave];
+    if (n > 0) alvo.push({ id: f.id, nome: f.nome, n });
+  }
+
+  if (!alvo.length) {
+    showToast('Nada a preencher — pratos já têm pessoas ou não estão no cardápio', 'success');
+    return;
+  }
+
+  const msg = `Preencher ${alvo.length} ficha(s) com o número de pessoas do cardápio?\n\n`
+    + alvo.slice(0, 15).map(x => `${x.nome} → ${x.n}`).join('\n')
+    + (alvo.length > 15 ? `\n… e mais ${alvo.length - 15}` : '')
+    + `\n\nSó mexe nas que estão sem o campo preenchido.`;
+  if (!confirm(msg)) return;
+
+  let ok = 0, erros = 0;
+  for (const x of alvo) {
+    try {
+      await atualizarFicha(x.id, { pessoasServidas: x.n });
+      ok++;
+    } catch (e) {
+      console.error('[preencherPessoas]', x.nome, e);
+      erros++;
+    }
+  }
+  showToast(`✓ ${ok} ficha(s) preenchida(s)` + (erros ? ` · ${erros} com erro` : ''), erros ? 'error' : 'success');
+  renderFichas();
+}
+
 function renderFichas() {
   const el = $('list-fichas');
   $('stat-fichas-total').textContent = fichas.length;
@@ -6629,6 +6674,8 @@ function setupEventos() {
 
   // === FICHAS TÉCNICAS ===
   $('btn-nova-ficha').addEventListener('click', () => abrirModalFicha());
+  const btnPreencherPessoas = $('btn-preencher-pessoas');
+  if (btnPreencherPessoas) btnPreencherPessoas.addEventListener('click', tratarPreencherPessoasFichas);
   $('filtro-fichas').addEventListener('change', e => {
     filtroFichas = e.target.value;
     renderFichas();
