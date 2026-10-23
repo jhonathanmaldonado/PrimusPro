@@ -82,6 +82,7 @@ import {
   deletarVendasDoDia,
   formatarDataBR,
   vincularVendaAFicha,
+  getPessoasPorProduto,
   desvincularVenda,
   marcarProdutoIgnorado,
   autoVincularPorNomeNoPDV,
@@ -1067,7 +1068,11 @@ function renderFichas() {
     return;
   }
 
+  const pendentesPreencher = fichas.filter(f => (f.ingredientes || []).length === 0).length;
   let html = '';
+  if (pendentesPreencher > 0) {
+    html += `<div style="background:#fde8e8;border:1px solid #f5b5b5;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:13px;color:#791F1F">⚠ <strong>${pendentesPreencher} ficha(s) a preencher</strong> — ainda sem ingredientes. Clique no ✏️ para completar.</div>`;
+  }
   for (const ficha of filtradas) {
     const custoReceita = calcularCustoReceita(ficha, insumos, fichas);
     const custoPorcao = calcularCustoPorPorcao(ficha, insumos, fichas);
@@ -1077,6 +1082,7 @@ function renderFichas() {
 
     const badgePP = ficha.ehPrePreparo ? `<span class="insumo-badge pp">PRÉ-PREPARO</span>` : '';
     const nIngredientes = (ficha.ingredientes || []).length;
+    const badgePend = nIngredientes === 0 ? `<span style="display:inline-block;background:#fde8e8;color:#791F1F;border:1px solid #f5b5b5;border-radius:4px;padding:1px 7px;font-size:11px;font-weight:700;margin-left:6px">⚠ PENDENTE</span>` : '';
 
     // Cor do CMV
     let corCMV = 'var(--muted)';
@@ -1093,7 +1099,7 @@ function renderFichas() {
 
     html += `<div class="ficha-card">`;
     html += `<div class="ficha-card-info">`;
-    html += `<div class="ficha-card-nome">${escHtml(ficha.nome)} ${badgePP}</div>`;
+    html += `<div class="ficha-card-nome">${escHtml(ficha.nome)} ${badgePP}${badgePend}</div>`;
 
     // Meta: rendimento + número de porções (se aplicável)
     const nPorcoes = calcularNumeroPorcoes(ficha);
@@ -3993,6 +3999,49 @@ function renderDadosVendas() {
 // VENDAS - Vínculos PDV ↔ Ficha (Fase 3B)
 // ============================================================================
 
+async function tratarCriarFichasPendentes() {
+  let pessoas = {};
+  try {
+    pessoas = await getPessoasPorProduto();
+  } catch (e) {
+    showToast('⚠ Não consegui ler as pessoas por produto', 'error');
+    return;
+  }
+
+  // Pratos = produtos vendidos com pessoas > 0 configurado, ainda sem ficha e não ignorados
+  const produtos = agregarVendasPorProduto(vendas);
+  const pendentes = produtos.filter(p => {
+    const n = pessoas[(p.nome || '').trim().toUpperCase()];
+    return (n > 0) && !p.fichaId && !p.ignorado;
+  });
+
+  if (!pendentes.length) {
+    showToast('Nenhum prato pendente — os pratos já têm ficha', 'success');
+    return;
+  }
+
+  const nomes = pendentes.map(p => p.nome);
+  const msg = `Criar ${pendentes.length} ficha(s) vazia(s) para os pratos abaixo e já vinculá-las?\n\n`
+    + nomes.slice(0, 15).join('\n')
+    + (nomes.length > 15 ? `\n… e mais ${nomes.length - 15}` : '')
+    + `\n\nElas aparecem em Fichas Técnicas marcadas como PENDENTE, pra você preencher os ingredientes depois.`;
+  if (!confirm(msg)) return;
+
+  let criadas = 0, erros = 0;
+  for (const nome of nomes) {
+    try {
+      const fichaId = await criarFicha({ nome, nomeNoPDV: nome, ehPrePreparo: false, ingredientes: [] });
+      await vincularVendaAFicha(nome, fichaId);
+      criadas++;
+    } catch (e) {
+      console.error('[criarFichasPendentes]', nome, e);
+      erros++;
+    }
+  }
+  showToast(`✓ ${criadas} ficha(s) criada(s) e vinculada(s)` + (erros ? ` · ${erros} com erro` : ''), erros ? 'error' : 'success');
+  renderVinculos();
+}
+
 function renderVinculos() {
   // Agrega vendas por produto
   const produtos = agregarVendasPorProduto(vendas);
@@ -6274,6 +6323,10 @@ function setupEventos() {
     searchVinculos = '';
     renderVinculos();
   });
+
+  // Vendas - Vínculos: criar fichas-esqueleto dos pratos pendentes
+  const btnCriarFichasPend = $('btn-criar-fichas-pendentes');
+  if (btnCriarFichasPend) btnCriarFichasPend.addEventListener('click', tratarCriarFichasPendentes);
 
   // Vendas - Vínculos (ações nos cards) - delegação
   $('lista-vinculos').addEventListener('change', e => {

@@ -68,6 +68,12 @@ export async function setConfigMediaN(n) {
   await updateDoc(ROOT(), { 'config.mediaN': n, ...auditFields() });
 }
 
+// Lê o mapa { NOME_PDV_NORMALIZADO: pessoas } salvo pela página de Estimativa de Clientes
+export async function getPessoasPorProduto() {
+  const snap = await getDoc(ROOT());
+  return snap.data()?.config?.pessoasPorProduto || {};
+}
+
 export async function getConfigPrecificacao() {
   const snap = await getDoc(ROOT());
   const c = snap.data()?.config?.precificacao || {};
