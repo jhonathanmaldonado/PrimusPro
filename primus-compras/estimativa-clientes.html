@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#7A1F38">
+<title>Estimativa de Clientes — Primus Compras</title>
+<link rel="icon" type="image/png" href="img/logo_compras.png">
+<style>
+  :root {
+    --wine: #7A1F38; --wine-soft: #f6e9ed; --gold: #FAB900;
+    --ok: #1e7a3c; --ok-bg: #e6f4ea; --warn: #8a5a00; --warn-bg: #fff4d6;
+    --err: #a3182a; --err-bg: #fde8ea; --line: #e3e3e3; --muted: #666;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 14px; color: #222; background: #faf8f8; }
+  header { background: var(--wine); color: #fff; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 18px; }
+  header a { color: var(--gold); text-decoration: none; font-weight: 600; }
+  main { max-width: 1100px; margin: 0 auto; padding: 18px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { margin: 0 0 10px; font-size: 16px; color: var(--wine); }
+  .muted { color: var(--muted); font-size: 13px; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tab { background: #fff; border: 1px solid var(--wine); color: var(--wine); padding: 8px 16px; border-radius: 20px; cursor: pointer; font-weight: 700; }
+  .tab.ativa { background: var(--wine); color: #fff; }
+  .btn { background: var(--wine); color: #fff; border: 0; border-radius: 8px; padding: 10px 18px; font-weight: 700; cursor: pointer; font-size: 14px; }
+  .btn:disabled { background: #bbb; cursor: not-allowed; }
+  .filtros { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+  .filtros label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 4px; }
+  select, input[type=date], input[type=search] { padding: 7px; font-size: 14px; border: 1px solid #ccc; border-radius: 6px; }
+  input.pessoas { width: 70px; padding: 6px; font-size: 14px; text-align: center; border: 1px solid #ccc; border-radius: 6px; }
+  input.pessoas.vazio { background: var(--warn-bg); border-color: #e0b84d; }
+  input.pessoas.alterado { border-color: var(--wine); box-shadow: 0 0 0 2px var(--wine-soft); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-top: 14px; }
+  .kpi { background: var(--wine-soft); border-radius: 10px; padding: 12px; }
+  .kpi .rot { font-size: 12px; color: var(--muted); }
+  .kpi .val { font-size: 22px; font-weight: 800; color: var(--wine); margin-top: 2px; }
+  .kpi .sub { font-size: 12px; margin-top: 2px; }
+  .up { color: var(--ok); } .down { color: var(--err); }
+  .tbl-wrap { overflow-x: auto; margin-top: 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 7px 8px; text-align: left; }
+  th { background: var(--wine-soft); color: var(--wine); font-weight: 700; white-space: nowrap; }
+  td.num, th.num { text-align: right; white-space: nowrap; }
+  .bar { height: 14px; background: var(--wine); border-radius: 3px; min-width: 2px; }
+  .aviso { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 12px; margin-top: 12px; font-size: 13px; }
+  .hidden { display: none; }
+  .barra-salvar { position: sticky; bottom: 0; background: #fff; border-top: 1px solid var(--line); padding: 10px 0; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Estimativa de Clientes</h1>
+  <a href="./">← Voltar ao Primus Compras</a>
+</header>
+
+<main>
+  <div class="card" id="card-status"><div id="status-acesso" class="muted">Verificando login…</div></div>
+
+  <div id="app" class="hidden">
+    <div class="tabs">
+      <button class="tab ativa" data-tab="relatorio">Relatório</button>
+      <button class="tab" data-tab="config">Pessoas por produto</button>
+    </div>
+
+    <!-- ===================== RELATÓRIO ===================== -->
+    <section id="tab-relatorio">
+      <div class="card">
+        <h2>Período</h2>
+        <div class="filtros">
+          <label>Período
+            <select id="sel-periodo">
+              <option value="7d">Últimos 7 dias</option>
+              <option value="30d" selected>Últimos 30 dias</option>
+              <option value="mes">Este mês</option>
+              <option value="mes_ant">Mês anterior</option>
+              <option value="90d">Últimos 90 dias</option>
+              <option value="custom">Personalizado</option>
+            </select>
+          </label>
+          <label>De <input type="date" id="dt-de"></label>
+          <label>Até <input type="date" id="dt-ate"></label>
+          <label>Agrupar por
+            <select id="sel-agrupar">
+              <option value="dia">Dia</option>
+              <option value="semana" selected>Semana</option>
+              <option value="mes">Mês</option>
+              <option value="diasemana">Dia da semana (média)</option>
+            </select>
+          </label>
+        </div>
+        <div class="kpis" id="kpis"></div>
+        <div id="aviso-cobertura"></div>
+      </div>
+
+      <div class="card">
+        <h2 id="titulo-tabela">Clientes estimados</h2>
+        <div class="tbl-wrap"><table id="tbl-relatorio"></table></div>
+      </div>
+    </section>
+
+    <!-- ===================== CONFIGURAÇÃO ===================== -->
+    <section id="tab-config" class="hidden">
+      <div class="card">
+        <h2>Quantas pessoas cada produto serve</h2>
+        <p class="muted">Prato individual = 1 · prato para dois = 2 · bebida, sobremesa, porção para acompanhar = 0. Aceita decimal (ex.: 1,5). Produtos mais vendidos aparecem primeiro — configurar os primeiros já cobre quase todo o movimento.</p>
+        <div class="filtros">
+          <label>Buscar <input type="search" id="busca" placeholder="nome do produto"></label>
+          <label>Mostrar
+            <select id="sel-filtro-config">
+              <option value="todos">Todos</option>
+              <option value="pendentes" selected>Só não configurados</option>
+              <option value="configurados">Só configurados</option>
+            </select>
+          </label>
+        </div>
+        <div id="cobertura-config" class="muted" style="margin-top:10px"></div>
+        <div class="tbl-wrap"><table id="tbl-config"></table></div>
+        <div class="barra-salvar">
+          <button class="btn" id="btn-prefill">Pré-preencher pelo cardápio</button>
+          <button class="btn" id="btn-salvar" disabled>Salvar alterações</button>
+          <span id="status-salvar" class="muted"></span>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script type="module">
+import { observarAuth } from './js/auth.js';
+import { db } from './js/firebase-init.js';
+import { WORKSPACE_ID } from './js/firebase-config.js';
+import { setUserContext, observarVendas } from './js/db.js';
+import {
+  doc, onSnapshot, updateDoc, serverTimestamp
+} from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
+
+// ============================================================================
+// ESTADO
+// ============================================================================
+let perfilAtual = null;
+let vendas = [];
+let pessoasSalvas = {};     // { NOME_NORMALIZADO: numero }  (persistido em workspaces/primus.config.pessoasPorProduto)
+let pessoasEditadas = {};   // alterações ainda não salvas
+let tabAtiva = 'relatorio';
+
+const $ = id => document.getElementById(id);
+const ROOT = () => doc(db, 'workspaces', WORKSPACE_ID);
+const DIAS_SEMANA = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+// Mesma normalização usada no vínculo PDV ↔ ficha (db.js: normalizarNomePDV)
+const normNome = n => (n || '').trim().toUpperCase();
+
+function esc(s) {
+  return (s ?? '').toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+const brl = v => (v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const int = v => Math.round(v || 0).toLocaleString('pt-BR');
+const pct = v => (v * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%';
+
+// Datas sempre como 'YYYY-MM-DD' em horário local (sem fuso)
+function iso(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+function parseIso(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
+function addDias(s, n) { const d = parseIso(s); d.setDate(d.getDate() + n); return iso(d); }
+function diffDias(a, b) { return Math.round((parseIso(b) - parseIso(a)) / 86400000); }
+function fmtData(s) { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; }
+function segundaDaSemana(s) {
+  const d = parseIso(s);
+  const dow = d.getDay();                 // 0 = domingo
+  d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+  return iso(d);
+}
+
+function pessoasDe(nomeNorm) {
+  if (nomeNorm in pessoasEditadas) return pessoasEditadas[nomeNorm];
+  return pessoasSalvas[nomeNorm];
+}
+
+// ============================================================================
+// ACESSO E DADOS
+// ============================================================================
+observarAuth(estado => {
+  if (!estado || !estado.perfil) {
+    $('status-acesso').innerHTML = 'Você não está logado. <a href="./">Entre no Primus Compras</a> e depois volte para esta página.';
+    return;
+  }
+  const { user, perfil } = estado;
+  perfilAtual = perfil;
+  setUserContext({ uid: user.uid, nome: perfil.nome, username: perfil.username, role: perfil.role });
+  $('status-acesso').innerHTML = `Logado como <b>${esc(perfil.nome)}</b> · <span id="status-dados">carregando vendas…</span>` +
+    (perfil.role !== 'dono' ? ' · <i>somente o dono altera as pessoas por produto</i>' : '');
+  $('app').classList.remove('hidden');
+
+  onSnapshot(ROOT(), snap => {
+    pessoasSalvas = snap.data()?.config?.pessoasPorProduto || {};
+    renderTudo();
+  });
+  observarVendas(lista => {
+    vendas = lista;
+    const datas = vendas.map(v => v.data).filter(Boolean).sort();
+    $('status-dados').textContent = datas.length
+      ? `${vendas.length.toLocaleString('pt-BR')} lançamentos de ${fmtData(datas[0])} a ${fmtData(datas[datas.length - 1])}`
+      : 'nenhuma venda importada ainda';
+    aplicarPeriodo();
+  });
+});
+
+// ============================================================================
+// ABAS
+// ============================================================================
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => {
+  tabAtiva = b.dataset.tab;
+  document.querySelectorAll('.tab').forEach(x => x.classList.toggle('ativa', x === b));
+  $('tab-relatorio').classList.toggle('hidden', tabAtiva !== 'relatorio');
+  $('tab-config').classList.toggle('hidden', tabAtiva !== 'config');
+  renderTudo();
+}));
+
+function renderTudo() {
+  if (tabAtiva === 'relatorio') renderRelatorio(); else renderConfig();
+}
+
+// ============================================================================
+// PERÍODO
+// ============================================================================
+function ultimaDataComVenda() {
+  let max = '';
+  for (const v of vendas) if (v.data && v.data > max) max = v.data;
+  return max || iso(new Date());
+}
+
+function aplicarPeriodo() {
+  const p = $('sel-periodo').value;
+  const fim = ultimaDataComVenda();      // âncora no último dia importado (normalmente D-1)
+  let de, ate = fim;
+  if (p === '7d') de = addDias(fim, -6);
+  else if (p === '30d') de = addDias(fim, -29);
+  else if (p === '90d') de = addDias(fim, -89);
+  else if (p === 'mes') { de = fim.slice(0, 8) + '01'; }
+  else if (p === 'mes_ant') {
+    const d = parseIso(fim.slice(0, 8) + '01'); d.setDate(0);   // último dia do mês anterior
+    ate = iso(d); de = ate.slice(0, 8) + '01';
+  } else {
+    if (!$('dt-de').value || !$('dt-ate').value) { $('dt-de').value = addDias(fim, -29); $('dt-ate').value = fim; }
+    renderTudo();
+    return;
+  }
+  $('dt-de').value = de;
+  $('dt-ate').value = ate;
+  renderTudo();
+}
+
+$('sel-periodo').addEventListener('change', aplicarPeriodo);
+['dt-de', 'dt-ate'].forEach(id => $(id).addEventListener('change', () => { $('sel-periodo').value = 'custom'; renderTudo(); }));
+$('sel-agrupar').addEventListener('change', renderTudo);
+
+// ============================================================================
+// CÁLCULO
+// ============================================================================
+// Resumo de um intervalo [de, ate]
+function calcular(de, ate) {
+  const porDia = {};   // data -> { clientes, receita, receitaSemConfig }
+  let clientes = 0, receita = 0, receitaSemConfig = 0;
+  const semConfig = {};
+
+  for (const v of vendas) {
+    if (!v.data || v.data < de || v.data > ate) continue;
+    const nome = normNome(v.produtoNome);
+    const qtd = parseFloat(v.quantidade) || 0;
+    const total = parseFloat(v.total) || 0;
+    const pes = pessoasDe(nome);
+    const d = porDia[v.data] || (porDia[v.data] = { clientes: 0, receita: 0, receitaSemConfig: 0 });
+    d.receita += total; receita += total;
+    if (pes === undefined || pes === null || pes === '') {
+      d.receitaSemConfig += total; receitaSemConfig += total;
+      semConfig[nome] = (semConfig[nome] || 0) + total;
+    } else {
+      const c = qtd * pes;
+      d.clientes += c; clientes += c;
+    }
+  }
+  const diasComVenda = Object.keys(porDia).length;
+  return { porDia, clientes, receita, receitaSemConfig, diasComVenda, semConfig };
+}
+
+function agrupar(porDia, modo) {
+  const grupos = {};
+  for (const [data, d] of Object.entries(porDia)) {
+    let chave, rotulo;
+    if (modo === 'dia') { chave = data; rotulo = `${fmtData(data)} · ${DIAS_SEMANA[parseIso(data).getDay()]}`; }
+    else if (modo === 'semana') { chave = segundaDaSemana(data); rotulo = `Semana de ${fmtData(chave)} a ${fmtData(addDias(chave, 6))}`; }
+    else if (modo === 'mes') {
+      chave = data.slice(0, 7);
+      const nomeMes = parseIso(chave + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+      rotulo = nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1);
+    } else { const dow = parseIso(data).getDay(); chave = String((dow + 6) % 7); rotulo = DIAS_SEMANA[dow]; }
+    const g = grupos[chave] || (grupos[chave] = { chave, rotulo, clientes: 0, receita: 0, dias: 0 });
+    g.clientes += d.clientes; g.receita += d.receita; g.dias += 1;
+  }
+  return Object.values(grupos).sort((a, b) => a.chave.localeCompare(b.chave));
+}
+
+// ============================================================================
+// RENDER — RELATÓRIO
+// ============================================================================
+function variacao(atual, anterior) {
+  if (!anterior) return '<span class="muted">sem base de comparação</span>';
+  const v = (atual - anterior) / anterior;
+  const cls = v >= 0 ? 'up' : 'down';
+  return `<span class="${cls}">${v >= 0 ? '▲' : '▼'} ${pct(Math.abs(v))}</span> <span class="muted">vs. período anterior</span>`;
+}
+
+function renderRelatorio() {
+  const de = $('dt-de').value, ate = $('dt-ate').value;
+  if (!de || !ate || de > ate) { $('kpis').innerHTML = '<div class="muted">Escolha um período válido.</div>'; $('tbl-relatorio').innerHTML = ''; return; }
+
+  const atual = calcular(de, ate);
+  const n = diffDias(de, ate) + 1;
+  const anterior = calcular(addDias(de, -n), addDias(de, -1));
+
+  const media = atual.diasComVenda ? atual.clientes / atual.diasComVenda : 0;
+  const ticket = atual.clientes ? atual.receita / atual.clientes : 0;
+  const ticketAnt = anterior.clientes ? anterior.receita / anterior.clientes : 0;
+
+  $('kpis').innerHTML = `
+    <div class="kpi"><div class="rot">Clientes estimados</div><div class="val">${int(atual.clientes)}</div><div class="sub">${variacao(atual.clientes, anterior.clientes)}</div></div>
+    <div class="kpi"><div class="rot">Média por dia aberto</div><div class="val">${int(media)}</div><div class="sub muted">${atual.diasComVenda} dia(s) com venda</div></div>
+    <div class="kpi"><div class="rot">Faturamento no período</div><div class="val">${brl(atual.receita)}</div><div class="sub">${variacao(atual.receita, anterior.receita)}</div></div>
+    <div class="kpi"><div class="rot">Ticket médio estimado</div><div class="val">${brl(ticket)}</div><div class="sub">${variacao(ticket, ticketAnt)}</div></div>`;
+
+  // Cobertura: quanto do faturamento vem de produtos sem "pessoas" configurado
+  const fracSem = atual.receita ? atual.receitaSemConfig / atual.receita : 0;
+  const top = Object.entries(atual.semConfig).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  $('aviso-cobertura').innerHTML = fracSem > 0.005
+    ? `<div class="aviso">⚠ ${pct(fracSem)} do faturamento do período vem de produtos ainda <b>sem configuração</b> de pessoas — eles não entram na contagem. Principais: ${top.map(([n]) => esc(n)).join(', ')}. Configure na aba <b>Pessoas por produto</b>.</div>`
+    : '';
+
+  const modo = $('sel-agrupar').value;
+  const grupos = agrupar(atual.porDia, modo);
+  const ehMedia = modo === 'diasemana';
+  const valor = g => ehMedia ? g.clientes / g.dias : g.clientes;
+  const max = Math.max(1, ...grupos.map(valor));
+
+  $('titulo-tabela').textContent = ehMedia ? 'Média de clientes por dia da semana' : 'Clientes estimados';
+  let h = `<thead><tr><th>${ehMedia ? 'Dia da semana' : 'Período'}</th><th class="num">${ehMedia ? 'Média de clientes' : 'Clientes'}</th><th style="width:35%"></th>
+    <th class="num">${ehMedia ? 'Faturamento médio' : 'Faturamento'}</th><th class="num">Ticket médio</th>${ehMedia ? '<th class="num">Dias</th>' : ''}</tr></thead><tbody>`;
+  if (!grupos.length) h += `<tr><td colspan="6" class="muted">Nenhuma venda nesse período.</td></tr>`;
+  for (const g of grupos) {
+    const val = valor(g);
+    const rec = ehMedia ? g.receita / g.dias : g.receita;
+    h += `<tr><td>${esc(g.rotulo)}</td><td class="num"><b>${int(val)}</b></td>
+      <td><div class="bar" style="width:${(val / max * 100).toFixed(1)}%"></div></td>
+      <td class="num">${brl(rec)}</td><td class="num">${g.clientes ? brl(g.receita / g.clientes) : '—'}</td>
+      ${ehMedia ? `<td class="num">${g.dias}</td>` : ''}</tr>`;
+  }
+  $('tbl-relatorio').innerHTML = h + '</tbody>';
+}
+
+// ============================================================================
+// RENDER — CONFIGURAÇÃO
+// ============================================================================
+function produtosAgregados() {
+  const mapa = {};
+  for (const v of vendas) {
+    const nome = normNome(v.produtoNome);
+    if (!nome) continue;
+    const p = mapa[nome] || (mapa[nome] = { nome, rotulo: (v.produtoNome || '').trim(), qtd: 0, receita: 0 });
+    p.qtd += parseFloat(v.quantidade) || 0;
+    p.receita += parseFloat(v.total) || 0;
+  }
+  return Object.values(mapa).sort((a, b) => b.receita - a.receita);
+}
+
+function renderConfig() {
+  const podeEditar = perfilAtual?.role === 'dono';
+  const busca = ($('busca').value || '').trim().toUpperCase();
+  const filtro = $('sel-filtro-config').value;
+  const todos = produtosAgregados();
+
+  const receitaTotal = todos.reduce((s, p) => s + p.receita, 0);
+  const configurados = todos.filter(p => pessoasDe(p.nome) !== undefined && pessoasDe(p.nome) !== null && pessoasDe(p.nome) !== '');
+  const receitaConf = configurados.reduce((s, p) => s + p.receita, 0);
+  $('cobertura-config').innerHTML = `<b>${configurados.length}</b> de <b>${todos.length}</b> produtos configurados · cobrem <b>${receitaTotal ? pct(receitaConf / receitaTotal) : '0%'}</b> do faturamento importado.`;
+
+  const lista = todos.filter(p => {
+    const conf = configurados.includes(p);
+    if (filtro === 'pendentes' && conf) return false;
+    if (filtro === 'configurados' && !conf) return false;
+    return !busca || p.nome.includes(busca);
+  });
+
+  let h = `<thead><tr><th>Produto (como vem do PDV)</th><th class="num">Qtd. vendida</th><th class="num">Faturamento</th><th class="num">Pessoas</th></tr></thead><tbody>`;
+  if (!lista.length) h += `<tr><td colspan="4" class="muted">Nada para mostrar com esse filtro.</td></tr>`;
+  for (const p of lista.slice(0, 400)) {
+    const val = pessoasDe(p.nome);
+    const alterado = p.nome in pessoasEditadas;
+    const vazio = val === undefined || val === null || val === '';
+    h += `<tr><td>${esc(p.rotulo)}</td><td class="num">${int(p.qtd)}</td><td class="num">${brl(p.receita)}</td>
+      <td class="num"><input class="pessoas ${vazio ? 'vazio' : ''} ${alterado ? 'alterado' : ''}" type="number" min="0" step="0.5" inputmode="decimal"
+        data-nome="${esc(p.nome)}" value="${vazio ? '' : val}" ${podeEditar ? '' : 'disabled'}></td></tr>`;
+  }
+  if (lista.length > 400) h += `<tr><td colspan="4" class="muted">Mostrando 400 de ${lista.length}. Use a busca para achar os demais.</td></tr>`;
+  $('tbl-config').innerHTML = h + '</tbody>';
+
+  $('tbl-config').querySelectorAll('input.pessoas').forEach(inp => inp.addEventListener('change', () => {
+    const nome = inp.dataset.nome;
+    const bruto = inp.value.trim().replace(',', '.');
+    const novo = bruto === '' ? null : Math.max(0, parseFloat(bruto));
+    const salvo = pessoasSalvas[nome] ?? null;
+    if ((novo === null && salvo === null) || novo === salvo) delete pessoasEditadas[nome];
+    else pessoasEditadas[nome] = (novo === null || isNaN(novo)) ? null : novo;
+    atualizarBotaoSalvar();
+    inp.classList.toggle('alterado', nome in pessoasEditadas);
+    inp.classList.toggle('vazio', inp.value.trim() === '');
+  }));
+  atualizarBotaoSalvar();
+}
+
+function atualizarBotaoSalvar() {
+  const n = Object.keys(pessoasEditadas).length;
+  $('btn-salvar').disabled = n === 0 || perfilAtual?.role !== 'dono';
+  $('status-salvar').textContent = n ? `${n} alteração(ões) não salva(s)` : '';
+}
+
+$('busca').addEventListener('input', renderConfig);
+$('sel-filtro-config').addEventListener('change', renderConfig);
+
+// Mapa pessoas-por-produto derivado do cardápio + cadastro do Gestor Food (out/2026).
+// Chaves já normalizadas (MAIÚSCULAS). Petiscos robustos = 1; descontinuados fora; resto = 0.
+const MAPA_CARDAPIO = {
+  "INDIVIDUAL FILE PINT. FRITO": 1,
+  "INDIVIDUAL FILE PINTADO GRELHA": 1,
+  "INDIVIDUAL FRANGO GRELHADO": 1,
+  "INDIVIDUAL MOJICA DE PINTADO": 1,
+  "INDIVIDUAL PINTADO PARMEGIANA": 1,
+  "INDIVIDUAL VENTRECHA": 1,
+  "INDIVIDUAL ESPECIAL": 1,
+  "MOQUECA DE BANANA": 1,
+  "PICADINHO DE FILE MIGNON": 1,
+  "FILE MIGNON FIT": 2,
+  "FILE MIGNON KIDS": 1,
+  "KIDS DE FRANGO": 1,
+  "KIDS DE PINTADO": 1,
+  "PICADINHO KIDS": 1,
+  "1/2 FILE DE PINTADO": 2,
+  "FILE DE PINTADO INTEIRO": 3,
+  "1/2 VENTRECHA FRITA": 2,
+  "VENTRECHA FRITA INTEIRA": 3,
+  "1/2 VENTRECHA E FILE": 2,
+  "VENTRECHA E FILE INTEIRA": 3,
+  "1/2 FILE E MOJICA": 2,
+  "FILE E MOJICA INTEIRA": 3,
+  "1/2 VENTRECHA E MOJICA": 2,
+  "VENTRECHA E MOJICA INTEIRA": 3,
+  "1/2 ESCABECHE DE VENTRECHA": 2,
+  "ESCABECHE DE VENTRECHA": 3,
+  "1/2 PEIXADA CUIABANA": 2,
+  "PEIXADA CUIABANA INTEIRA": 4,
+  "1/2 PEIXADA PRIMUS": 2,
+  "PEIXADA PRIMUS INTEIRA": 4,
+  "1/2 PEIXADA SO FILE": 2,
+  "PEIXADA SO FILE INTEIRA": 4,
+  "1/2 PEIXADA ESPECIAL": 2,
+  "PEIXADA ESPECIAL": 4,
+  "1/2 PINTADO A PARMEGIANA": 2,
+  "PINTADO A PARMEGIANA INTEIRA": 4,
+  "1/2 PINTADO GRELHADO": 2,
+  "PINTADO GRELHADO INTEIRA": 4,
+  "PINTADO A PALITO": 1,
+  "COSTELINHA DE TAMBATINGA": 1,
+  "PORCAO DE VENTRECHA (05 UNID.)": 1,
+  "TRIO DE PETISCOS": 1,
+  "MIX DE PETISCOS": 1
+};
+
+$('btn-prefill').addEventListener('click', () => {
+  if (perfilAtual?.role !== 'dono') { $('status-salvar').textContent = 'Somente o dono pode alterar.'; return; }
+  let n = 0;
+  for (const [nomeRaw, val] of Object.entries(MAPA_CARDAPIO)) {
+    const nome = normNome(nomeRaw);
+    const salvo = pessoasSalvas[nome] ?? null;
+    if (salvo !== val) { pessoasEditadas[nome] = val; n++; }
+  }
+  renderConfig();
+  $('status-salvar').textContent = n
+    ? `${n} produto(s) pré-preenchido(s) pelo cardápio — revise e clique em Salvar`
+    : 'Tudo já estava configurado conforme o cardápio';
+});
+
+$('btn-salvar').addEventListener('click', async () => {
+  const novo = { ...pessoasSalvas };
+  for (const [nome, val] of Object.entries(pessoasEditadas)) {
+    if (val === null) delete novo[nome]; else novo[nome] = val;
+  }
+  $('btn-salvar').disabled = true;
+  $('status-salvar').textContent = 'Salvando…';
+  try {
+    await updateDoc(ROOT(), {
+      'config.pessoasPorProduto': novo,
+      atualizadoEm: serverTimestamp(),
+      atualizadoPor: perfilAtual ? perfilAtual.id || null : null,
+      atualizadoPorNome: perfilAtual ? perfilAtual.nome || null : null
+    });
+    pessoasEditadas = {};
+    $('status-salvar').textContent = '✔ Salvo';
+  } catch (e) {
+    console.error(e);
+    $('status-salvar').textContent = '✖ Erro ao salvar: ' + e.message;
+    atualizarBotaoSalvar();
+  }
+});
+
+window.addEventListener('beforeunload', ev => {
+  if (Object.keys(pessoasEditadas).length) { ev.preventDefault(); ev.returnValue = ''; }
+});
+</script>
+</body>
+</html>
