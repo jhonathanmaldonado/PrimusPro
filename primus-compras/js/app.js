@@ -135,6 +135,8 @@ let filtroVinculos = 'todos';  // todos | pendentes | vinculados | ignorados
 // CMV Real (Fase 3C)
 let cmvPeriodoTipo = 'mes-atual';      // mes-atual | mes-especifico | todos
 let cmvMesEspecifico = null;            // 'YYYY-MM' quando tipo === 'mes-especifico'
+let clientesPeriodoTipo = 'mes-atual';  // mes-atual | mes-especifico | todos
+let clientesMesEspecifico = null;
 let cmvOrdenacao = 'receita';           // receita | cmv
 
 // Análises (Fase 3D)
@@ -501,6 +503,7 @@ function iniciarListeners() {
     if (currentTab === 'vendas' && currentSubTabVendas === 'vinculos') renderVinculos();
     if (currentTab === 'vendas' && currentSubTabVendas === 'cmv') renderCMVReal();
     if (currentTab === 'vendas' && currentSubTabVendas === 'analises') renderAnalises();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'clientes') renderClientes();
     if (currentTab === 'vendas' && currentSubTabVendas === 'compras') renderCompras();
   }));
 
@@ -511,6 +514,7 @@ function iniciarListeners() {
     if (currentTab === 'vendas' && currentSubTabVendas === 'cmv') renderCMVReal();
     if (currentTab === 'vendas' && currentSubTabVendas === 'analises') renderAnalises();
     if (currentTab === 'vendas' && currentSubTabVendas === 'compras') renderCompras();
+    if (currentTab === 'vendas' && currentSubTabVendas === 'clientes') renderClientes();
     if (currentTab === 'vendas' && currentSubTabVendas === 'calendario' && diaSelecionadoCalendario) {
       renderDetalhesDia(diaSelecionadoCalendario);
     }
@@ -3690,6 +3694,7 @@ function switchSubTabVendas(sub) {
   $('vendas-subtab-vinculos').style.display = sub === 'vinculos' ? 'block' : 'none';
   $('vendas-subtab-cmv').style.display = sub === 'cmv' ? 'block' : 'none';
   $('vendas-subtab-analises').style.display = sub === 'analises' ? 'block' : 'none';
+  $('vendas-subtab-clientes').style.display = sub === 'clientes' ? 'block' : 'none';
   $('vendas-subtab-compras').style.display = sub === 'compras' ? 'block' : 'none';
 
   if (sub === 'calendario') renderCalendario();
@@ -3697,6 +3702,7 @@ function switchSubTabVendas(sub) {
   if (sub === 'vinculos') renderVinculos();
   if (sub === 'cmv') renderCMVReal();
   if (sub === 'analises') renderAnalises();
+  if (sub === 'clientes') renderClientes();
   if (sub === 'compras') renderCompras();
 }
 
@@ -4384,6 +4390,96 @@ function nomeMes(yyyyMM) {
                  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
   const [ano, mes] = yyyyMM.split('-');
   return `${NOMES[parseInt(mes, 10) - 1]} ${ano}`;
+}
+
+function filtrarVendasClientes() {
+  let vs = vendas.filter(v => v.fichaId && !v.ignorado);
+  if (clientesPeriodoTipo === 'mes-atual') {
+    const hoje = new Date();
+    const prefix = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+    vs = vs.filter(v => v.data && v.data.startsWith(prefix));
+  } else if (clientesPeriodoTipo === 'mes-especifico' && clientesMesEspecifico) {
+    vs = vs.filter(v => v.data && v.data.startsWith(clientesMesEspecifico));
+  }
+  return vs;
+}
+
+function renderClientes() {
+  // Dropdown de meses
+  const selMeses = $('clientes-filtro-mes');
+  if (selMeses) {
+    const meses = listarMesesDisponiveis();
+    if (clientesPeriodoTipo === 'mes-especifico' && !clientesMesEspecifico && meses.length) clientesMesEspecifico = meses[0];
+    selMeses.innerHTML = meses.map(m => {
+      const [y, mo] = m.split('-');
+      const nome = new Date(y, mo - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+      return `<option value="${m}"${m === clientesMesEspecifico ? ' selected' : ''}>${nome}</option>`;
+    }).join('');
+    selMeses.style.display = clientesPeriodoTipo === 'mes-especifico' ? 'inline-block' : 'none';
+  }
+
+  const vinculadas = filtrarVendasClientes();
+
+  // Receita total do periodo (todas as vendas, pra cobertura)
+  let totaisPeriodo = vendas;
+  if (clientesPeriodoTipo === 'mes-atual') {
+    const hoje = new Date();
+    const prefix = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+    totaisPeriodo = vendas.filter(v => v.data && v.data.startsWith(prefix));
+  } else if (clientesPeriodoTipo === 'mes-especifico' && clientesMesEspecifico) {
+    totaisPeriodo = vendas.filter(v => v.data && v.data.startsWith(clientesMesEspecifico));
+  }
+  const receitaTotal = totaisPeriodo.reduce((s, v) => s + (v.total || 0), 0);
+
+  // Soma clientes = quantidade × pessoas da ficha vinculada
+  let clientes = 0, receitaComPessoas = 0;
+  const dias = new Set();
+  const porPrato = {};
+  for (const v of vinculadas) {
+    const ficha = fichas.find(f => f.id === v.fichaId);
+    if (!ficha || !(ficha.pessoasServidas > 0)) continue;
+    const c = (v.quantidade || 0) * ficha.pessoasServidas;
+    clientes += c;
+    receitaComPessoas += (v.total || 0);
+    if (v.data) dias.add(v.data);
+    if (!porPrato[ficha.id]) porPrato[ficha.id] = { nome: ficha.nome, clientes: 0, receita: 0 };
+    porPrato[ficha.id].clientes += c;
+    porPrato[ficha.id].receita += (v.total || 0);
+  }
+
+  const nDias = dias.size;
+  const mediaDia = nDias ? clientes / nDias : 0;
+  const ticketPessoa = clientes ? receitaComPessoas / clientes : 0;
+
+  $('clientes-kpi-total').textContent = Math.round(clientes).toLocaleString('pt-BR');
+  $('clientes-kpi-media').textContent = Math.round(mediaDia).toLocaleString('pt-BR');
+  $('clientes-kpi-ticket').textContent = fmtMoeda(ticketPessoa);
+  $('clientes-kpi-fat').textContent = fmtMoeda(receitaComPessoas);
+  $('clientes-periodo-texto').textContent = `${nDias} dia(s) com venda`;
+
+  // Aviso de cobertura
+  const cobertura = receitaTotal ? receitaComPessoas / receitaTotal : 0;
+  const avisoEl = $('clientes-aviso');
+  if (receitaTotal > 0 && cobertura < 0.9) {
+    avisoEl.style.display = 'block';
+    avisoEl.innerHTML = `⚠ Só <strong>${Math.round(cobertura * 100)}%</strong> do faturamento do período tem "pessoas" definido nas fichas. Pratos sem o número não entram na conta — preencha em <strong>Cardápio → Fichas Técnicas</strong>.`;
+  } else {
+    avisoEl.style.display = 'none';
+  }
+
+  // Lista por prato
+  const lista = Object.values(porPrato).sort((x, y) => y.clientes - x.clientes);
+  const el = $('clientes-lista');
+  if (!lista.length) {
+    el.innerHTML = `<div class="empty-msg">Nenhum prato com "pessoas" definido no período. Preencha o número de pessoas nas fichas técnicas.</div>`;
+  } else {
+    let t = `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px"><th style="padding:7px 6px">Prato</th><th style="padding:7px 6px;text-align:right">Clientes</th><th style="padding:7px 6px;text-align:right">Faturamento</th></tr></thead><tbody>`;
+    for (const p of lista) {
+      t += `<tr style="border-top:1px solid var(--line)"><td style="padding:7px 6px">${escHtml(p.nome)}</td><td style="padding:7px 6px;text-align:right"><strong>${Math.round(p.clientes).toLocaleString('pt-BR')}</strong></td><td style="padding:7px 6px;text-align:right;color:var(--muted)">${fmtMoeda(p.receita)}</td></tr>`;
+    }
+    t += `</tbody></table>`;
+    el.innerHTML = t;
+  }
 }
 
 function renderCMVReal() {
@@ -6419,6 +6515,18 @@ function setupEventos() {
   $('cmv-filtro-mes').addEventListener('change', e => {
     cmvMesEspecifico = e.target.value;
     renderCMVReal();
+  });
+  $('clientes-filtro-periodo').addEventListener('change', e => {
+    clientesPeriodoTipo = e.target.value;
+    if (clientesPeriodoTipo === 'mes-especifico' && !clientesMesEspecifico) {
+      const meses = listarMesesDisponiveis();
+      if (meses.length > 0) clientesMesEspecifico = meses[0];
+    }
+    renderClientes();
+  });
+  $('clientes-filtro-mes').addEventListener('change', e => {
+    clientesMesEspecifico = e.target.value;
+    renderClientes();
   });
   $('cmv-ordenar-receita').addEventListener('click', () => {
     cmvOrdenacao = 'receita';
