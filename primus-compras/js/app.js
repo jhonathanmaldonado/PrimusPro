@@ -4512,6 +4512,67 @@ function renderClientes() {
   $('cli-tabela').innerHTML = t + '</tbody>';
 }
 
+function imprimirRelatorioClientes() {
+  const de = $('cli-de').value, ate = $('cli-ate').value;
+  if (!de || !ate || de > ate) { showToast('⚠ Escolha um período válido antes de imprimir', 'error'); return; }
+
+  const atual = _cliCalcular(de, ate);
+  const media = atual.diasComVenda ? atual.clientes / atual.diasComVenda : 0;
+  const ticket = atual.clientes ? atual.receita / atual.clientes : 0;
+  const modo = $('cli-agrupar').value;
+  const grupos = _cliAgrupar(atual.porDia, modo);
+  const ehMedia = modo === 'diasemana';
+  const valor = g => ehMedia ? g.clientes / g.dias : g.clientes;
+  const hoje = new Date();
+
+  const w = window.open('', '_blank');
+  if (!w) { showToast('⚠ O navegador bloqueou a janela de impressão', 'error'); return; }
+  let html = `
+    <html><head><title>Clientes Estimados — Peixaria Primus</title>
+    <style>
+      @page { margin: 1cm; size: A4; }
+      body { font-family: Arial, sans-serif; font-size: 11px; color: #222; }
+      h1 { color: #7A1F38; font-size: 17px; margin-bottom: 2px; border-bottom: 2px solid #E9A93A; padding-bottom: 4px; }
+      .subtitle { font-size: 9px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; }
+      .kpis { display: flex; gap: 10px; margin-bottom: 14px; }
+      .kpi { flex: 1; border: 1px solid #e5e2da; border-radius: 8px; padding: 8px 10px; }
+      .kpi .rot { font-size: 9px; color: #888; text-transform: uppercase; }
+      .kpi .val { font-size: 18px; font-weight: 700; color: #7A1F38; }
+      table { width: 100%; border-collapse: collapse; }
+      th { background: #faf6f3; font-size: 9px; text-transform: uppercase; padding: 4px 6px; border-bottom: 1px solid #ddd; color: #888; text-align: right; }
+      th.l { text-align: left; }
+      td { padding: 4px 6px; border-bottom: 1px solid #eee; font-size: 10px; text-align: right; }
+      td.l { text-align: left; }
+      .footer { margin-top: 14px; font-size: 8px; color: #888; text-align: center; border-top: 1px solid #ddd; padding-top: 6px; }
+    </style></head><body>
+    <h1>Peixaria Primus — Clientes Estimados</h1>
+    <div class="subtitle">Período: ${_cliFmt(de)} a ${_cliFmt(ate)} · ${atual.diasComVenda} dia(s) com venda · gerado em ${hoje.toLocaleDateString('pt-BR')} ${hoje.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
+    <div class="kpis">
+      <div class="kpi"><div class="rot">Clientes estimados</div><div class="val">${_cliInt(atual.clientes)}</div></div>
+      <div class="kpi"><div class="rot">Média por dia</div><div class="val">${_cliInt(media)}</div></div>
+      <div class="kpi"><div class="rot">Faturamento</div><div class="val">${fmtMoeda(atual.receita)}</div></div>
+      <div class="kpi"><div class="rot">Ticket/pessoa</div><div class="val">${fmtMoeda(ticket)}</div></div>
+    </div>
+    <table><thead><tr>
+      <th class="l">${ehMedia ? 'Dia da semana' : 'Período'}</th>
+      <th>${ehMedia ? 'Média clientes' : 'Clientes'}</th>
+      <th>${ehMedia ? 'Fat. médio' : 'Faturamento'}</th>
+      <th>Ticket médio</th>${ehMedia ? '<th>Dias</th>' : ''}
+    </tr></thead><tbody>`;
+  if (!grupos.length) html += `<tr><td colspan="5" class="l">Nenhuma venda nesse período.</td></tr>`;
+  for (const g of grupos) {
+    const val = valor(g);
+    const rec = ehMedia ? g.receita / g.dias : g.receita;
+    html += `<tr><td class="l">${escHtml(g.rotulo)}</td><td><b>${_cliInt(val)}</b></td><td>${fmtMoeda(rec)}</td><td>${g.clientes ? fmtMoeda(g.receita / g.clientes) : '—'}</td>${ehMedia ? `<td>${g.dias}</td>` : ''}</tr>`;
+  }
+  html += `</tbody></table>
+    <div class="footer">Peixaria Primus · Cuiabá/MT · estimativa baseada nas pessoas por prato das fichas técnicas</div>
+    </body></html>`;
+  w.document.write(html);
+  w.document.close();
+  setTimeout(() => w.print(), 400);
+}
+
 function renderCMVReal() {
   // Atualiza dropdown de meses (se mudou)
   const mesesDisponiveis = listarMesesDisponiveis();
@@ -6549,6 +6610,8 @@ function setupEventos() {
   $('cli-periodo').addEventListener('change', aplicarPeriodoClientes);
   ['cli-de', 'cli-ate'].forEach(id => { const el = $(id); if (el) el.addEventListener('change', () => { $('cli-periodo').value = 'custom'; renderClientes(); }); });
   $('cli-agrupar').addEventListener('change', renderClientes);
+  const btnImprimirCli = $('btn-imprimir-clientes');
+  if (btnImprimirCli) btnImprimirCli.addEventListener('click', imprimirRelatorioClientes);
   $('cmv-ordenar-receita').addEventListener('click', () => {
     cmvOrdenacao = 'receita';
     renderCMVReal();
