@@ -1767,17 +1767,17 @@
 
       <!-- Navegação interna -->
       <div class="sub-nav">
-        <button class="sub-nav-btn active" data-vendas-subtab="importar">📥 Importar</button>
+        <button class="sub-nav-btn" data-vendas-subtab="importar" style="display:none">📥 Importar</button>
         <button class="sub-nav-btn" data-vendas-subtab="calendario">📅 Calendário</button>
-        <button class="sub-nav-btn" data-vendas-subtab="dados">📊 Dados</button>
+        <button class="sub-nav-btn active" data-vendas-subtab="dados">📊 Dados</button>
         <button class="sub-nav-btn" data-vendas-subtab="vinculos">🔗 Vínculos</button>
         <button class="sub-nav-btn" data-vendas-subtab="cmv">📈 CMV Real</button>
         <button class="sub-nav-btn" data-vendas-subtab="analises">🎯 Análises</button>
         <button class="sub-nav-btn" data-vendas-subtab="compras">🛒 Compras</button>
       </div>
 
-      <!-- Sub-aba: Importar -->
-      <div id="vendas-subtab-importar">
+      <!-- Sub-aba: Importar (oculta: o robo importa automatico) -->
+      <div id="vendas-subtab-importar" style="display:none">
         <div class="toolbar">
           <span class="toolbar-title">📥 Importar Vendas do Gestor Food</span>
         </div>
@@ -1869,7 +1869,7 @@
       </div>
 
       <!-- Sub-aba: Dados -->
-      <div id="vendas-subtab-dados" style="display:none">
+      <div id="vendas-subtab-dados">
         <div class="toolbar">
           <span class="toolbar-title">📊 Dados de vendas</span>
         </div>

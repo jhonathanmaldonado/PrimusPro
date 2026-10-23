@@ -120,7 +120,7 @@ let searchVendas = '';
 let filtroFichas = 'todas';  // todas | pratos | pp
 let currentTab = 'criar';
 let currentSubTabCardapio = 'insumos';
-let currentSubTabVendas = 'importar';  // importar | calendario | dados
+let currentSubTabVendas = 'dados';  // dados | calendario | vinculos (importar oculto)
 let mediaN = 5;
 
 // Vendas - estado
@@ -3604,7 +3604,7 @@ function switchTab(tab) {
     switchSubTabCardapio(currentSubTabCardapio || 'insumos');
   }
   if (tab === 'vendas') {
-    switchSubTabVendas(currentSubTabVendas || 'importar');
+    switchSubTabVendas(currentSubTabVendas || 'dados');
   }
   if (tab === 'limpeza') switchSubTabLimpeza(currentSubTabLimpeza || 'painel');
   if (tab === 'equipe') renderEquipe();
