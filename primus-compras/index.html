@@ -2049,7 +2049,7 @@
       </div>
 
       <!-- Sub-aba: Sugestão de Compras (Fase 3E) -->
-      <!-- Sub-aba: Clientes (estimativa de pessoas atendidas) -->
+      <!-- Sub-aba: Clientes (estimativa de pessoas atendidas; lê pessoas da ficha) -->
       <div id="vendas-subtab-clientes" style="display:none">
         <div class="toolbar">
           <span class="toolbar-title">👥 Clientes estimados</span>
@@ -2059,38 +2059,36 @@
           ℹ️ <strong>Como funciona:</strong> estima quantas pessoas vocês atenderam, somando <strong>quantidade vendida × pessoas que cada prato serve</strong> (o número definido na ficha técnica). Bebida, sobremesa e petisco não entram, pra não contar a mesma pessoa duas vezes.
         </div>
 
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
-          <select id="clientes-filtro-periodo" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff">
-            <option value="mes-atual">Mês atual</option>
-            <option value="mes-especifico">Mês específico</option>
-            <option value="todos">Todo o histórico</option>
-          </select>
-          <select id="clientes-filtro-mes" style="padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff;display:none"></select>
-          <span style="flex:1;text-align:right;font-size:11px;color:var(--muted)" id="clientes-periodo-texto">—</span>
+        <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap;margin-bottom:14px">
+          <label style="font-size:12px;color:var(--muted)">Período<br>
+            <select id="cli-periodo" style="margin-top:3px;padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff">
+              <option value="7d">Últimos 7 dias</option>
+              <option value="30d" selected>Últimos 30 dias</option>
+              <option value="mes">Este mês</option>
+              <option value="mes_ant">Mês anterior</option>
+              <option value="90d">Últimos 90 dias</option>
+              <option value="custom">Personalizado</option>
+            </select>
+          </label>
+          <label style="font-size:12px;color:var(--muted)">De<br><input type="date" id="cli-de" style="margin-top:3px;padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff"></label>
+          <label style="font-size:12px;color:var(--muted)">Até<br><input type="date" id="cli-ate" style="margin-top:3px;padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff"></label>
+          <label style="font-size:12px;color:var(--muted)">Agrupar por<br>
+            <select id="cli-agrupar" style="margin-top:3px;padding:6px 10px;font-size:13px;border:1px solid var(--line);border-radius:6px;background:#fff">
+              <option value="dia">Dia</option>
+              <option value="semana" selected>Semana</option>
+              <option value="mes">Mês</option>
+              <option value="diasemana">Dia da semana (média)</option>
+            </select>
+          </label>
         </div>
 
-        <div class="summary">
-          <div class="stat">
-            <div class="stat-label">Clientes estimados</div>
-            <div class="stat-value" id="clientes-kpi-total" style="color:#7A1F38">0</div>
-          </div>
-          <div class="stat">
-            <div class="stat-label">Média por dia aberto</div>
-            <div class="stat-value" id="clientes-kpi-media">0</div>
-          </div>
-          <div class="stat gold">
-            <div class="stat-label">Ticket médio por pessoa</div>
-            <div class="stat-value" id="clientes-kpi-ticket">R$ 0,00</div>
-          </div>
-          <div class="stat">
-            <div class="stat-label">Faturamento (pratos)</div>
-            <div class="stat-value" id="clientes-kpi-fat">R$ 0,00</div>
-          </div>
+        <div class="summary" id="cli-kpis"></div>
+        <div id="cli-aviso"></div>
+
+        <div style="margin-top:16px">
+          <h3 id="cli-titulo-tabela" style="font-size:15px;color:var(--wine);margin:0 0 8px">Clientes estimados</h3>
+          <div style="overflow-x:auto"><table id="cli-tabela" style="width:100%;border-collapse:collapse;font-size:13px"></table></div>
         </div>
-
-        <div id="clientes-aviso" style="display:none;background:#fef3c7;border:1px solid #f0c674;border-radius:8px;padding:10px 14px;margin:14px 0;font-size:12px;color:#854F0B;line-height:1.5"></div>
-
-        <div id="clientes-lista" style="margin-top:14px"></div>
       </div>
 
       <div id="vendas-subtab-compras" style="display:none">

@@ -135,8 +135,6 @@ let filtroVinculos = 'todos';  // todos | pendentes | vinculados | ignorados
 // CMV Real (Fase 3C)
 let cmvPeriodoTipo = 'mes-atual';      // mes-atual | mes-especifico | todos
 let cmvMesEspecifico = null;            // 'YYYY-MM' quando tipo === 'mes-especifico'
-let clientesPeriodoTipo = 'mes-atual';  // mes-atual | mes-especifico | todos
-let clientesMesEspecifico = null;
 let cmvOrdenacao = 'receita';           // receita | cmv
 
 // Análises (Fase 3D)
@@ -4392,94 +4390,126 @@ function nomeMes(yyyyMM) {
   return `${NOMES[parseInt(mes, 10) - 1]} ${ano}`;
 }
 
-function filtrarVendasClientes() {
-  let vs = vendas.filter(v => v.fichaId && !v.ignorado);
-  if (clientesPeriodoTipo === 'mes-atual') {
-    const hoje = new Date();
-    const prefix = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
-    vs = vs.filter(v => v.data && v.data.startsWith(prefix));
-  } else if (clientesPeriodoTipo === 'mes-especifico' && clientesMesEspecifico) {
-    vs = vs.filter(v => v.data && v.data.startsWith(clientesMesEspecifico));
+// ===== Sub-aba Clientes: estimativa de pessoas atendidas (pessoas vêm da ficha) =====
+const _CLI_DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+function _cliIso(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+function _cliParse(s) { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
+function _cliAdd(s, n) { const d = _cliParse(s); d.setDate(d.getDate() + n); return _cliIso(d); }
+function _cliDiff(a, b) { return Math.round((_cliParse(b) - _cliParse(a)) / 86400000); }
+function _cliFmt(s) { const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; }
+function _cliSeg(s) { const d = _cliParse(s); const dow = d.getDay(); d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1)); return _cliIso(d); }
+function _cliInt(v) { return Math.round(v || 0).toLocaleString('pt-BR'); }
+function _cliPct(v) { return (v * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%'; }
+
+// Pessoas que a venda representa — lê da ficha vinculada (null se sem ficha/pessoas ou ignorada)
+function _cliPessoasDaVenda(v) {
+  if (!v.fichaId || v.ignorado) return null;
+  const f = fichas.find(x => x.id === v.fichaId);
+  if (!f || !(f.pessoasServidas > 0)) return null;
+  return f.pessoasServidas;
+}
+
+function _cliCalcular(de, ate) {
+  const porDia = {};
+  let clientes = 0, receita = 0, receitaSemConfig = 0;
+  const semConfig = {};
+  for (const v of vendas) {
+    if (!v.data || v.data < de || v.data > ate) continue;
+    const qtd = parseFloat(v.quantidade) || 0;
+    const total = parseFloat(v.total) || 0;
+    const pes = _cliPessoasDaVenda(v);
+    const d = porDia[v.data] || (porDia[v.data] = { clientes: 0, receita: 0 });
+    d.receita += total; receita += total;
+    if (pes == null) {
+      receitaSemConfig += total;
+      semConfig[v.produtoNome] = (semConfig[v.produtoNome] || 0) + total;
+    } else {
+      const c = qtd * pes; d.clientes += c; clientes += c;
+    }
   }
-  return vs;
+  return { porDia, clientes, receita, receitaSemConfig, diasComVenda: Object.keys(porDia).length, semConfig };
+}
+
+function _cliAgrupar(porDia, modo) {
+  const grupos = {};
+  for (const [data, d] of Object.entries(porDia)) {
+    let chave, rotulo;
+    if (modo === 'dia') { chave = data; rotulo = `${_cliFmt(data)} · ${_CLI_DIAS[_cliParse(data).getDay()]}`; }
+    else if (modo === 'semana') { chave = _cliSeg(data); rotulo = `Semana de ${_cliFmt(chave)} a ${_cliFmt(_cliAdd(chave, 6))}`; }
+    else if (modo === 'mes') { chave = data.slice(0, 7); const nm = _cliParse(chave + '-01').toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' }); rotulo = nm.charAt(0).toUpperCase() + nm.slice(1); }
+    else { const dow = _cliParse(data).getDay(); chave = String((dow + 6) % 7); rotulo = _CLI_DIAS[dow]; }
+    const g = grupos[chave] || (grupos[chave] = { chave, rotulo, clientes: 0, receita: 0, dias: 0 });
+    g.clientes += d.clientes; g.receita += d.receita; g.dias += 1;
+  }
+  return Object.values(grupos).sort((a, b) => a.chave.localeCompare(b.chave));
+}
+
+function _cliVariacao(atual, anterior) {
+  if (!anterior) return '<span style="color:var(--muted)">sem base de comparação</span>';
+  const v = (atual - anterior) / anterior;
+  const cor = v >= 0 ? '#15803d' : '#791F1F';
+  return `<span style="color:${cor};font-weight:700">${v >= 0 ? '▲' : '▼'} ${_cliPct(Math.abs(v))}</span> <span style="color:var(--muted)">vs. anterior</span>`;
+}
+
+function _cliUltimaData() { let max = ''; for (const v of vendas) if (v.data && v.data > max) max = v.data; return max || _cliIso(new Date()); }
+
+function aplicarPeriodoClientes() {
+  const p = $('cli-periodo').value;
+  const fim = _cliUltimaData();
+  let de, ate = fim;
+  if (p === '7d') de = _cliAdd(fim, -6);
+  else if (p === '30d') de = _cliAdd(fim, -29);
+  else if (p === '90d') de = _cliAdd(fim, -89);
+  else if (p === 'mes') de = fim.slice(0, 8) + '01';
+  else if (p === 'mes_ant') { const d = _cliParse(fim.slice(0, 8) + '01'); d.setDate(0); ate = _cliIso(d); de = ate.slice(0, 8) + '01'; }
+  else {
+    if (!$('cli-de').value || !$('cli-ate').value) { $('cli-de').value = _cliAdd(fim, -29); $('cli-ate').value = fim; }
+    renderClientes(); return;
+  }
+  $('cli-de').value = de; $('cli-ate').value = ate;
+  renderClientes();
 }
 
 function renderClientes() {
-  // Dropdown de meses
-  const selMeses = $('clientes-filtro-mes');
-  if (selMeses) {
-    const meses = listarMesesDisponiveis();
-    if (clientesPeriodoTipo === 'mes-especifico' && !clientesMesEspecifico && meses.length) clientesMesEspecifico = meses[0];
-    selMeses.innerHTML = meses.map(m => {
-      const [y, mo] = m.split('-');
-      const nome = new Date(y, mo - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
-      return `<option value="${m}"${m === clientesMesEspecifico ? ' selected' : ''}>${nome}</option>`;
-    }).join('');
-    selMeses.style.display = clientesPeriodoTipo === 'mes-especifico' ? 'inline-block' : 'none';
+  if (!$('cli-de').value || !$('cli-ate').value) { aplicarPeriodoClientes(); return; }
+  const de = $('cli-de').value, ate = $('cli-ate').value;
+  if (de > ate) { $('cli-kpis').innerHTML = '<div class="empty-msg">Escolha um período válido.</div>'; $('cli-tabela').innerHTML = ''; $('cli-aviso').innerHTML = ''; return; }
+
+  const atual = _cliCalcular(de, ate);
+  const nd = _cliDiff(de, ate) + 1;
+  const anterior = _cliCalcular(_cliAdd(de, -nd), _cliAdd(de, -1));
+
+  const media = atual.diasComVenda ? atual.clientes / atual.diasComVenda : 0;
+  const ticket = atual.clientes ? atual.receita / atual.clientes : 0;
+  const ticketAnt = anterior.clientes ? anterior.receita / anterior.clientes : 0;
+
+  $('cli-kpis').innerHTML = `
+    <div class="stat"><div class="stat-label">Clientes estimados</div><div class="stat-value" style="color:#7A1F38">${_cliInt(atual.clientes)}</div><div style="font-size:11px;margin-top:2px">${_cliVariacao(atual.clientes, anterior.clientes)}</div></div>
+    <div class="stat"><div class="stat-label">Média por dia aberto</div><div class="stat-value">${_cliInt(media)}</div><div style="font-size:11px;margin-top:2px;color:var(--muted)">${atual.diasComVenda} dia(s) com venda</div></div>
+    <div class="stat gold"><div class="stat-label">Faturamento no período</div><div class="stat-value">${fmtMoeda(atual.receita)}</div><div style="font-size:11px;margin-top:2px">${_cliVariacao(atual.receita, anterior.receita)}</div></div>
+    <div class="stat"><div class="stat-label">Ticket médio por pessoa</div><div class="stat-value">${fmtMoeda(ticket)}</div><div style="font-size:11px;margin-top:2px">${_cliVariacao(ticket, ticketAnt)}</div></div>`;
+
+  const fracSem = atual.receita ? atual.receitaSemConfig / atual.receita : 0;
+  const top = Object.entries(atual.semConfig).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  $('cli-aviso').innerHTML = fracSem > 0.005
+    ? `<div style="background:#fef3c7;border:1px solid #f0c674;border-radius:8px;padding:10px 14px;margin-top:14px;font-size:12px;color:#854F0B;line-height:1.5">⚠ ${_cliPct(fracSem)} do faturamento do período vem de produtos ainda <b>sem "pessoas"</b> na ficha — não entram na conta. Principais: ${top.map(([n]) => escHtml(n)).join(', ')}. Preencha em <b>Cardápio → Fichas Técnicas</b>.</div>`
+    : '';
+
+  const modo = $('cli-agrupar').value;
+  const grupos = _cliAgrupar(atual.porDia, modo);
+  const ehMedia = modo === 'diasemana';
+  const valor = g => ehMedia ? g.clientes / g.dias : g.clientes;
+  const max = Math.max(1, ...grupos.map(valor));
+
+  $('cli-titulo-tabela').textContent = ehMedia ? 'Média de clientes por dia da semana' : 'Clientes estimados';
+  let t = `<thead><tr style="text-align:left;color:var(--muted);font-size:11px"><th style="padding:7px 6px">${ehMedia ? 'Dia da semana' : 'Período'}</th><th style="padding:7px 6px;text-align:right">${ehMedia ? 'Média' : 'Clientes'}</th><th style="padding:7px 6px;width:30%"></th><th style="padding:7px 6px;text-align:right">${ehMedia ? 'Fat. médio' : 'Faturamento'}</th><th style="padding:7px 6px;text-align:right">Ticket</th>${ehMedia ? '<th style="padding:7px 6px;text-align:right">Dias</th>' : ''}</tr></thead><tbody>`;
+  if (!grupos.length) t += `<tr><td colspan="6" style="padding:10px;color:var(--muted)">Nenhuma venda nesse período.</td></tr>`;
+  for (const g of grupos) {
+    const val = valor(g);
+    const rec = ehMedia ? g.receita / g.dias : g.receita;
+    t += `<tr style="border-top:1px solid var(--line)"><td style="padding:7px 6px">${escHtml(g.rotulo)}</td><td style="padding:7px 6px;text-align:right"><b>${_cliInt(val)}</b></td><td style="padding:7px 6px"><div style="height:10px;border-radius:5px;background:#7A1F38;width:${(val / max * 100).toFixed(1)}%;min-width:2px"></div></td><td style="padding:7px 6px;text-align:right">${fmtMoeda(rec)}</td><td style="padding:7px 6px;text-align:right;color:var(--muted)">${g.clientes ? fmtMoeda(g.receita / g.clientes) : '—'}</td>${ehMedia ? `<td style="padding:7px 6px;text-align:right">${g.dias}</td>` : ''}</tr>`;
   }
-
-  const vinculadas = filtrarVendasClientes();
-
-  // Receita total do periodo (todas as vendas, pra cobertura)
-  let totaisPeriodo = vendas;
-  if (clientesPeriodoTipo === 'mes-atual') {
-    const hoje = new Date();
-    const prefix = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
-    totaisPeriodo = vendas.filter(v => v.data && v.data.startsWith(prefix));
-  } else if (clientesPeriodoTipo === 'mes-especifico' && clientesMesEspecifico) {
-    totaisPeriodo = vendas.filter(v => v.data && v.data.startsWith(clientesMesEspecifico));
-  }
-  const receitaTotal = totaisPeriodo.reduce((s, v) => s + (v.total || 0), 0);
-
-  // Soma clientes = quantidade × pessoas da ficha vinculada
-  let clientes = 0, receitaComPessoas = 0;
-  const dias = new Set();
-  const porPrato = {};
-  for (const v of vinculadas) {
-    const ficha = fichas.find(f => f.id === v.fichaId);
-    if (!ficha || !(ficha.pessoasServidas > 0)) continue;
-    const c = (v.quantidade || 0) * ficha.pessoasServidas;
-    clientes += c;
-    receitaComPessoas += (v.total || 0);
-    if (v.data) dias.add(v.data);
-    if (!porPrato[ficha.id]) porPrato[ficha.id] = { nome: ficha.nome, clientes: 0, receita: 0 };
-    porPrato[ficha.id].clientes += c;
-    porPrato[ficha.id].receita += (v.total || 0);
-  }
-
-  const nDias = dias.size;
-  const mediaDia = nDias ? clientes / nDias : 0;
-  const ticketPessoa = clientes ? receitaComPessoas / clientes : 0;
-
-  $('clientes-kpi-total').textContent = Math.round(clientes).toLocaleString('pt-BR');
-  $('clientes-kpi-media').textContent = Math.round(mediaDia).toLocaleString('pt-BR');
-  $('clientes-kpi-ticket').textContent = fmtMoeda(ticketPessoa);
-  $('clientes-kpi-fat').textContent = fmtMoeda(receitaComPessoas);
-  $('clientes-periodo-texto').textContent = `${nDias} dia(s) com venda`;
-
-  // Aviso de cobertura
-  const cobertura = receitaTotal ? receitaComPessoas / receitaTotal : 0;
-  const avisoEl = $('clientes-aviso');
-  if (receitaTotal > 0 && cobertura < 0.9) {
-    avisoEl.style.display = 'block';
-    avisoEl.innerHTML = `⚠ Só <strong>${Math.round(cobertura * 100)}%</strong> do faturamento do período tem "pessoas" definido nas fichas. Pratos sem o número não entram na conta — preencha em <strong>Cardápio → Fichas Técnicas</strong>.`;
-  } else {
-    avisoEl.style.display = 'none';
-  }
-
-  // Lista por prato
-  const lista = Object.values(porPrato).sort((x, y) => y.clientes - x.clientes);
-  const el = $('clientes-lista');
-  if (!lista.length) {
-    el.innerHTML = `<div class="empty-msg">Nenhum prato com "pessoas" definido no período. Preencha o número de pessoas nas fichas técnicas.</div>`;
-  } else {
-    let t = `<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:var(--muted);font-size:11px"><th style="padding:7px 6px">Prato</th><th style="padding:7px 6px;text-align:right">Clientes</th><th style="padding:7px 6px;text-align:right">Faturamento</th></tr></thead><tbody>`;
-    for (const p of lista) {
-      t += `<tr style="border-top:1px solid var(--line)"><td style="padding:7px 6px">${escHtml(p.nome)}</td><td style="padding:7px 6px;text-align:right"><strong>${Math.round(p.clientes).toLocaleString('pt-BR')}</strong></td><td style="padding:7px 6px;text-align:right;color:var(--muted)">${fmtMoeda(p.receita)}</td></tr>`;
-    }
-    t += `</tbody></table>`;
-    el.innerHTML = t;
-  }
+  $('cli-tabela').innerHTML = t + '</tbody>';
 }
 
 function renderCMVReal() {
@@ -6516,18 +6546,9 @@ function setupEventos() {
     cmvMesEspecifico = e.target.value;
     renderCMVReal();
   });
-  $('clientes-filtro-periodo').addEventListener('change', e => {
-    clientesPeriodoTipo = e.target.value;
-    if (clientesPeriodoTipo === 'mes-especifico' && !clientesMesEspecifico) {
-      const meses = listarMesesDisponiveis();
-      if (meses.length > 0) clientesMesEspecifico = meses[0];
-    }
-    renderClientes();
-  });
-  $('clientes-filtro-mes').addEventListener('change', e => {
-    clientesMesEspecifico = e.target.value;
-    renderClientes();
-  });
+  $('cli-periodo').addEventListener('change', aplicarPeriodoClientes);
+  ['cli-de', 'cli-ate'].forEach(id => { const el = $(id); if (el) el.addEventListener('change', () => { $('cli-periodo').value = 'custom'; renderClientes(); }); });
+  $('cli-agrupar').addEventListener('change', renderClientes);
   $('cmv-ordenar-receita').addEventListener('click', () => {
     cmvOrdenacao = 'receita';
     renderCMVReal();
