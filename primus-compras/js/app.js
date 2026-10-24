@@ -83,6 +83,7 @@ import {
   formatarDataBR,
   vincularVendaAFicha,
   getPessoasPorProduto,
+  ressincronizarVinculos,
   desvincularVenda,
   marcarProdutoIgnorado,
   autoVincularPorNomeNoPDV,
@@ -4062,6 +4063,19 @@ function renderDadosVendas() {
 // VENDAS - Vínculos PDV ↔ Ficha (Fase 3B)
 // ============================================================================
 
+async function tratarRessincronizarVinculos() {
+  if (!confirm('Aplicar os vínculos que já existem às vendas que ainda estão sem ficha (ex: meses que você acabou de importar)?\n\nNÃO altera nada do que você já vinculou — só preenche as vendas órfãs com o mesmo vínculo dos produtos iguais.')) return;
+  try {
+    showToast('⏳ Re-sincronizando vínculos...', '');
+    const n = await ressincronizarVinculos();
+    showToast(n ? `✓ ${n} venda(s) revinculada(s)` : 'Nada a revincular — já está tudo sincronizado', 'success');
+    renderVinculos();
+  } catch (e) {
+    console.error('[ressincronizar]', e);
+    showToast('⚠ Erro ao re-sincronizar: ' + e.message, 'error');
+  }
+}
+
 async function tratarCriarFichasPendentes() {
   let pessoas = {};
   try {
@@ -6573,6 +6587,8 @@ function setupEventos() {
   // Vendas - Vínculos: criar fichas-esqueleto dos pratos pendentes
   const btnCriarFichasPend = $('btn-criar-fichas-pendentes');
   if (btnCriarFichasPend) btnCriarFichasPend.addEventListener('click', tratarCriarFichasPendentes);
+  const btnRessinc = $('btn-ressincronizar-vinculos');
+  if (btnRessinc) btnRessinc.addEventListener('click', tratarRessincronizarVinculos);
 
   // Vendas - Vínculos (ações nos cards) - delegação
   $('lista-vinculos').addEventListener('change', e => {

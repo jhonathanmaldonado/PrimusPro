@@ -919,6 +919,40 @@ export async function vincularVendaAFicha(produtoNome, fichaId) {
   return count;
 }
 
+// Aplica os vínculos JÁ existentes às vendas órfãs (fichaId null e não ignoradas)
+// dos mesmos produtos. Resolve vendas recém-importadas que não herdaram o vínculo
+// (ex: meses antigos importados depois de já ter vinculado os produtos).
+export async function ressincronizarVinculos() {
+  const snap = await getDocs(VENDAS());
+  // Mapa: nome normalizado -> { fichaId, ignorado } das vendas JÁ resolvidas
+  const mapa = {};
+  for (const docSnap of snap.docs) {
+    const v = docSnap.data();
+    if (!v.fichaId && !v.ignorado) continue;
+    const nome = normalizarNomePDV(v.produtoNome);
+    if (!mapa[nome]) mapa[nome] = { fichaId: v.fichaId || null, ignorado: !!v.ignorado };
+  }
+  // Coleta as órfãs que têm um vínculo conhecido pra herdar
+  const orfas = [];
+  for (const docSnap of snap.docs) {
+    const v = docSnap.data();
+    if (v.fichaId || v.ignorado) continue;
+    const alvo = mapa[normalizarNomePDV(v.produtoNome)];
+    if (alvo && (alvo.fichaId || alvo.ignorado)) orfas.push({ ref: docSnap.ref, alvo });
+  }
+  // Aplica em lotes de 400 (writeBatch) pra não travar com muitos docs
+  let count = 0;
+  for (let i = 0; i < orfas.length; i += 400) {
+    const batch = writeBatch(db);
+    for (const o of orfas.slice(i, i + 400)) {
+      batch.update(o.ref, { fichaId: o.alvo.fichaId, ignorado: o.alvo.ignorado, ...auditFields() });
+      count++;
+    }
+    await batch.commit();
+  }
+  return count;
+}
+
 // Desvincula todas as vendas de um produto
 export async function desvincularVenda(produtoNome) {
   if (!produtoNome) return 0;
