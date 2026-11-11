@@ -508,6 +508,7 @@ function iniciarListeners() {
 
   unsubsRefs.push(observarVendas((v) => {
     vendas = v;
+    autoSincronizarVinculos();
     if (currentTab === 'vendas' && currentSubTabVendas === 'dados') renderDadosVendas();
     if (currentTab === 'vendas' && currentSubTabVendas === 'vinculos') renderVinculos();
     if (currentTab === 'vendas' && currentSubTabVendas === 'cmv') renderCMVReal();
@@ -4062,6 +4063,31 @@ function renderDadosVendas() {
 // ============================================================================
 // VENDAS - Vínculos PDV ↔ Ficha (Fase 3B)
 // ============================================================================
+
+// Sincronização automática: sempre que chegam vendas, se houver vendas órfãs
+// (sem ficha) de produtos que JÁ têm vínculo conhecido, aplica o vínculo sozinho.
+// Roda em segundo plano, só quando há o que fazer. Flag evita reentrância/loop.
+let _autoSincVinculosAtivo = false;
+async function autoSincronizarVinculos() {
+  if (_autoSincVinculosAtivo) return;
+  const resolvidos = new Set();
+  for (const v of vendas) {
+    if (v.fichaId || v.ignorado) resolvidos.add((v.produtoNome || '').trim().toUpperCase());
+  }
+  const temOrfaComVinculo = vendas.some(v =>
+    !v.fichaId && !v.ignorado && resolvidos.has((v.produtoNome || '').trim().toUpperCase())
+  );
+  if (!temOrfaComVinculo) return;
+  _autoSincVinculosAtivo = true;
+  try {
+    const n = await ressincronizarVinculos();
+    if (n > 0) showToast(`🔄 ${n} venda(s) vinculada(s) automaticamente`, 'success');
+  } catch (e) {
+    console.error('[auto-sinc vínculos]', e);
+  } finally {
+    _autoSincVinculosAtivo = false;
+  }
+}
 
 async function tratarRessincronizarVinculos() {
   if (!confirm('Aplicar os vínculos que já existem às vendas que ainda estão sem ficha (ex: meses que você acabou de importar)?\n\nNÃO altera nada do que você já vinculou — só preenche as vendas órfãs com o mesmo vínculo dos produtos iguais.')) return;
