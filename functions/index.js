@@ -1127,37 +1127,48 @@ async function montarPrevisao(dia, sobDemanda = false) {
       linhas.push(`• ${masc(dow) ? "Último" : "Última"} ${DIAS_SEMANA_LONGO[dow]} (${dBR(ult)}): ${brl(hist[ult].total)}`);
     }
 
-    // 2) Mesma posição no mês (ex.: 3º domingo de novembro) nos anos anteriores
+    // Anos anteriores com histórico (do ano passado pra trás)
+    const anoIni = Number(datas[0].slice(0, 4));
+    const anosAnt = [];
+    for (let a = ano - 1; a >= anoIni; a--) anosAnt.push(a);
+    const feriadosAnos = {};
+    for (const a of anosAnt) feriadosAnos[a] = await feriadosDoAno(a);
+
+    // Uma linha: "média de N anos" (se tiver 2+) · "ano passado (data) valor"
+    const curto = (d) => `${DIAS_SEMANA_LONGO[dDow(d)].slice(0, 3)} ${dBRAno(d)}`;
+    function linhaAnos(rotulo, itens, marcarFeriado) {
+      const validos = itens.filter((x) => x.d && x.d >= datas[0]);
+      if (!validos.length) return;
+      const comVenda = validos.filter((x) => hist[x.d]).map((x) => hist[x.d].total);
+      const pedacos = [];
+      if (comVenda.length >= 2) pedacos.push(`média de ${comVenda.length} anos <b>${brl(media(comVenda))}</b>`);
+      const ap = validos.find((x) => x.ano === ano - 1);
+      if (ap) {
+        const fer = marcarFeriado && todosFeriados[ap.d] ? ` 🎉 ${escHtml(todosFeriados[ap.d])}` : "";
+        pedacos.push(`ano passado (${curto(ap.d)}) ${hist[ap.d] ? brl(hist[ap.d].total) : "sem venda"}${fer}`);
+      }
+      if (pedacos.length) linhas.push(`• ${rotulo}: ${pedacos.join(" · ")}`);
+    }
+
+    // 2) Mesma posição no mês (ex.: 3º domingo de novembro)
     const mes = Number(dia.slice(5, 7));
     const n = Math.ceil(Number(dia.slice(8, 10)) / 7);
-    const rotPos = `${ordinal(n, dow)} ${DIAS_SEMANA_LONGO[dow]} de ${MESES_PT[mes - 1]}`;
-    [1, 2].forEach((k) => {
-      const d = nesimoDiaSemana(ano - k, mes, dow, n);
-      if (d && d >= datas[0]) {
-        linhas.push(`• ${rotPos} de ${ano - k} (${dBR(d)}): ` +
-          (hist[d] ? brl(hist[d].total) : "sem venda") + (todosFeriados[d] ? ` 🎉 ${escHtml(todosFeriados[d])}` : ""));
-      }
-    });
+    linhaAnos(`${ordinal(n, dow)} ${DIAS_SEMANA_LONGO[dow]} de ${MESES_PT[mes - 1]}`,
+      anosAnt.map((a) => ({ ano: a, d: nesimoDiaSemana(a, mes, dow, n) })), true);
 
-    // 3) Mesma data nos anos anteriores
-    [1, 2].forEach((k) => {
-      const d = `${ano - k}${dia.slice(4)}`;
-      if (d >= datas[0]) {
-        linhas.push(`• Mesma data em ${ano - k} (${DIAS_SEMANA_LONGO[dDow(d)].slice(0, 3)} ${dBRAno(d)}): ` +
-          (hist[d] ? brl(hist[d].total) : "sem venda"));
-      }
-    });
-
-    // 4) Feriado: o mesmo feriado nos anos anteriores
+    // 3) Feriado: o mesmo feriado nos anos anteriores (se cair sempre na mesma
+    //    data, junta com a "mesma data" pra não repetir a linha)
+    let feriadoFixo = false;
     if (feriado) {
-      [[fAnt1, ano - 1], [fAnt2, ano - 2]].forEach(([mapa, a]) => {
-        const d = Object.keys(mapa).find((x) => mapa[x] === feriado);
-        if (d && d >= datas[0] && d !== `${a}${dia.slice(4)}`) { // data fixa já saiu em "mesma data"
-          linhas.push(`• ${escHtml(feriado)} ${a} (${DIAS_SEMANA_LONGO[dDow(d)].slice(0, 3)} ${dBRAno(d)}): ` +
-            (hist[d] ? brl(hist[d].total) : "sem venda"));
-        }
-      });
+      const itensFer = anosAnt.map((a) => ({ ano: a,
+        d: Object.keys(feriadosAnos[a]).find((x) => feriadosAnos[a][x] === feriado) }));
+      feriadoFixo = itensFer.filter((x) => x.d).every((x) => x.d.slice(4) === dia.slice(4));
+      if (!feriadoFixo) linhaAnos(escHtml(feriado), itensFer, false);
     }
+
+    // 4) Mesma data
+    linhaAnos(feriadoFixo ? `Mesma data (${escHtml(feriado)})` : "Mesma data",
+      anosAnt.map((a) => ({ ano: a, d: `${a}${dia.slice(4)}` })), false);
 
     partes.push(`📊 <b>Vendas de referência</b>\n${linhas.join("\n")}`);
 
