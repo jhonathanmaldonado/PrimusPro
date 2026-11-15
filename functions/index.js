@@ -1062,17 +1062,45 @@ function contarVendedores(v) {
   return 0;
 }
 
-async function historicoVendas(ateExclusivo) {
+// Mapa "pessoas por produto" (primus_config/pessoas_produto.mapa), chaves trim+MAIÚSCULAS.
+// Mesma conta da página de Estimativa do Compras: clientes = Σ qtd × pessoas dos
+// produtos configurados; produto sem configuração fica de fora (vira "cobertura").
+async function lerPessoasPorProduto() {
+  try {
+    const s = await db.collection("primus_config").doc("pessoas_produto").get();
+    return (s.exists && s.data().mapa) || {};
+  } catch (e) {
+    console.error("[previsao] erro lendo pessoas por produto:", e.message);
+    return {};
+  }
+}
+
+function clientesDoDia(produtos, mapa) {
+  let clientes = 0, receita = 0, receitaSemConfig = 0;
+  (produtos || []).forEach((p) => {
+    const total = Number(p.total) || 0;
+    receita += total;
+    const pes = mapa[String(p.nome || "").trim().toUpperCase()];
+    if (pes === undefined || pes === null || pes === "") receitaSemConfig += total;
+    else clientes += (Number(p.qtd) || 0) * Number(pes);
+  });
+  return { clientes, cobertura: receita ? 1 - receitaSemConfig / receita : 0 };
+}
+
+async function historicoVendas(ateExclusivo, mapaPessoas) {
   const snap = await db.collection("primus_vendas")
     .where(FieldPath.documentId(), "<", ateExclusivo)
-    .select("totais", "vendedores", "vendedoresDetalhado")
+    .select("totais", "vendedores", "vendedoresDetalhado", "produtos")
     .get();
+  const temMapa = Object.keys(mapaPessoas || {}).length > 0;
   const porDia = {};
   snap.forEach((d) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(d.id)) return;
     const v = d.data() || {};
     const total = Number((v.totais && v.totais.total) || 0);
-    if (total > 0) porDia[d.id] = { total, vendedores: contarVendedores(v) };
+    if (total <= 0) return;
+    const c = temMapa ? clientesDoDia(v.produtos, mapaPessoas) : { clientes: 0, cobertura: 0 };
+    porDia[d.id] = { total, vendedores: contarVendedores(v), clientes: c.clientes, cobertura: c.cobertura };
   });
   return porDia;
 }
@@ -1110,7 +1138,8 @@ async function montarPrevisao(dia, sobDemanda = false) {
   }
 
   // Vendas de referência
-  const hist = await historicoVendas(dia);
+  const mapaPessoas = await lerPessoasPorProduto();
+  const hist = await historicoVendas(dia, mapaPessoas);
   const datas = Object.keys(hist).sort();
   if (!datas.length) {
     partes.push("📊 Sem histórico de vendas ainda.");
@@ -1179,6 +1208,18 @@ async function montarPrevisao(dia, sobDemanda = false) {
       const fatPorVend = media(comVend.map((d) => hist[d].total / hist[d].vendedores));
       partes.push(`🧑‍🍳 <b>Vendedores:</b> média de ${String(Math.round(mv * 10) / 10).replace(".", ",")} ` +
         `${masc(dow) ? "nesses" : "nessas"} ${DIAS_SEMANA_LONGO[dow]}s · ${brl(fatPorVend)} por vendedor`);
+    }
+    // Clientes estimados nas mesmas datas da média (pessoas por produto)
+    const comCli = mesmos.filter((d) => hist[d].clientes > 0);
+    if (comCli.length) {
+      const mc = media(comCli.map((d) => hist[d].clientes));
+      const ticket = media(comCli.map((d) => hist[d].total / hist[d].clientes));
+      const cob = media(comCli.map((d) => hist[d].cobertura));
+      const porVend = comCli.filter((d) => hist[d].vendedores > 0);
+      const cliVend = porVend.length ? media(porVend.map((d) => hist[d].clientes / hist[d].vendedores)) : 0;
+      partes.push(`👥 <b>Clientes:</b> média de <b>${Math.round(mc)}</b> ${masc(dow) ? "nesses" : "nessas"} ${DIAS_SEMANA_LONGO[dow]}s` +
+        ` · ticket ${brl(ticket)}/pessoa` + (cliVend ? ` · ${Math.round(cliVend)} por vendedor` : "") +
+        (cob < 0.95 ? `\n<i>⚠️ ${Math.round((1 - cob) * 100)}% do faturamento vem de produtos sem "pessoas" configurado — fora da conta.</i>` : ""));
     }
     if (mesmos.length < 4) partes.push(`<i>⚠️ histórico curto: só ${mesmos.length} ${DIAS_SEMANA_LONGO[dow]}(s) na base.</i>`);
   }
