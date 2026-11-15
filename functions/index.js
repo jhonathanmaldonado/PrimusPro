@@ -1606,21 +1606,22 @@ Data analisada: ${DIAS_SEMANA_LONGO[dow]}, ${dBRAno(dia)}.
 
 TAREFA 1 — Pesquise na web eventos em Cuiabá e Várzea Grande NESSA data que possam afetar o movimento do almoço (pra mais ou pra menos): jogos na Arena Pantanal, shows, feiras, festas e eventos no São Gonçalo Beira Rio e na Orla do Porto, corridas de rua, interdições de vias, grandes eventos religiosos, provas e concursos (ENEM etc.), pontos facultativos. Ignore eventos noturnos que não mexem com o almoço, a não ser que fechem ruas. Inclua só eventos confirmados pra essa data. Se não achar nada relevante, devolva a lista vazia — não invente.
 
-TAREFA 2 — Escreva uma leitura curta do dia (2 a 3 frases, tom direto, de dono pra dono), juntando os fatos abaixo e os eventos encontrados. Use SOMENTE os números que estão nos fatos; não crie números novos nem porcentagens novas.
+TAREFA 2 — Escreva a leitura do dia em 3 a 6 tópicos curtos (uma ideia por tópico, uma frase cada, tom direto, de dono pra dono), juntando os fatos abaixo e os eventos encontrados. Use SOMENTE os números que estão nos fatos; não crie números novos nem porcentagens novas.
 
 FATOS DO DIA:
 ${fatos}
 
 No final da resposta, devolva APENAS este JSON (sem texto depois):
 \`\`\`json
-{"eventos":[{"nome":"","quando":"","local":"","impacto":"positivo|negativo|neutro","motivo":""}],"leitura":""}
+{"eventos":[{"nome":"","quando":"","local":"","impacto":"positivo|negativo|neutro","motivo":""}],"leitura":["tópico 1","tópico 2"]}
 \`\`\``;
 
   const { texto, uso } = await chamarClaude(apiKey, prompt);
   let ia;
   try {
     const j = extrairJson(texto);
-    ia = { eventos: Array.isArray(j.eventos) ? j.eventos.slice(0, 6) : [], leitura: String(j.leitura || "") };
+    ia = { eventos: Array.isArray(j.eventos) ? j.eventos.slice(0, 6) : [],
+      leitura: Array.isArray(j.leitura) ? j.leitura.map(String).filter(Boolean) : String(j.leitura || "") };
   } catch (e) {
     console.error("[Claude] resposta sem JSON válido:", texto.slice(0, 500));
     throw new Error("resposta do Claude veio fora do formato");
@@ -1628,6 +1629,13 @@ No final da resposta, devolva APENAS este JSON (sem texto depois):
   await ref.set({ ia, uso, modelo: MODELO_CLAUDE, geradoEm: new Date().toISOString() }, { merge: true });
   console.log(`[Claude ${dia}] entrada ${uso.entrada} · saída ${uso.saida} · buscas ${uso.buscas}`);
   return ia;
+}
+
+// Leitura em tópicos: aceita lista (formato novo) ou texto corrido (cache antigo),
+// que é quebrado em frases — sem quebrar "R$ 42.885" nem "08/11".
+function topicosLeitura(leitura) {
+  if (Array.isArray(leitura)) return leitura.map((t) => String(t).trim()).filter(Boolean);
+  return String(leitura || "").split(/(?<=[.!?])\s+(?=[A-ZÀ-Ú])/).map((t) => t.trim()).filter(Boolean);
 }
 
 function blocoEventosLeitura(ia) {
@@ -1638,5 +1646,7 @@ function blocoEventosLeitura(ia) {
         (e.quando ? ` · ${escHtml(e.quando)}` : "") + (e.local ? ` · ${escHtml(e.local)}` : "") +
         (e.motivo ? `\n   <i>${escHtml(e.motivo)}</i>` : "")).join("\n")
     : "Nenhum evento relevante encontrado pra essa data.";
-  return `🎉 <b>Eventos na cidade</b>\n${linhasEv}` + (ia.leitura ? `\n\n🧠 <b>Leitura do dia</b>\n${escHtml(ia.leitura)}` : "");
+  const topicos = topicosLeitura(ia.leitura);
+  return `🎉 <b>Eventos na cidade</b>\n${linhasEv}` +
+    (topicos.length ? `\n\n🧠 <b>Leitura do dia</b>\n${topicos.map((t) => `• ${escHtml(t)}`).join("\n")}` : "");
 }
