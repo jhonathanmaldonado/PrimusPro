@@ -22,6 +22,8 @@ const TELEGRAM_CHAT_ID = defineSecret("TELEGRAM_CHAT_ID");
 // Senha que o Telegram manda no cabecalho de cada chamada do webhook do Primus
 // Avisos (setWebhook ... &secret_token=). Sem ela, a funcao recusa a chamada.
 const TELEGRAM_WEBHOOK_SECRET = defineSecret("TELEGRAM_WEBHOOK_SECRET");
+// Chave da API do Claude (eventos da cidade + leitura do dia na previsão).
+const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 
 const TIPO_LABEL = { ini: "INÍCIO", fin: "FINAL", sorv: "SORVETE" };
 
@@ -842,9 +844,13 @@ async function tratarUpdateAvisos(upd, token, chatPadrao) {
         text: "\u2753 Use <code>/previsao</code> (hoje) ou <code>/previsao 22/11</code>." });
       return;
     }
+    await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML",
+      text: `⏳ Montando a previsão de <b>${dBR(dia)}</b> (a busca de eventos leva uns 30s)...` });
     let resposta;
     try {
-      resposta = (await montarPrevisao(dia, true)).texto;
+      let apiKey = "";
+      try { apiKey = ANTHROPIC_API_KEY.value(); } catch (_) { /* sem chave: sai sem eventos */ }
+      resposta = (await montarPrevisao(dia, true, { apiKey, usarCache: true })).texto;
     } catch (e) {
       console.error(`[previsao ${dia}] erro:`, e);
       resposta = `\u274c Erro ao montar a previs\u00e3o: ${escHtml(String(e.message || e).slice(0, 200))}`;
@@ -864,12 +870,15 @@ async function tratarUpdateAvisos(upd, token, chatPadrao) {
 }
 
 exports.telegramAvisos = onRequest(
-  { region: REGIAO, secrets: [TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET] },
+  { region: REGIAO, timeoutSeconds: 300, secrets: [TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, ANTHROPIC_API_KEY] },
   async (req, res) => {
     if (req.method !== "POST") { res.status(200).send("ok"); return; }
     if (req.get("X-Telegram-Bot-Api-Secret-Token") !== TELEGRAM_WEBHOOK_SECRET.value()) {
       res.status(403).send("forbidden"); return;
     }
+    // A previsão com busca de eventos demora: se o Telegram reenviar o mesmo update, ignora.
+    const updId = req.body && req.body.update_id;
+    if (updId && await jaProcessado(`tg_${updId}`)) { res.status(200).send("ok"); return; }
     try {
       await tratarUpdateAvisos(req.body || {}, TELEGRAM_TOKEN.value(), TELEGRAM_CHAT_ID.value());
     } catch (e) {
@@ -1124,7 +1133,8 @@ async function historicoVendas(ateExclusivo, mapaPessoas) {
 function media(arr) { return arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : 0; }
 
 // Monta a mensagem. Devolve { texto, aberto }. sobDemanda: manda mesmo em dia fechado.
-async function montarPrevisao(dia, sobDemanda = false) {
+// opcoes: { apiKey, usarCache } — eventos/leitura do Claude (cache em primus_previsoes/{dia}).
+async function montarPrevisao(dia, sobDemanda = false, opcoes = {}) {
   const ano = Number(dia.slice(0, 4));
   const dow = dDow(dia);
   const [fAtual, fAnt1, fAnt2] = await Promise.all([feriadosDoAno(ano), feriadosDoAno(ano - 1), feriadosDoAno(ano - 2)]);
@@ -1140,8 +1150,10 @@ async function montarPrevisao(dia, sobDemanda = false) {
   const partes = [titulo + (feriado ? `\n🎉 <b>Feriado:</b> ${escHtml(feriado)}` : "")];
 
   // Clima
+  let climaHoje = null;
   try {
     const c = await climaAtendimento(dia);
+    climaHoje = c;
     let chuva;
     if (c.probMax < 20) chuva = "sem chuva prevista";
     else if (c.horaChuva !== null) chuva = `<b>${c.probMax}% de chance de chuva</b>, a partir das ${c.horaChuva}h` + (c.mm >= 1 ? ` (~${String(c.mm).replace(".", ",")} mm)` : "");
@@ -1236,17 +1248,39 @@ async function montarPrevisao(dia, sobDemanda = false) {
         ` · ticket ${brl(ticket)}/pessoa` + (cliVend ? ` · ${Math.round(cliVend)} por vendedor` : ""));
     }
     if (mesmos.length < 4) partes.push(`<i>⚠️ histórico curto: só ${mesmos.length} ${DIAS_SEMANA_LONGO[dow]}(s) na base.</i>`);
+
+    // Dias parecidos + faixa provável + efeito chuva (clima real guardado em primus_clima)
+    try {
+      const climaHist = await garantirClimaHistorico(datas);
+      const bloco = blocoDiasParecidos({ dia, dow, feriado, climaHoje, hist, climaHist, todosFeriados });
+      if (bloco) partes.push(bloco);
+    } catch (e) {
+      console.error(`[previsao ${dia}] dias parecidos:`, e);
+    }
+  }
+
+  // Eventos da cidade + leitura do dia (Claude com busca na web)
+  if (opcoes.apiKey) {
+    try {
+      const fatos = partes.join("\n\n").replace(/<[^>]+>/g, "");
+      const ia = await eventosELeitura(dia, fatos, opcoes.apiKey, !!opcoes.usarCache);
+      if (ia) partes.push(blocoEventosLeitura(ia));
+    } catch (e) {
+      console.error(`[previsao ${dia}] Claude:`, e);
+      partes.push(`🎉 <b>Eventos:</b> <i>busca indisponível agora (${escHtml(String(e.message || e).slice(0, 120))})</i>`);
+    }
   }
 
   return { aberto, texto: partes.join("\n\n") };
 }
 
 exports.previsaoManha = onSchedule(
-  { schedule: "0 7 * * *", timeZone: "America/Cuiaba", region: REGIAO, secrets: [TELEGRAM_TOKEN, TELEGRAM_CHAT_ID] },
+  { schedule: "0 7 * * *", timeZone: "America/Cuiaba", region: REGIAO, timeoutSeconds: 300,
+    secrets: [TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, ANTHROPIC_API_KEY] },
   async () => {
     const dia = hojeCuiaba();
     try {
-      const { aberto, texto } = await montarPrevisao(dia, false);
+      const { aberto, texto } = await montarPrevisao(dia, false, { apiKey: ANTHROPIC_API_KEY.value(), usarCache: false });
       if (!aberto) { console.log(`[previsao ${dia}] casa fechada — não envia`); return; }
       await enviarTelegram(TELEGRAM_TOKEN.value(), TELEGRAM_CHAT_ID.value(), texto);
     } catch (e) {
@@ -1418,4 +1452,191 @@ async function perguntarProdutosNovos(dia, vendasDia, token, chatDono) {
       "<i>0 = bebida, sorvete, sobremesa, descartável, acompanhamento</i>",
       tecladoValores(idProduto(nome), "n"));
   }
+}
+
+// ===== PREVISÃO — FASE 2: clima histórico, dias parecidos, eventos e leitura =====
+
+// ---------- clima real 11h–15h de cada dia (cache em primus_clima/{dia}) ----------
+// Open-Meteo: dias com mais de 7 dias vêm do arquivo histórico (archive-api);
+// os da última semana, do endpoint de previsão (que também devolve o passado recente).
+function resumirHorasClima(hourly) {
+  const porDia = {};
+  (hourly.time || []).forEach((t, i) => {
+    const d = String(t).slice(0, 10), h = Number(String(t).slice(11, 13));
+    if (!HORAS_ATENDIMENTO.includes(h)) return;
+    const x = porDia[d] || (porDia[d] = { tMax: -99, mm: 0 });
+    x.tMax = Math.max(x.tMax, Number(hourly.temperature_2m[i]));
+    x.mm += Number(hourly.precipitation[i]) || 0;
+  });
+  Object.values(porDia).forEach((x) => { x.tMax = Math.round(x.tMax); x.mm = Math.round(x.mm * 10) / 10; x.chuva = x.mm >= 0.5; });
+  return porDia;
+}
+
+async function buscarClimaPeriodo(base, ini, fim) {
+  const url = `${base}?latitude=${CUIABA.lat}&longitude=${CUIABA.lon}&timezone=America%2FCuiaba` +
+    `&hourly=temperature_2m,precipitation&start_date=${ini}&end_date=${fim}`;
+  return resumirHorasClima((await buscarJson(url)).hourly || {});
+}
+
+async function garantirClimaHistorico(datas) {
+  const col = db.collection("primus_clima");
+  const cache = {};
+  if (!datas.length) return cache;
+  const snap = await col.where(FieldPath.documentId(), ">=", datas[0]).get();
+  snap.forEach((d) => { cache[d.id] = d.data(); });
+
+  const faltam = datas.filter((d) => !cache[d]);
+  if (!faltam.length) return cache;
+  const corte = dAdd(hojeCuiaba(), -7);
+  const antigos = faltam.filter((d) => d < corte);
+  const recentes = faltam.filter((d) => d >= corte);
+  const novos = {};
+  try {
+    if (antigos.length) Object.assign(novos, await buscarClimaPeriodo("https://archive-api.open-meteo.com/v1/archive", antigos[0], antigos[antigos.length - 1]));
+    if (recentes.length) Object.assign(novos, await buscarClimaPeriodo("https://api.open-meteo.com/v1/forecast", recentes[0], recentes[recentes.length - 1]));
+  } catch (e) {
+    console.error("[clima histórico] falhou (tenta de novo amanhã):", e.message);
+  }
+  const gravar = faltam.filter((d) => novos[d]);
+  for (let i = 0; i < gravar.length; i += 400) {
+    const batch = db.batch();
+    gravar.slice(i, i + 400).forEach((d) => batch.set(col.doc(d), novos[d]));
+    await batch.commit();
+  }
+  if (gravar.length) console.log(`[clima histórico] ${gravar.length} dia(s) gravado(s)`);
+  gravar.forEach((d) => { cache[d] = novos[d]; });
+  return cache;
+}
+
+// ---------- dias parecidos ----------
+// Candidatos: mesmo dia da semana fora de feriado (ou, se hoje é feriado, outros
+// feriados). Parecença: chuva igual pesa mais; depois temperatura; dias recentes
+// valem mais (o restaurante muda com o tempo).
+function percentil(arr, p) {
+  const a = [...arr].sort((x, y) => x - y);
+  if (!a.length) return 0;
+  const i = (a.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i);
+  return a[lo] + (a[hi] - a[lo]) * (i - lo);
+}
+
+function blocoDiasParecidos({ dia, dow, feriado, climaHoje, hist, climaHist, todosFeriados }) {
+  if (!climaHoje) return null;
+  const chuvaHoje = climaHoje.probMax >= 50 || climaHoje.mm >= 1;
+  const tHoje = climaHoje.tMax;
+  const tipo = (d) => (feriado ? !!todosFeriados[d] : dDow(d) === dow && !todosFeriados[d]);
+  const candidatos = Object.keys(hist).filter((d) => tipo(d) && climaHist[d]);
+  if (candidatos.length < 3) return null;
+
+  const idadeAnos = (d) => (dParse(dia) - dParse(d)) / (365 * 86400000);
+  const score = (d) => {
+    const c = climaHist[d];
+    return (c.chuva !== chuvaHoje ? 3 : 0) + Math.abs(c.tMax - tHoje) / 3 + idadeAnos(d) * 1.5;
+  };
+  const ordenados = candidatos.sort((a, b) => score(a) - score(b));
+  const top = ordenados.slice(0, 5);
+  const faixaBase = ordenados.slice(0, 8).map((d) => hist[d].total);
+
+  const rotTipo = feriado ? "feriados" : `${DIAS_SEMANA_LONGO[dow]}s`;
+  const linhas = top.map((d) => {
+    const c = climaHist[d], h = hist[d];
+    return `• ${DIAS_SEMANA_LONGO[dDow(d)].slice(0, 3)} ${dBRAno(d)} · ${c.tMax}°C ${c.chuva ? "🌧" : "☀️"} · <b>${brl(h.total)}</b>` +
+      (h.clientes ? ` · ${Math.round(h.clientes)} clientes` : "") + (todosFeriados[d] ? ` 🎉` : "");
+  });
+  let txt = `🔁 <b>Dias parecidos</b> <i>(${rotTipo}, ${chuvaHoje ? "com chuva" : "sem chuva"}, ~${tHoje}°C)</i>\n${linhas.join("\n")}` +
+    `\n🎯 <b>Faixa provável: ${brl(percentil(faixaBase, 0.25))} a ${brl(percentil(faixaBase, 0.75))}</b>`;
+
+  // Efeito chuva no último ano, nesse tipo de dia
+  const umAno = candidatos.filter((d) => idadeAnos(d) <= 1);
+  const comChuva = umAno.filter((d) => climaHist[d].chuva).map((d) => hist[d].total);
+  const semChuva = umAno.filter((d) => !climaHist[d].chuva).map((d) => hist[d].total);
+  if (comChuva.length >= 3 && semChuva.length >= 3) {
+    const ef = media(comChuva) / media(semChuva) - 1;
+    txt += `\n☔ Nos ${rotTipo} do último ano, com chuva no almoço vendeu <b>${Math.round(Math.abs(ef) * 100)}% ${ef < 0 ? "menos" : "mais"}</b>` +
+      ` <i>(${comChuva.length} com chuva × ${semChuva.length} sem)</i>`;
+  }
+  return txt;
+}
+
+// ---------- eventos + leitura (Claude com busca na web) ----------
+const MODELO_CLAUDE = "claude-sonnet-5-5";
+
+function extrairJson(texto) {
+  const cerca = texto.match(/```json\s*([\s\S]*?)```/);
+  const bruto = cerca ? cerca[1] : texto.slice(texto.indexOf("{"), texto.lastIndexOf("}") + 1);
+  return JSON.parse(bruto);
+}
+
+async function chamarClaude(apiKey, prompt) {
+  const tools = [{ type: "web_search_20250305", name: "web_search", max_uses: 4,
+    user_location: { type: "approximate", city: "Cuiabá", region: "Mato Grosso", country: "BR", timezone: "America/Cuiaba" } }];
+  const messages = [{ role: "user", content: prompt }];
+  let uso = { entrada: 0, saida: 0, buscas: 0 };
+  for (let volta = 0; volta < 3; volta++) {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      signal: AbortSignal.timeout(150000),
+      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({ model: MODELO_CLAUDE, max_tokens: 2000, tools, messages }),
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(`API do Claude ${r.status}: ${(j.error && j.error.message) || "erro"}`);
+    uso.entrada += (j.usage && j.usage.input_tokens) || 0;
+    uso.saida += (j.usage && j.usage.output_tokens) || 0;
+    uso.buscas += (j.usage && j.usage.server_tool_use && j.usage.server_tool_use.web_search_requests) || 0;
+    if (j.stop_reason === "pause_turn") {   // busca longa: devolve o turno e deixa continuar
+      messages.push({ role: "assistant", content: j.content });
+      continue;
+    }
+    const texto = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("");
+    return { texto, uso };
+  }
+  throw new Error("a busca não terminou a tempo");
+}
+
+async function eventosELeitura(dia, fatos, apiKey, usarCache) {
+  const ref = db.collection("primus_previsoes").doc(dia);
+  if (usarCache) {
+    const s = await ref.get();
+    if (s.exists && s.data().ia) return s.data().ia;
+  }
+  const dow = dDow(dia);
+  const prompt =
+`Você ajuda o dono da Primus Peixaria: restaurante de peixes no bairro São Gonçalo Beira Rio, em Cuiabá-MT. Atende só no almoço (11h às 15h), de quarta a domingo e feriados, e tem estacionamento próprio.
+Data analisada: ${DIAS_SEMANA_LONGO[dow]}, ${dBRAno(dia)}.
+
+TAREFA 1 — Pesquise na web eventos em Cuiabá e Várzea Grande NESSA data que possam afetar o movimento do almoço (pra mais ou pra menos): jogos na Arena Pantanal, shows, feiras, festas e eventos no São Gonçalo Beira Rio e na Orla do Porto, corridas de rua, interdições de vias, grandes eventos religiosos, provas e concursos (ENEM etc.), pontos facultativos. Ignore eventos noturnos que não mexem com o almoço, a não ser que fechem ruas. Inclua só eventos confirmados pra essa data. Se não achar nada relevante, devolva a lista vazia — não invente.
+
+TAREFA 2 — Escreva uma leitura curta do dia (2 a 3 frases, tom direto, de dono pra dono), juntando os fatos abaixo e os eventos encontrados. Use SOMENTE os números que estão nos fatos; não crie números novos nem porcentagens novas.
+
+FATOS DO DIA:
+${fatos}
+
+No final da resposta, devolva APENAS este JSON (sem texto depois):
+\`\`\`json
+{"eventos":[{"nome":"","quando":"","local":"","impacto":"positivo|negativo|neutro","motivo":""}],"leitura":""}
+\`\`\``;
+
+  const { texto, uso } = await chamarClaude(apiKey, prompt);
+  let ia;
+  try {
+    const j = extrairJson(texto);
+    ia = { eventos: Array.isArray(j.eventos) ? j.eventos.slice(0, 6) : [], leitura: String(j.leitura || "") };
+  } catch (e) {
+    console.error("[Claude] resposta sem JSON válido:", texto.slice(0, 500));
+    throw new Error("resposta do Claude veio fora do formato");
+  }
+  await ref.set({ ia, uso, modelo: MODELO_CLAUDE, geradoEm: new Date().toISOString() }, { merge: true });
+  console.log(`[Claude ${dia}] entrada ${uso.entrada} · saída ${uso.saida} · buscas ${uso.buscas}`);
+  return ia;
+}
+
+function blocoEventosLeitura(ia) {
+  const cor = { positivo: "🟢", negativo: "🔴" };
+  const ev = (ia.eventos || []).filter((e) => e && e.nome);
+  const linhasEv = ev.length
+    ? ev.map((e) => `${cor[e.impacto] || "⚪"} <b>${escHtml(e.nome)}</b>` +
+        (e.quando ? ` · ${escHtml(e.quando)}` : "") + (e.local ? ` · ${escHtml(e.local)}` : "") +
+        (e.motivo ? `\n   <i>${escHtml(e.motivo)}</i>` : "")).join("\n")
+    : "Nenhum evento relevante encontrado pra essa data.";
+  return `🎉 <b>Eventos na cidade</b>\n${linhasEv}` + (ia.leitura ? `\n\n🧠 <b>Leitura do dia</b>\n${escHtml(ia.leitura)}` : "");
 }
