@@ -6,7 +6,7 @@ const { onDocumentWritten } = require("firebase-functions/v2/firestore");
 const { onRequest } = require("firebase-functions/v2/https");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const { initializeApp } = require("firebase-admin/app");
-const { getFirestore } = require("firebase-admin/firestore");
+const { getFirestore, FieldPath } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
 
 initializeApp();
@@ -733,7 +733,8 @@ exports.notificarContagem = onDocumentWritten(
 // lista do painel (Usuarios -> Telegram); lista vazia -> so o TELEGRAM_CHAT_ID.
 // A diferença usa a MESMA conta do aviso automático, sem trava de repetição.
 const BOTAO_DIFERENCA = "\ud83d\udccb Diferen\u00e7a";
-const TECLADO_AVISOS = { keyboard: [[{ text: BOTAO_DIFERENCA }]], resize_keyboard: true, is_persistent: true };
+const BOTAO_PREVISAO = "\ud83c\udf24 Previs\u00e3o";
+const TECLADO_AVISOS = { keyboard: [[{ text: BOTAO_DIFERENCA }, { text: BOTAO_PREVISAO }]], resize_keyboard: true, is_persistent: true };
 const DIAS_SEMANA_PT = ["dom", "seg", "ter", "qua", "qui", "sex", "s\u00e1b"];
 
 async function tgApi(token, metodo, params) {
@@ -822,12 +823,33 @@ async function tratarUpdateAvisos(upd, token, chatPadrao) {
     return;
   }
 
+  // /previsao [dd/mm] -> previsao do dia sob demanda (mesma conta da das 7h)
+  const mPrev = texto.match(/^\/previsao(?:@\w+)?\s*(.*)$/i);
+  if (texto === BOTAO_PREVISAO || mPrev) {
+    const dia = resolverDiaPrevisao(mPrev ? mPrev[1] : "");
+    if (!dia) {
+      await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML",
+        text: "\u2753 Use <code>/previsao</code> (hoje) ou <code>/previsao 22/11</code>." });
+      return;
+    }
+    let resposta;
+    try {
+      resposta = (await montarPrevisao(dia, true)).texto;
+    } catch (e) {
+      console.error(`[previsao ${dia}] erro:`, e);
+      resposta = `\u274c Erro ao montar a previs\u00e3o: ${escHtml(String(e.message || e).slice(0, 200))}`;
+    }
+    await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML", text: resposta });
+    return;
+  }
+
   // /start, /ajuda ou qualquer outra coisa: explica e (re)mostra o teclado
   await tgApi(token, "setMyCommands", { commands: [
     { command: "diferenca", description: "Diferen\u00e7a do dia (estoque x vendas)" },
+    { command: "previsao", description: "Previs\u00e3o do dia (clima + vendas de refer\u00eancia)" },
     { command: "meuid", description: "Mostra o seu chat id" }] });
   await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML", reply_markup: TECLADO_AVISOS,
-    text: "\ud83d\udd14 <b>Primus Avisos</b>\nAqui chegam os avisos autom\u00e1ticos (diferen\u00e7a do dia, virada D-1).\nToque em <b>\ud83d\udccb Diferen\u00e7a</b> pra ver a de qualquer dia, quando quiser." });
+    text: "\ud83d\udd14 <b>Primus Avisos</b>\nAqui chegam os avisos autom\u00e1ticos (diferen\u00e7a do dia, virada D-1, previs\u00e3o das 7h).\nToque em <b>\ud83d\udccb Diferen\u00e7a</b> ou <b>\ud83c\udf24 Previs\u00e3o</b> quando quiser." });
 }
 
 exports.telegramAvisos = onRequest(
@@ -906,6 +928,263 @@ exports.lembrete17h = onSchedule(
       await enviarPush(titulo, corpo);
     } catch (e) {
       console.error("[lembrete17h] erro:", e);
+    }
+  }
+);
+
+// ===== PREVISÃO DO DIA (Fase 1) — Telegram às 7h =====
+// Clima da janela de atendimento (11h–15h) + vendas de referência do histórico
+// (primus_vendas) + vendedores. Só manda em dia de casa aberta: quarta a domingo,
+// ou segunda/terça se for feriado. Sob demanda: /previsao [dd/mm] no Primus Avisos.
+//
+// Fontes externas (sem chave): Open-Meteo (clima) e BrasilAPI (feriados nacionais).
+// Feriado local fica em FERIADOS_LOCAIS.
+
+const CUIABA = { lat: -15.601, lon: -56.097 };
+const HORAS_ATENDIMENTO = [11, 12, 13, 14, 15];
+const DIAS_SEMANA_LONGO = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+// sábado e domingo são masculinos: "últimos domingos", "3º domingo"
+const masc = (dow) => dow === 0 || dow === 6;
+const ordinal = (n, dow) => `${n}${masc(dow) ? "º" : "ª"}`;
+const MESES_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
+  "agosto", "setembro", "outubro", "novembro", "dezembro"];
+// Feriados municipais/estaduais (MM-DD) que a BrasilAPI não traz.
+const FERIADOS_LOCAIS = { "04-08": "Aniversário de Cuiabá" };
+const AMOSTRA_MESMO_DIA = 8; // últimas N ocorrências do mesmo dia da semana
+
+// ---------- datas (sempre 'YYYY-MM-DD', sem fuso) ----------
+const dParse = (s) => { const [y, m, d] = s.split("-").map(Number); return new Date(Date.UTC(y, m - 1, d)); };
+const dIso = (dt) => dt.toISOString().slice(0, 10);
+const dAdd = (s, n) => { const dt = dParse(s); dt.setUTCDate(dt.getUTCDate() + n); return dIso(dt); };
+const dDow = (s) => dParse(s).getUTCDay();
+const dBR = (s) => { const p = s.split("-"); return `${p[2]}/${p[1]}`; };
+const dBRAno = (s) => { const p = s.split("-"); return `${p[2]}/${p[1]}/${p[0].slice(2)}`; };
+const brl = (v) => "R$ " + Math.round(v || 0).toLocaleString("pt-BR");
+
+function resolverDiaPrevisao(arg) {
+  const a = String(arg || "").trim().toLowerCase();
+  const hoje = hojeCuiaba();
+  if (!a || a === "hoje") return hoje;
+  if (a === "amanha" || a === "amanhã") return dAdd(hoje, 1);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(a)) return a;
+  const m = a.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+  if (!m) return null;
+  let y = m[3] ? Number(m[3]) : Number(hoje.slice(0, 4));
+  if (y < 100) y += 2000;
+  return `${y}-${String(m[2]).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}`;
+}
+
+// n-ésima ocorrência (1..5) do dia da semana `dow` no mês; se não existir, a última.
+function nesimoDiaSemana(ano, mes, dow, n) {
+  const datas = [];
+  for (let d = 1; d <= 31; d++) {
+    const dt = new Date(Date.UTC(ano, mes - 1, d));
+    if (dt.getUTCMonth() !== mes - 1) break;
+    if (dt.getUTCDay() === dow) datas.push(dIso(dt));
+  }
+  return datas[Math.min(n, datas.length) - 1];
+}
+
+async function buscarJson(url) {
+  const r = await fetch(url, { signal: AbortSignal.timeout(10000) });
+  if (!r.ok) throw new Error(`HTTP ${r.status} em ${url.split("?")[0]}`);
+  return r.json();
+}
+
+// ---------- feriados ----------
+const _cacheFeriados = {};
+async function feriadosDoAno(ano) {
+  if (_cacheFeriados[ano]) return _cacheFeriados[ano];
+  const mapa = {};
+  try {
+    const lista = await buscarJson(`https://brasilapi.com.br/api/feriados/v1/${ano}`);
+    (lista || []).forEach((f) => { if (f && f.date) mapa[f.date] = f.name; });
+  } catch (e) {
+    console.error(`[previsao] feriados ${ano} indisponíveis:`, e.message);
+  }
+  Object.entries(FERIADOS_LOCAIS).forEach(([md, nome]) => { mapa[`${ano}-${md}`] = mapa[`${ano}-${md}`] || nome; });
+  _cacheFeriados[ano] = mapa;
+  return mapa;
+}
+
+// ---------- clima ----------
+function descreverTempo(codigo) {
+  const c = Number(codigo);
+  if (c === 0) return "☀️ céu limpo";
+  if (c <= 2) return "🌤 poucas nuvens";
+  if (c === 3) return "☁️ nublado";
+  if (c === 45 || c === 48) return "🌫 neblina";
+  if (c >= 51 && c <= 57) return "🌦 garoa";
+  if (c >= 61 && c <= 67) return "🌧 chuva";
+  if (c >= 80 && c <= 82) return "🌦 pancadas de chuva";
+  if (c >= 95) return "⛈ trovoada";
+  return "🌤 tempo variável";
+}
+
+async function climaAtendimento(dia) {
+  const url = "https://api.open-meteo.com/v1/forecast"
+    + `?latitude=${CUIABA.lat}&longitude=${CUIABA.lon}&timezone=America%2FCuiaba`
+    + "&hourly=temperature_2m,apparent_temperature,precipitation_probability,precipitation,weather_code"
+    + `&start_date=${dia}&end_date=${dia}`;
+  const j = await buscarJson(url);
+  const h = j.hourly || {};
+  const horas = [];
+  (h.time || []).forEach((t, i) => {
+    const hora = Number(String(t).slice(11, 13));
+    if (String(t).slice(0, 10) === dia && HORAS_ATENDIMENTO.includes(hora)) {
+      horas.push({ hora, temp: h.temperature_2m[i], sens: h.apparent_temperature[i],
+        prob: h.precipitation_probability[i] || 0, mm: h.precipitation[i] || 0, cod: h.weather_code[i] });
+    }
+  });
+  if (!horas.length) throw new Error("sem previsão horária pra esse dia (Open-Meteo prevê até 16 dias)");
+  const temps = horas.map((x) => x.temp);
+  const probMax = Math.max(...horas.map((x) => x.prob));
+  const mm = horas.reduce((s, x) => s + x.mm, 0);
+  const primeiraChuva = horas.find((x) => x.prob >= 50);
+  const pior = horas.reduce((a, b) => (Number(b.cod) > Number(a.cod) ? b : a));
+  return {
+    tMin: Math.round(Math.min(...temps)), tMax: Math.round(Math.max(...temps)),
+    sensMax: Math.round(Math.max(...horas.map((x) => x.sens))),
+    probMax, mm: Math.round(mm * 10) / 10,
+    horaChuva: primeiraChuva ? primeiraChuva.hora : null,
+    descricao: descreverTempo(pior.cod),
+  };
+}
+
+// ---------- vendas ----------
+// Vendedores do dia: detalhado do robô (sem o caixa); senão a seção VENDEDOR do agrupado.
+function contarVendedores(v) {
+  const det = Array.isArray(v.vendedoresDetalhado) ? v.vendedoresDetalhado.filter((x) => x && !x.caixa) : null;
+  if (det && det.length) return det.length;
+  const vs = v.vendedores;
+  if (Array.isArray(vs)) return vs.filter((x) => x && !/OPERADOR/i.test(String(x.nome || ""))).length;
+  if (vs && typeof vs === "object") return Object.keys(vs).filter((k) => !/OPERADOR/i.test(k)).length;
+  return 0;
+}
+
+async function historicoVendas(ateExclusivo) {
+  const snap = await db.collection("primus_vendas")
+    .where(FieldPath.documentId(), "<", ateExclusivo)
+    .select("totais", "vendedores", "vendedoresDetalhado")
+    .get();
+  const porDia = {};
+  snap.forEach((d) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.id)) return;
+    const v = d.data() || {};
+    const total = Number((v.totais && v.totais.total) || 0);
+    if (total > 0) porDia[d.id] = { total, vendedores: contarVendedores(v) };
+  });
+  return porDia;
+}
+
+function media(arr) { return arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : 0; }
+
+// Monta a mensagem. Devolve { texto, aberto }. sobDemanda: manda mesmo em dia fechado.
+async function montarPrevisao(dia, sobDemanda = false) {
+  const ano = Number(dia.slice(0, 4));
+  const dow = dDow(dia);
+  const [fAtual, fAnt1, fAnt2] = await Promise.all([feriadosDoAno(ano), feriadosDoAno(ano - 1), feriadosDoAno(ano - 2)]);
+  const todosFeriados = { ...fAnt2, ...fAnt1, ...fAtual };
+  const feriado = fAtual[dia] || null;
+  const aberto = !(dow === 1 || dow === 2) || !!feriado;
+
+  const titulo = `📅 <b>Previsão — ${DIAS_SEMANA_LONGO[dow]}, ${dBR(dia)}</b>`;
+  if (!aberto) {
+    return { aberto, texto: `${titulo}\n💤 Casa fechada (${DIAS_SEMANA_LONGO[dow]} sem feriado).` };
+  }
+
+  const partes = [titulo + (feriado ? `\n🎉 <b>Feriado:</b> ${escHtml(feriado)}` : "")];
+
+  // Clima
+  try {
+    const c = await climaAtendimento(dia);
+    let chuva;
+    if (c.probMax < 20) chuva = "sem chuva prevista";
+    else if (c.horaChuva !== null) chuva = `<b>${c.probMax}% de chance de chuva</b>, a partir das ${c.horaChuva}h` + (c.mm >= 1 ? ` (~${String(c.mm).replace(".", ",")} mm)` : "");
+    else chuva = `${c.probMax}% de chance de chuva`;
+    partes.push(`🌡 <b>Clima 11h–15h:</b> ${c.descricao}, ${c.tMin}–${c.tMax}°C` +
+      (c.sensMax > c.tMax + 1 ? ` (sensação ${c.sensMax}°C)` : "") + `\n☔ ${chuva}`);
+  } catch (e) {
+    console.error(`[previsao ${dia}] clima:`, e.message);
+    partes.push(`🌡 <b>Clima:</b> indisponível agora (${escHtml(e.message)})`);
+  }
+
+  // Vendas de referência
+  const hist = await historicoVendas(dia);
+  const datas = Object.keys(hist).sort();
+  if (!datas.length) {
+    partes.push("📊 Sem histórico de vendas ainda.");
+  } else {
+    const linhas = [];
+
+    // 1) Mesmo dia da semana — últimas N (sem feriados, se hoje não é feriado)
+    const mesmos = datas.filter((d) => dDow(d) === dow && (feriado || !todosFeriados[d])).slice(-AMOSTRA_MESMO_DIA);
+    if (mesmos.length) {
+      const tot = mesmos.map((d) => hist[d].total);
+      const ult = mesmos[mesmos.length - 1];
+      linhas.push(`• Média ${masc(dow) ? "dos últimos" : "das últimas"} ${mesmos.length} ${DIAS_SEMANA_LONGO[dow]}s: <b>${brl(media(tot))}</b>` +
+        ` <i>(de ${brl(Math.min(...tot))} a ${brl(Math.max(...tot))})</i>`);
+      linhas.push(`• ${masc(dow) ? "Último" : "Última"} ${DIAS_SEMANA_LONGO[dow]} (${dBR(ult)}): ${brl(hist[ult].total)}`);
+    }
+
+    // 2) Mesma posição no mês (ex.: 3º domingo de novembro) nos anos anteriores
+    const mes = Number(dia.slice(5, 7));
+    const n = Math.ceil(Number(dia.slice(8, 10)) / 7);
+    const rotPos = `${ordinal(n, dow)} ${DIAS_SEMANA_LONGO[dow]} de ${MESES_PT[mes - 1]}`;
+    [1, 2].forEach((k) => {
+      const d = nesimoDiaSemana(ano - k, mes, dow, n);
+      if (d && d >= datas[0]) {
+        linhas.push(`• ${rotPos} de ${ano - k} (${dBR(d)}): ` +
+          (hist[d] ? brl(hist[d].total) : "sem venda") + (todosFeriados[d] ? ` 🎉 ${escHtml(todosFeriados[d])}` : ""));
+      }
+    });
+
+    // 3) Mesma data nos anos anteriores
+    [1, 2].forEach((k) => {
+      const d = `${ano - k}${dia.slice(4)}`;
+      if (d >= datas[0]) {
+        linhas.push(`• Mesma data em ${ano - k} (${DIAS_SEMANA_LONGO[dDow(d)].slice(0, 3)} ${dBRAno(d)}): ` +
+          (hist[d] ? brl(hist[d].total) : "sem venda"));
+      }
+    });
+
+    // 4) Feriado: o mesmo feriado nos anos anteriores
+    if (feriado) {
+      [[fAnt1, ano - 1], [fAnt2, ano - 2]].forEach(([mapa, a]) => {
+        const d = Object.keys(mapa).find((x) => mapa[x] === feriado);
+        if (d && d >= datas[0] && d !== `${a}${dia.slice(4)}`) { // data fixa já saiu em "mesma data"
+          linhas.push(`• ${escHtml(feriado)} ${a} (${DIAS_SEMANA_LONGO[dDow(d)].slice(0, 3)} ${dBRAno(d)}): ` +
+            (hist[d] ? brl(hist[d].total) : "sem venda"));
+        }
+      });
+    }
+
+    partes.push(`📊 <b>Vendas de referência</b>\n${linhas.join("\n")}`);
+
+    // Vendedores nas mesmas datas da média
+    const comVend = mesmos.filter((d) => hist[d].vendedores > 0);
+    if (comVend.length) {
+      const mv = media(comVend.map((d) => hist[d].vendedores));
+      const fatPorVend = media(comVend.map((d) => hist[d].total / hist[d].vendedores));
+      partes.push(`🧑‍🍳 <b>Vendedores:</b> média de ${String(Math.round(mv * 10) / 10).replace(".", ",")} ` +
+        `${masc(dow) ? "nesses" : "nessas"} ${DIAS_SEMANA_LONGO[dow]}s · ${brl(fatPorVend)} por vendedor`);
+    }
+    if (mesmos.length < 4) partes.push(`<i>⚠️ histórico curto: só ${mesmos.length} ${DIAS_SEMANA_LONGO[dow]}(s) na base.</i>`);
+  }
+
+  return { aberto, texto: partes.join("\n\n") };
+}
+
+exports.previsaoManha = onSchedule(
+  { schedule: "0 7 * * *", timeZone: "America/Cuiaba", region: REGIAO, secrets: [TELEGRAM_TOKEN, TELEGRAM_CHAT_ID] },
+  async () => {
+    const dia = hojeCuiaba();
+    try {
+      const { aberto, texto } = await montarPrevisao(dia, false);
+      if (!aberto) { console.log(`[previsao ${dia}] casa fechada — não envia`); return; }
+      await enviarTelegram(TELEGRAM_TOKEN.value(), TELEGRAM_CHAT_ID.value(), texto);
+    } catch (e) {
+      console.error(`[previsao ${dia}] erro:`, e);
     }
   }
 );
