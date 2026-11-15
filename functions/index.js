@@ -797,6 +797,16 @@ async function tratarUpdateAvisos(upd, token, chatPadrao) {
     return;
   }
 
+  if (cb && /^p[pzc]/.test(cb.data || "")) {
+    await tratarCliquePessoas(cb, token);
+    return;
+  }
+
+  if (/^\/pessoas(@\w+)?$/i.test(texto)) {
+    await mostrarProximoPendente(token, chat, null);
+    return;
+  }
+
   if (cb) {
     const dado = cb.data || "";
     const mid = cb.message && cb.message.message_id;
@@ -847,6 +857,7 @@ async function tratarUpdateAvisos(upd, token, chatPadrao) {
   await tgApi(token, "setMyCommands", { commands: [
     { command: "diferenca", description: "Diferen\u00e7a do dia (estoque x vendas)" },
     { command: "previsao", description: "Previs\u00e3o do dia (clima + vendas de refer\u00eancia)" },
+    { command: "pessoas", description: "Configurar quantas pessoas cada prato serve" },
     { command: "meuid", description: "Mostra o seu chat id" }] });
   await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML", reply_markup: TECLADO_AVISOS,
     text: "\ud83d\udd14 <b>Primus Avisos</b>\nAqui chegam os avisos autom\u00e1ticos (diferen\u00e7a do dia, virada D-1, previs\u00e3o das 7h).\nToque em <b>\ud83d\udccb Diferen\u00e7a</b> ou <b>\ud83c\udf24 Previs\u00e3o</b> quando quiser." });
@@ -880,6 +891,11 @@ exports.notificarVendas = onDocumentWritten(
       return;
     }
     await verificarDiferencaDiaSeguro(event.params.dia);
+    try {
+      await perguntarProdutosNovos(event.params.dia, after.data() || {}, TELEGRAM_TOKEN.value(), TELEGRAM_CHAT_ID.value());
+    } catch (e) {
+      console.error("[pessoas] erro perguntando produtos novos:", e);
+    }
   }
 );
 
@@ -1214,12 +1230,10 @@ async function montarPrevisao(dia, sobDemanda = false) {
     if (comCli.length) {
       const mc = media(comCli.map((d) => hist[d].clientes));
       const ticket = media(comCli.map((d) => hist[d].total / hist[d].clientes));
-      const cob = media(comCli.map((d) => hist[d].cobertura));
       const porVend = comCli.filter((d) => hist[d].vendedores > 0);
       const cliVend = porVend.length ? media(porVend.map((d) => hist[d].clientes / hist[d].vendedores)) : 0;
       partes.push(`👥 <b>Clientes:</b> média de <b>${Math.round(mc)}</b> ${masc(dow) ? "nesses" : "nessas"} ${DIAS_SEMANA_LONGO[dow]}s` +
-        ` · ticket ${brl(ticket)}/pessoa` + (cliVend ? ` · ${Math.round(cliVend)} por vendedor` : "") +
-        (cob < 0.95 ? `\n<i>⚠️ ${Math.round((1 - cob) * 100)}% do faturamento vem de produtos sem "pessoas" configurado — fora da conta.</i>` : ""));
+        ` · ticket ${brl(ticket)}/pessoa` + (cliVend ? ` · ${Math.round(cliVend)} por vendedor` : ""));
     }
     if (mesmos.length < 4) partes.push(`<i>⚠️ histórico curto: só ${mesmos.length} ${DIAS_SEMANA_LONGO[dow]}(s) na base.</i>`);
   }
@@ -1240,3 +1254,168 @@ exports.previsaoManha = onSchedule(
     }
   }
 );
+
+// ===== PESSOAS POR PRODUTO — configuração pelo Telegram (Primus Avisos) =====
+// Doc primus_config/pessoas_produto:
+//   mapa:        { NOME_MAIUSCULO: pessoas }   (usado na previsão)
+//   ids:         { id8: NOME }                 (callback_data tem limite de 64 bytes)
+//   perguntados: { NOME: true }                (produto novo só é perguntado 1x)
+//   baselineFeito: true  -> só depois da arrumação inicial (/pessoas) o aviso
+//                           automático de produto novo é ligado (senão pergunta
+//                           de toda bebida/sorvete que nunca foi configurado).
+// Botões: pp:<valor>:<id>:<a|n>  (a = fluxo /pessoas, mostra o próximo; n = avulso)
+//         pz (pede confirmação) · pzs (zera os restantes) · pc:<id> (corrigir)
+
+const REF_PESSOAS = () => db.collection("primus_config").doc("pessoas_produto");
+const VALORES_PESSOAS = [0, 1, 2, 3, 4];
+const idProduto = (nome) => require("crypto").createHash("sha1").update(nome).digest("hex").slice(0, 8);
+const normProd = (n) => String(n || "").trim().toUpperCase();
+
+async function lerDocPessoas() {
+  const s = await REF_PESSOAS().get();
+  const d = (s.exists && s.data()) || {};
+  return { mapa: d.mapa || {}, ids: d.ids || {}, perguntados: d.perguntados || {}, baselineFeito: !!d.baselineFeito };
+}
+
+// Produtos vendidos nos últimos 90 dias sem "pessoas" configurado, do que mais fatura pro que menos.
+async function listarPendentesPessoas() {
+  const { mapa } = await lerDocPessoas();
+  const desde = dAdd(hojeCuiaba(), -90);
+  const snap = await db.collection("primus_vendas")
+    .where(FieldPath.documentId(), ">=", desde)
+    .select("produtos")
+    .get();
+  const agg = {};
+  snap.forEach((d) => {
+    ((d.data() || {}).produtos || []).forEach((p) => {
+      const nome = normProd(p.nome);
+      if (!nome || nome in mapa) return;
+      const a = agg[nome] || (agg[nome] = { nome, qtd: 0, total: 0 });
+      a.qtd += Number(p.qtd) || 0;
+      a.total += Number(p.total) || 0;
+    });
+  });
+  return Object.values(agg).sort((a, b) => b.total - a.total);
+}
+
+function tecladoValores(id, modo) {
+  return [VALORES_PESSOAS.map((v) => ({ text: String(v), callback_data: `pp:${v}:${id}:${modo}` }))];
+}
+
+async function enviarOuEditar(token, chat, mid, texto, teclado) {
+  const base = { chat_id: chat, parse_mode: "HTML", text: texto };
+  if (teclado) base.reply_markup = { inline_keyboard: teclado };
+  if (mid) await tgApi(token, "editMessageText", { ...base, message_id: mid });
+  else await tgApi(token, "sendMessage", base);
+}
+
+// Fluxo /pessoas: mostra o próximo pendente (ou fecha a arrumação).
+async function mostrarProximoPendente(token, chat, mid) {
+  const pend = await listarPendentesPessoas();
+  if (!pend.length) {
+    await REF_PESSOAS().set({ baselineFeito: true }, { merge: true });
+    await enviarOuEditar(token, chat, mid,
+      "✅ <b>Todos os produtos vendidos nos últimos 90 dias estão configurados.</b>\n" +
+      "Daqui pra frente, quando aparecer produto novo no PDV, eu pergunto aqui.");
+    return;
+  }
+  const p = pend[0];
+  const id = idProduto(p.nome);
+  await REF_PESSOAS().set({ ids: { [id]: p.nome } }, { merge: true });
+  const teclado = tecladoValores(id, "a");
+  if (pend.length > 1) teclado.push([{ text: `Zerar os ${pend.length} restantes`, callback_data: "pz" }]);
+  await enviarOuEditar(token, chat, mid,
+    `🍽 <b>${escHtml(p.nome)}</b>\n` +
+    `${Math.round(p.qtd)} vendidos · ${brl(p.total)} nos últimos 90 dias\n\n` +
+    "Quantas pessoas esse produto serve?\n<i>0 = bebida, sorvete, sobremesa, descartável, acompanhamento</i>\n" +
+    `<i>Faltam ${pend.length}.</i>`, teclado);
+}
+
+async function tratarCliquePessoas(cb, token) {
+  const dado = cb.data || "";
+  const chat = String(cb.message.chat.id);
+  const mid = cb.message.message_id;
+
+  if (dado === "pz") {
+    await tgApi(token, "answerCallbackQuery", { callback_query_id: cb.id });
+    const pend = await listarPendentesPessoas();
+    const lista = pend.slice(0, 25).map((p) => `• ${escHtml(p.nome)}`).join("\n");
+    await enviarOuEditar(token, chat, mid,
+      `⚠️ Vou colocar <b>0 pessoas</b> em ${pend.length} produto(s):\n${lista}` +
+      (pend.length > 25 ? `\n… e mais ${pend.length - 25}` : "") +
+      "\n\nTem algum prato aí no meio? Se tiver, volte e configure ele antes.",
+      [[{ text: "Sim, zerar todos", callback_data: "pzs" }, { text: "Voltar", callback_data: "pp:-:-:a" }]]);
+    return;
+  }
+
+  if (dado === "pzs") {
+    await tgApi(token, "answerCallbackQuery", { callback_query_id: cb.id, text: "Zerando..." });
+    const pend = await listarPendentesPessoas();
+    const mapa = {};
+    pend.forEach((p) => { mapa[p.nome] = 0; });
+    await REF_PESSOAS().set({ mapa, baselineFeito: true }, { merge: true });
+    await enviarOuEditar(token, chat, mid,
+      `✅ ${pend.length} produto(s) ficaram com 0 pessoas.\n` +
+      "Arrumação feita! Daqui pra frente, produto novo no PDV eu pergunto aqui.");
+    return;
+  }
+
+  if (dado.startsWith("pc:")) {   // corrigir um produto já respondido
+    await tgApi(token, "answerCallbackQuery", { callback_query_id: cb.id });
+    const id = dado.slice(3);
+    const { ids, mapa } = await lerDocPessoas();
+    const nome = ids[id];
+    if (!nome) return;
+    await enviarOuEditar(token, chat, mid,
+      `✏️ <b>${escHtml(nome)}</b> (hoje: ${nome in mapa ? mapa[nome] : "—"})\nQuantas pessoas esse produto serve?`,
+      tecladoValores(id, "n"));
+    return;
+  }
+
+  // pp:<valor>:<id>:<modo>
+  const [, valor, id, modo] = dado.split(":");
+  if (valor === "-") {   // "Voltar" da confirmação de zerar
+    await tgApi(token, "answerCallbackQuery", { callback_query_id: cb.id });
+    await mostrarProximoPendente(token, chat, mid);
+    return;
+  }
+  const { ids } = await lerDocPessoas();
+  const nome = ids[id];
+  const v = Number(valor);
+  if (!nome || !isFinite(v)) {
+    await tgApi(token, "answerCallbackQuery", { callback_query_id: cb.id, text: "Botão expirado. Mande /pessoas de novo." });
+    return;
+  }
+  await REF_PESSOAS().set({ mapa: { [nome]: v }, perguntados: { [nome]: true } }, { merge: true });
+  await tgApi(token, "answerCallbackQuery", { callback_query_id: cb.id, text: `${nome} = ${v}` });
+  if (modo === "a") {
+    await mostrarProximoPendente(token, chat, mid);
+  } else {
+    await enviarOuEditar(token, chat, mid,
+      `✅ <b>${escHtml(nome)}</b> = ${v} pessoa${v === 1 ? "" : "s"}`,
+      [[{ text: "corrigir", callback_data: `pc:${id}` }]]);
+  }
+}
+
+// Disparado quando as vendas de um dia são gravadas. Só olha dias recentes (o
+// lote de histórico não pergunta nada) e só depois da arrumação inicial.
+async function perguntarProdutosNovos(dia, vendasDia, token, chatDono) {
+  if (!token || !chatDono) return;
+  if (dia < dAdd(hojeCuiaba(), -3)) return;
+  const { mapa, perguntados, baselineFeito } = await lerDocPessoas();
+  if (!baselineFeito) return;
+  const novos = [...new Set(((vendasDia.produtos) || []).map((p) => normProd(p.nome)))]
+    .filter((n) => n && !(n in mapa) && !perguntados[n]);
+  if (!novos.length) return;
+
+  const ids = {}, marcados = {};
+  novos.forEach((n) => { ids[idProduto(n)] = n; marcados[n] = true; });
+  await REF_PESSOAS().set({ ids, perguntados: marcados }, { merge: true });
+
+  for (const nome of novos.slice(0, 10)) {
+    await enviarOuEditar(token, String(chatDono), null,
+      `🆕 <b>Produto novo no PDV:</b> ${escHtml(nome)}\nQuantas pessoas ele serve?\n` +
+      "<i>0 = bebida, sorvete, sobremesa, descartável, acompanhamento</i>",
+      tecladoValores(idProduto(nome), "n"));
+  }
+}
