@@ -24,6 +24,8 @@ const TELEGRAM_CHAT_ID = defineSecret("TELEGRAM_CHAT_ID");
 const TELEGRAM_WEBHOOK_SECRET = defineSecret("TELEGRAM_WEBHOOK_SECRET");
 // Chave da API do Claude (eventos da cidade + leitura do dia na previsão).
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
+// Bot separado só da previsão (Primus Previsão): previsão das 7h, /previsao, /pessoas.
+const TELEGRAM_PREVISAO_TOKEN = defineSecret("TELEGRAM_PREVISAO_TOKEN");
 
 const TIPO_LABEL = { ini: "INÍCIO", fin: "FINAL", sorv: "SORVETE" };
 
@@ -736,7 +738,8 @@ exports.notificarContagem = onDocumentWritten(
 // A diferença usa a MESMA conta do aviso automático, sem trava de repetição.
 const BOTAO_DIFERENCA = "\ud83d\udccb Diferen\u00e7a";
 const BOTAO_PREVISAO = "\ud83c\udf24 Previs\u00e3o";
-const TECLADO_AVISOS = { keyboard: [[{ text: BOTAO_DIFERENCA }, { text: BOTAO_PREVISAO }]], resize_keyboard: true, is_persistent: true };
+const TECLADO_AVISOS = { keyboard: [[{ text: BOTAO_DIFERENCA }]], resize_keyboard: true, is_persistent: true };
+const TECLADO_PREVISAO = { keyboard: [[{ text: BOTAO_PREVISAO }]], resize_keyboard: true, is_persistent: true };
 const DIAS_SEMANA_PT = ["dom", "seg", "ter", "qua", "qui", "sex", "s\u00e1b"];
 
 async function tgApi(token, metodo, params) {
@@ -799,16 +802,6 @@ async function tratarUpdateAvisos(upd, token, chatPadrao) {
     return;
   }
 
-  if (cb && /^p[pzc]/.test(cb.data || "")) {
-    await tratarCliquePessoas(cb, token);
-    return;
-  }
-
-  if (/^\/pessoas(@\w+)?$/i.test(texto)) {
-    await mostrarProximoPendente(token, chat, null);
-    return;
-  }
-
   if (cb) {
     const dado = cb.data || "";
     const mid = cb.message && cb.message.message_id;
@@ -835,42 +828,16 @@ async function tratarUpdateAvisos(upd, token, chatPadrao) {
     return;
   }
 
-  // /previsao [dd/mm] -> previsao do dia sob demanda (mesma conta da das 7h)
-  const mPrev = texto.match(/^\/previsao(?:@\w+)?\s*(.*)$/i);
-  if (texto === BOTAO_PREVISAO || mPrev) {
-    const dia = resolverDiaPrevisao(mPrev ? mPrev[1] : "");
-    if (!dia) {
-      await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML",
-        text: "\u2753 Use <code>/previsao</code> (hoje) ou <code>/previsao 22/11</code>." });
-      return;
-    }
-    await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML",
-      text: `⏳ Montando a previsão de <b>${dBR(dia)}</b> (a busca de eventos leva uns 30s)...` });
-    let resposta;
-    try {
-      let apiKey = "";
-      try { apiKey = ANTHROPIC_API_KEY.value(); } catch (_) { /* sem chave: sai sem eventos */ }
-      resposta = (await montarPrevisao(dia, true, { apiKey, usarCache: true })).texto;
-    } catch (e) {
-      console.error(`[previsao ${dia}] erro:`, e);
-      resposta = `\u274c Erro ao montar a previs\u00e3o: ${escHtml(String(e.message || e).slice(0, 200))}`;
-    }
-    await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML", text: resposta });
-    return;
-  }
-
   // /start, /ajuda ou qualquer outra coisa: explica e (re)mostra o teclado
   await tgApi(token, "setMyCommands", { commands: [
     { command: "diferenca", description: "Diferen\u00e7a do dia (estoque x vendas)" },
-    { command: "previsao", description: "Previs\u00e3o do dia (clima + vendas de refer\u00eancia)" },
-    { command: "pessoas", description: "Configurar quantas pessoas cada prato serve" },
     { command: "meuid", description: "Mostra o seu chat id" }] });
   await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML", reply_markup: TECLADO_AVISOS,
-    text: "\ud83d\udd14 <b>Primus Avisos</b>\nAqui chegam os avisos autom\u00e1ticos (diferen\u00e7a do dia, virada D-1, previs\u00e3o das 7h).\nToque em <b>\ud83d\udccb Diferen\u00e7a</b> ou <b>\ud83c\udf24 Previs\u00e3o</b> quando quiser." });
+    text: "\ud83d\udd14 <b>Primus Avisos</b>\nAqui chegam os avisos autom\u00e1ticos (diferen\u00e7a do dia, virada D-1).\nToque em <b>\ud83d\udccb Diferen\u00e7a</b> quando quiser.\n<i>A previs\u00e3o do dia agora fica no bot Primus Previs\u00e3o.</i>" });
 }
 
 exports.telegramAvisos = onRequest(
-  { region: REGIAO, timeoutSeconds: 300, secrets: [TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, ANTHROPIC_API_KEY] },
+  { region: REGIAO, secrets: [TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET] },
   async (req, res) => {
     if (req.method !== "POST") { res.status(200).send("ok"); return; }
     if (req.get("X-Telegram-Bot-Api-Secret-Token") !== TELEGRAM_WEBHOOK_SECRET.value()) {
@@ -891,7 +858,7 @@ exports.telegramAvisos = onRequest(
 // ===== GATILHO: vendas do dia gravadas (robô /vendas ou manual) =====
 // Normalmente a venda é a última peça do dia — é aqui que a diferença sai.
 exports.notificarVendas = onDocumentWritten(
-  { document: "primus_vendas/{dia}", region: REGIAO, secrets: [TELEGRAM_TOKEN, TELEGRAM_CHAT_ID] },
+  { document: "primus_vendas/{dia}", region: REGIAO, secrets: [TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_PREVISAO_TOKEN] },
   async (event) => {
     const after = event.data && event.data.after;
     if (!after || !after.exists) return; // delete → ignora
@@ -901,7 +868,7 @@ exports.notificarVendas = onDocumentWritten(
     }
     await verificarDiferencaDiaSeguro(event.params.dia);
     try {
-      await perguntarProdutosNovos(event.params.dia, after.data() || {}, TELEGRAM_TOKEN.value(), TELEGRAM_CHAT_ID.value());
+      await perguntarProdutosNovos(event.params.dia, after.data() || {}, TELEGRAM_PREVISAO_TOKEN.value(), TELEGRAM_CHAT_ID.value());
     } catch (e) {
       console.error("[pessoas] erro perguntando produtos novos:", e);
     }
@@ -1276,13 +1243,13 @@ async function montarPrevisao(dia, sobDemanda = false, opcoes = {}) {
 
 exports.previsaoManha = onSchedule(
   { schedule: "0 7 * * *", timeZone: "America/Cuiaba", region: REGIAO, timeoutSeconds: 300,
-    secrets: [TELEGRAM_TOKEN, TELEGRAM_CHAT_ID, ANTHROPIC_API_KEY] },
+    secrets: [TELEGRAM_PREVISAO_TOKEN, TELEGRAM_CHAT_ID, ANTHROPIC_API_KEY] },
   async () => {
     const dia = hojeCuiaba();
     try {
       const { aberto, texto } = await montarPrevisao(dia, false, { apiKey: ANTHROPIC_API_KEY.value(), usarCache: false });
       if (!aberto) { console.log(`[previsao ${dia}] casa fechada — não envia`); return; }
-      await enviarTelegram(TELEGRAM_TOKEN.value(), TELEGRAM_CHAT_ID.value(), texto);
+      await enviarTelegram(TELEGRAM_PREVISAO_TOKEN.value(), TELEGRAM_CHAT_ID.value(), texto);
     } catch (e) {
       console.error(`[previsao ${dia}] erro:`, e);
     }
@@ -1650,3 +1617,90 @@ function blocoEventosLeitura(ia) {
   return `🎉 <b>Eventos na cidade</b>\n${linhasEv}` +
     (topicos.length ? `\n\n🧠 <b>Leitura do dia</b>\n${topicos.map((t) => `• ${escHtml(t)}`).join("\n")}` : "");
 }
+
+// ===== PRIMUS PREVISÃO: WEBHOOK (bot separado) =====
+// 🌤 Previsão / /previsao [dd/mm] · /pessoas · botões de pessoas por produto · /meuid.
+// Quem pode usar: a mesma lista do painel (Usuarios -> Telegram); vazia -> só o dono.
+// Cada pessoa precisa dar /start neste bot uma vez pra poder receber a previsão das 7h.
+async function tratarUpdatePrevisao(upd, token, chatPadrao) {
+  const cb = upd.callback_query;
+  const msg = upd.message;
+  const chat = String((cb ? (cb.message && cb.message.chat && cb.message.chat.id) : (msg && msg.chat && msg.chat.id)) || "");
+  if (!chat) return;
+  const texto = ((msg && msg.text) || "").trim();
+
+  if (/^\/meuid(@\w+)?$/i.test(texto)) {
+    await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML", text: `🆔 Seu chat id: <code>${chat}</code>` });
+    return;
+  }
+  const autorizados = await chatsAutorizados(chatPadrao);
+  if (!autorizados.has(chat)) {
+    if (cb) await tgApi(token, "answerCallbackQuery", { callback_query_id: cb.id, text: "Você não está autorizado." });
+    else await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML",
+      text: `🔒 Você ainda não tem acesso.\n🆔 Seu chat id: <code>${chat}</code>\nPeça pro gestor cadastrar no Primus Pro (Usuários → Telegram).` });
+    console.log(`[previsao bot] chat nao autorizado: ${chat}`);
+    return;
+  }
+
+  if (cb) {
+    if (/^p[pzc]/.test(cb.data || "")) await tratarCliquePessoas(cb, token);
+    else await tgApi(token, "answerCallbackQuery", { callback_query_id: cb.id });
+    return;
+  }
+
+  if (/^\/pessoas(@\w+)?$/i.test(texto)) {
+    await mostrarProximoPendente(token, chat, null);
+    return;
+  }
+
+  const mPrev = texto.match(/^\/previsao(?:@\w+)?\s*(.*)$/i);
+  if (texto === BOTAO_PREVISAO || mPrev) {
+    const dia = resolverDiaPrevisao(mPrev ? mPrev[1] : "");
+    if (!dia) {
+      await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML",
+        text: "\u2753 Use <code>/previsao</code> (hoje) ou <code>/previsao 22/11</code>." });
+      return;
+    }
+    await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML",
+      text: `⏳ Montando a previsão de <b>${dBR(dia)}</b> (a busca de eventos leva uns 30s)...` });
+    let resposta;
+    try {
+      let apiKey = "";
+      try { apiKey = ANTHROPIC_API_KEY.value(); } catch (_) { /* sem chave: sai sem eventos */ }
+      resposta = (await montarPrevisao(dia, true, { apiKey, usarCache: true })).texto;
+    } catch (e) {
+      console.error(`[previsao ${dia}] erro:`, e);
+      resposta = `\u274c Erro ao montar a previs\u00e3o: ${escHtml(String(e.message || e).slice(0, 200))}`;
+    }
+    await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML", text: resposta });
+    return;
+  }
+
+  // /start ou qualquer outra coisa: explica e (re)mostra o teclado
+  await tgApi(token, "setMyCommands", { commands: [
+    { command: "previsao", description: "Previsão do dia (ou /previsao 22/11)" },
+    { command: "pessoas", description: "Quantas pessoas cada prato serve" },
+    { command: "meuid", description: "Mostra o seu chat id" }] });
+  await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML", reply_markup: TECLADO_PREVISAO,
+    text: "🌤 <b>Primus Previsão</b>\nTodo dia de casa aberta, às 7h, chega aqui a previsão do dia: clima do almoço, vendas de referência, dias parecidos, eventos na cidade e a leitura do dia.\nToque em <b>🌤 Previsão</b> pra ver a de hoje, ou mande <code>/previsao 22/11</code>." });
+}
+
+exports.telegramPrevisao = onRequest(
+  { region: REGIAO, timeoutSeconds: 300,
+    secrets: [TELEGRAM_PREVISAO_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, ANTHROPIC_API_KEY] },
+  async (req, res) => {
+    if (req.method !== "POST") { res.status(200).send("ok"); return; }
+    if (req.get("X-Telegram-Bot-Api-Secret-Token") !== TELEGRAM_WEBHOOK_SECRET.value()) {
+      res.status(403).send("forbidden"); return;
+    }
+    // A previsão com busca de eventos demora: se o Telegram reenviar o mesmo update, ignora.
+    const updId = req.body && req.body.update_id;
+    if (updId && await jaProcessado(`tgp_${updId}`)) { res.status(200).send("ok"); return; }
+    try {
+      await tratarUpdatePrevisao(req.body || {}, TELEGRAM_PREVISAO_TOKEN.value(), TELEGRAM_CHAT_ID.value());
+    } catch (e) {
+      console.error("[previsao webhook] erro:", e);
+    }
+    res.status(200).send("ok"); // sempre 200: senao o Telegram fica reenviando
+  }
+);
