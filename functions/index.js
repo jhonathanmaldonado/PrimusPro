@@ -26,6 +26,8 @@ const TELEGRAM_WEBHOOK_SECRET = defineSecret("TELEGRAM_WEBHOOK_SECRET");
 const ANTHROPIC_API_KEY = defineSecret("ANTHROPIC_API_KEY");
 // Bot separado só da previsão (Primus Previsão): previsão das 7h, /previsao, /pessoas.
 const TELEGRAM_PREVISAO_TOKEN = defineSecret("TELEGRAM_PREVISAO_TOKEN");
+// Bot "I.A. da Primus": analista de vendas pra conversar/debater (só o dono).
+const TELEGRAM_IA_TOKEN = defineSecret("TELEGRAM_IA_TOKEN");
 
 const TIPO_LABEL = { ini: "INÍCIO", fin: "FINAL", sorv: "SORVETE" };
 
@@ -1704,3 +1706,371 @@ exports.telegramPrevisao = onRequest(
     res.status(200).send("ok"); // sempre 200: senao o Telegram fica reenviando
   }
 );
+
+// ===== I.A. DA PRIMUS — analista de vendas no Telegram (só o dono) =====
+// Conversa livre com o Claude, que consulta o banco por FERRAMENTAS SÓ DE LEITURA.
+// As contas (somas, médias, rankings) são feitas aqui no código; o modelo interpreta.
+// Memória: últimas mensagens em primus_ia_conversa/{chat} (/nova zera).
+// Uso de tokens por dia em primus_ia_uso/{AAAA-MM-DD}.
+
+const MODELO_IA = "claude-sonnet-5-5";
+const IA_MAX_HISTORICO = 20;      // mensagens (pergunta + resposta) guardadas
+const IA_MAX_VOLTAS = 8;          // rodadas de ferramenta por pergunta
+const IA_MAX_DIAS = 1100;         // maior período que uma ferramenta aceita
+const DIA_ISO = /^\d{4}-\d{2}-\d{2}$/;
+
+// ---------- carga dos dias (vendas + clientes + vendedores + clima + feriado) ----------
+async function carregarDiasIA(ini, fim, comProdutos = false) {
+  if (!DIA_ISO.test(ini) || !DIA_ISO.test(fim)) throw new Error("datas devem ser AAAA-MM-DD");
+  if (ini > fim) [ini, fim] = [fim, ini];
+  if ((dParse(fim) - dParse(ini)) / 86400000 > IA_MAX_DIAS) throw new Error(`período maior que ${IA_MAX_DIAS} dias`);
+  const mapa = await lerPessoasPorProduto();
+  const snap = await db.collection("primus_vendas")
+    .where(FieldPath.documentId(), ">=", ini).where(FieldPath.documentId(), "<=", fim)
+    .select("totais", "vendedores", "vendedoresDetalhado", "produtos").get();
+  const dias = [];
+  snap.forEach((d) => {
+    if (!DIA_ISO.test(d.id)) return;
+    const v = d.data() || {};
+    const total = Number((v.totais && v.totais.total) || 0);
+    if (total <= 0) return;
+    const c = clientesDoDia(v.produtos, mapa);
+    const vend = (Array.isArray(v.vendedoresDetalhado) ? v.vendedoresDetalhado : []).filter((x) => x && !x.caixa);
+    dias.push({
+      data: d.id, total, itens: Number((v.totais && v.totais.qtd) || 0),
+      clientes: Math.round(c.clientes), vendedores: contarVendedores(v),
+      vendedoresDet: vend.map((x) => ({ nome: x.nome, total: Number(x.total) || 0, qtd: Number(x.totalQtd) || 0 })),
+      produtos: comProdutos ? (v.produtos || []).map((p) => ({ nome: normProd(p.nome), qtd: Number(p.qtd) || 0, total: Number(p.total) || 0 })) : undefined,
+    });
+  });
+  dias.sort((a, b) => a.data.localeCompare(b.data));
+  // clima (cache) e feriados
+  let clima = {};
+  try { clima = await garantirClimaHistorico(dias.map((x) => x.data)); } catch (_) { /* segue sem clima */ }
+  const anos = [...new Set(dias.map((x) => Number(x.data.slice(0, 4))))];
+  const fer = {};
+  for (const a of anos) Object.assign(fer, await feriadosDoAno(a));
+  dias.forEach((x) => {
+    x.diaSemana = DIAS_SEMANA_LONGO[dDow(x.data)];
+    x.feriado = fer[x.data] || null;
+    const c = clima[x.data];
+    x.clima = c ? { tMax: c.tMax, chuvaAlmoco: !!c.chuva, mm: c.mm } : null;
+  });
+  return dias;
+}
+
+const r1 = (n) => Math.round(n * 10) / 10;
+const r0 = (n) => Math.round(n);
+function filtrarDiaSemana(dias, diaSemana) {
+  if (!diaSemana) return dias;
+  const alvo = String(diaSemana).toLowerCase().slice(0, 3);
+  return dias.filter((x) => x.diaSemana.slice(0, 3) === alvo);
+}
+function resumoGrupo(ds) {
+  const comCli = ds.filter((x) => x.clientes > 0);
+  const comVend = ds.filter((x) => x.vendedores > 0);
+  const fat = ds.reduce((s, x) => s + x.total, 0);
+  const cli = comCli.reduce((s, x) => s + x.clientes, 0);
+  return {
+    dias: ds.length, faturamento_total: r0(fat), faturamento_medio_dia: r0(fat / (ds.length || 1)),
+    clientes_medio_dia: comCli.length ? r0(cli / comCli.length) : null,
+    ticket_medio_pessoa: cli ? r0(comCli.reduce((s, x) => s + x.total, 0) / cli) : null,
+    vendedores_medio: comVend.length ? r1(media(comVend.map((x) => x.vendedores))) : null,
+    clientes_por_vendedor: comVend.filter((x) => x.clientes).length
+      ? r1(media(comVend.filter((x) => x.clientes).map((x) => x.clientes / x.vendedores))) : null,
+    faturamento_por_vendedor: comVend.length ? r0(media(comVend.map((x) => x.total / x.vendedores))) : null,
+  };
+}
+
+// ---------- ferramentas ----------
+const FERRAMENTAS_IA = [
+  { name: "resumo_periodo",
+    description: "Resumo de vendas de um período, agrupado por dia, semana, mês ou dia da semana. Traz dias abertos, faturamento total e médio por dia, clientes estimados, ticket por pessoa, vendedores médios, clientes por vendedor e faturamento por vendedor.",
+    input_schema: { type: "object", properties: {
+      inicio: { type: "string", description: "AAAA-MM-DD" }, fim: { type: "string", description: "AAAA-MM-DD" },
+      agrupar: { type: "string", enum: ["total", "dia", "semana", "mes", "dia_semana"] },
+      dia_semana: { type: "string", description: "opcional: filtra um dia da semana (ex.: domingo)" } },
+      required: ["inicio", "fim"] } },
+  { name: "comparar_periodos",
+    description: "Compara dois períodos (A e B) com os mesmos indicadores do resumo e a variação percentual de B sobre A. Use pra 'novembro deste ano x do ano passado', 'esta semana x a anterior' etc.",
+    input_schema: { type: "object", properties: {
+      a_inicio: { type: "string" }, a_fim: { type: "string" }, b_inicio: { type: "string" }, b_fim: { type: "string" },
+      dia_semana: { type: "string", description: "opcional: compara só esse dia da semana" } },
+      required: ["a_inicio", "a_fim", "b_inicio", "b_fim"] } },
+  { name: "ranking_produtos",
+    description: "Ranking de produtos vendidos no período (quantidade, faturamento, participação). Opcionalmente compara com um período anterior de referência e mostra quem mais cresceu/caiu.",
+    input_schema: { type: "object", properties: {
+      inicio: { type: "string" }, fim: { type: "string" },
+      ordem: { type: "string", enum: ["faturamento", "quantidade", "crescimento"] },
+      limite: { type: "integer", description: "padrão 15" },
+      ref_inicio: { type: "string", description: "opcional: início do período de comparação" },
+      ref_fim: { type: "string", description: "opcional: fim do período de comparação" },
+      busca: { type: "string", description: "opcional: filtra produtos que contenham esse texto" } },
+      required: ["inicio", "fim"] } },
+  { name: "analise_vendedores",
+    description: "Agrupa os dias pela quantidade de vendedores escalados (dentro do mesmo dia da semana, se informado) e mostra, pra cada quantidade: nº de dias, faturamento médio, clientes médios, clientes por vendedor e faturamento por vendedor. Serve pra discutir se vale escalar mais ou menos gente (saturação da equipe).",
+    input_schema: { type: "object", properties: {
+      inicio: { type: "string" }, fim: { type: "string" },
+      dia_semana: { type: "string", description: "recomendado: comparar só o mesmo dia da semana" },
+      sem_feriados: { type: "boolean", description: "padrão true" } },
+      required: ["inicio", "fim"] } },
+  { name: "desempenho_vendedores",
+    description: "Desempenho de cada vendedor (garçom) no período: dias trabalhados, faturamento total e médio por dia, itens por dia, e a média do dia quando ele trabalhou.",
+    input_schema: { type: "object", properties: {
+      inicio: { type: "string" }, fim: { type: "string" }, dia_semana: { type: "string" } },
+      required: ["inicio", "fim"] } },
+  { name: "dias_detalhe",
+    description: "Lista dia a dia (máx. 120 dias): data, dia da semana, feriado, faturamento, clientes, vendedores, temperatura máxima e chuva no almoço (11h–15h).",
+    input_schema: { type: "object", properties: {
+      inicio: { type: "string" }, fim: { type: "string" }, dia_semana: { type: "string" } },
+      required: ["inicio", "fim"] } },
+  { name: "previsao_dia",
+    description: "A previsão calculada de um dia (até 16 dias à frente): clima do almoço, vendas de referência, dias parecidos, faixa provável, efeito chuva e, se já existir, os eventos encontrados de manhã.",
+    input_schema: { type: "object", properties: { dia: { type: "string", description: "AAAA-MM-DD" } }, required: ["dia"] } },
+];
+
+async function executarFerramentaIA(nome, inp) {
+  const lim = (n, d) => Math.max(1, Math.min(Number(n) || d, 50));
+  if (nome === "resumo_periodo") {
+    const dias = filtrarDiaSemana(await carregarDiasIA(inp.inicio, inp.fim), inp.dia_semana);
+    const modo = inp.agrupar || "total";
+    if (modo === "total") return { periodo: [inp.inicio, inp.fim], ...resumoGrupo(dias) };
+    const chave = (x) => modo === "dia" ? x.data : modo === "mes" ? x.data.slice(0, 7)
+      : modo === "dia_semana" ? x.diaSemana : (() => { const dt = dParse(x.data); dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7)); return "semana de " + dIso(dt); })();
+    const g = {};
+    dias.forEach((x) => (g[chave(x)] = g[chave(x)] || []).push(x));
+    return { periodo: [inp.inicio, inp.fim], agrupado_por: modo,
+      grupos: Object.entries(g).slice(0, 200).map(([k, ds]) => ({ grupo: k, ...resumoGrupo(ds) })) };
+  }
+  if (nome === "comparar_periodos") {
+    const [a, b] = await Promise.all([carregarDiasIA(inp.a_inicio, inp.a_fim), carregarDiasIA(inp.b_inicio, inp.b_fim)]);
+    const ra = resumoGrupo(filtrarDiaSemana(a, inp.dia_semana)), rb = resumoGrupo(filtrarDiaSemana(b, inp.dia_semana));
+    const variacao = {};
+    Object.keys(ra).forEach((k) => {
+      if (typeof ra[k] === "number" && ra[k] && typeof rb[k] === "number") variacao[k] = `${r1((rb[k] / ra[k] - 1) * 100)}%`;
+    });
+    return { A: { periodo: [inp.a_inicio, inp.a_fim], ...ra }, B: { periodo: [inp.b_inicio, inp.b_fim], ...rb }, variacao_B_sobre_A: variacao };
+  }
+  if (nome === "ranking_produtos") {
+    const somar = (dias) => {
+      const m = {};
+      dias.forEach((x) => (x.produtos || []).forEach((p) => {
+        const a = m[p.nome] || (m[p.nome] = { produto: p.nome, quantidade: 0, faturamento: 0 });
+        a.quantidade += p.qtd; a.faturamento += p.total;
+      }));
+      return m;
+    };
+    const dias = await carregarDiasIA(inp.inicio, inp.fim, true);
+    const atual = somar(dias);
+    const totalFat = Object.values(atual).reduce((s, x) => s + x.faturamento, 0);
+    let ref = null;
+    if (inp.ref_inicio && inp.ref_fim) ref = somar(await carregarDiasIA(inp.ref_inicio, inp.ref_fim, true));
+    let lista = Object.values(atual).map((x) => {
+      const o = { produto: x.produto, quantidade: r0(x.quantidade), faturamento: r0(x.faturamento),
+        participacao: `${r1(x.faturamento / (totalFat || 1) * 100)}%` };
+      if (ref) {
+        const rq = ref[x.produto] ? ref[x.produto].quantidade : 0;
+        o.quantidade_ref = r0(rq);
+        o.variacao_qtd = rq ? `${r1((x.quantidade / rq - 1) * 100)}%` : "novo";
+        o._delta = x.quantidade - rq;
+      }
+      return o;
+    });
+    if (inp.busca) lista = lista.filter((x) => x.produto.includes(String(inp.busca).toUpperCase()));
+    const ordem = inp.ordem || "faturamento";
+    lista.sort((a, b) => ordem === "quantidade" ? b.quantidade - a.quantidade
+      : ordem === "crescimento" ? (b._delta || 0) - (a._delta || 0) : b.faturamento - a.faturamento);
+    const n = lim(inp.limite, 15);
+    const out = lista.slice(0, n).map(({ _delta, ...x }) => x);
+    if (ordem === "crescimento") {   // maiores quedas, sem repetir quem já está na lista
+      const resto = lista.slice(n);
+      out.push(...resto.slice(-Math.min(5, resto.length)).reverse().map(({ _delta, ...x }) => ({ ...x, obs: "maiores quedas" })));
+    }
+    return { periodo: [inp.inicio, inp.fim], dias: dias.length, faturamento_total: r0(totalFat), produtos: out };
+  }
+  if (nome === "analise_vendedores") {
+    let dias = filtrarDiaSemana(await carregarDiasIA(inp.inicio, inp.fim), inp.dia_semana).filter((x) => x.vendedores > 0);
+    if (inp.sem_feriados !== false) dias = dias.filter((x) => !x.feriado);
+    const g = {};
+    dias.forEach((x) => (g[x.vendedores] = g[x.vendedores] || []).push(x));
+    return { periodo: [inp.inicio, inp.fim], dia_semana: inp.dia_semana || "todos",
+      observacao: "Dias cheios costumam receber mais vendedores: diferença de faturamento entre grupos não prova causa. Olhe clientes_por_vendedor pra ver saturação.",
+      por_quantidade_de_vendedores: Object.keys(g).map(Number).sort((a, b) => a - b).map((k) => ({
+        vendedores: k, ...resumoGrupo(g[k]),
+        exemplos: g[k].slice(-3).map((x) => `${x.data} R$${r0(x.total)}`) })) };
+  }
+  if (nome === "desempenho_vendedores") {
+    const dias = filtrarDiaSemana(await carregarDiasIA(inp.inicio, inp.fim), inp.dia_semana);
+    const m = {};
+    dias.forEach((x) => x.vendedoresDet.forEach((v) => {
+      const a = m[v.nome] || (m[v.nome] = { vendedor: v.nome, dias: 0, faturamento: 0, itens: 0, fatDiaCasa: 0 });
+      a.dias++; a.faturamento += v.total; a.itens += v.qtd; a.fatDiaCasa += x.total;
+    }));
+    return { periodo: [inp.inicio, inp.fim], dias_abertos: dias.length,
+      vendedores: Object.values(m).sort((a, b) => b.faturamento - a.faturamento).map((a) => ({
+        vendedor: a.vendedor, dias_trabalhados: a.dias, faturamento_total: r0(a.faturamento),
+        faturamento_medio_dia: r0(a.faturamento / a.dias), itens_medio_dia: r1(a.itens / a.dias),
+        faturamento_medio_da_casa_nos_dias_dele: r0(a.fatDiaCasa / a.dias) })) };
+  }
+  if (nome === "dias_detalhe") {
+    const dias = filtrarDiaSemana(await carregarDiasIA(inp.inicio, inp.fim), inp.dia_semana).slice(-120);
+    return { dias: dias.map((x) => ({ data: x.data, dia_semana: x.diaSemana, feriado: x.feriado,
+      faturamento: r0(x.total), clientes: x.clientes, vendedores: x.vendedores,
+      temp_max: x.clima ? x.clima.tMax : null, chuva_almoco: x.clima ? x.clima.chuvaAlmoco : null })) };
+  }
+  if (nome === "previsao_dia") {
+    if (!DIA_ISO.test(inp.dia || "")) throw new Error("dia deve ser AAAA-MM-DD");
+    const r = await montarPrevisao(inp.dia, true, {});   // sem nova busca de eventos (não gasta)
+    const s = await db.collection("primus_previsoes").doc(inp.dia).get();
+    const ia = s.exists ? s.data().ia : null;
+    return { previsao: r.texto.replace(/<[^>]+>/g, ""), eventos_encontrados_de_manha: ia ? ia.eventos : "ainda não buscados pra esse dia" };
+  }
+  throw new Error(`ferramenta desconhecida: ${nome}`);
+}
+
+// ---------- conversa ----------
+function promptSistemaIA() {
+  const hoje = hojeCuiaba();
+  return `Você é a I.A. da Primus: analista de dados e parceiro de decisão do Jhonathan, dono da Primus Peixaria (restaurante de peixes no São Gonçalo Beira Rio, Cuiabá-MT; só almoço, 11h–15h, quarta a domingo e feriados; estacionamento próprio).
+Hoje é ${DIAS_SEMANA_LONGO[dDow(hoje)]}, ${hoje}. O histórico de vendas vai de junho/2024 até ontem.
+
+COMO TRABALHAR
+- Antes de afirmar qualquer número, consulte as ferramentas. Nunca invente nem estime número que não veio delas. Se o dado não existe no banco (custos, escala futura, opinião dos clientes), diga que não tem.
+- Você é parceiro de debate, não puxa-saco: dê sua opinião clara, concorde quando os dados apoiam e discorde quando não apoiam, explicando o porquê.
+- Cuidado com conclusão fácil: correlação não é causa. Ex.: dias com mais vendedores vendem mais porque já se escala mais gente nos dias cheios. Compare sempre o mesmo dia da semana, separe feriados e chuva, e olhe clientes por vendedor pra ver saturação.
+- Quando os dados não decidem, proponha um teste prático (ex.: +1 vendedor em 3 domingos parecidos e comparar com os anteriores).
+- Diga o tamanho da amostra quando ela for pequena.
+
+DEFINIÇÕES
+- Clientes = estimativa (quantidade de cada prato × pessoas que ele serve; bebidas e sobremesas contam 0).
+- Vendedores = garçons com venda no dia (sem o caixa).
+- Faturamento = total do relatório do Gestor Food do dia.
+
+FORMATO (Telegram, texto puro, sem markdown, sem tabelas)
+- Respostas curtas e diretas, de dono pra dono. Use quebras de linha e "•" pra tópicos. Valores como R$ 12.345. Emojis com moderação.
+- Termine com sua recomendação ou uma pergunta que faça a conversa avançar.`;
+}
+
+async function chamarClaudeIA(apiKey, messages) {
+  const tools = FERRAMENTAS_IA.map((t, i) => (i === FERRAMENTAS_IA.length - 1 ? { ...t, cache_control: { type: "ephemeral" } } : t));
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST", signal: AbortSignal.timeout(120000),
+    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({ model: MODELO_IA, max_tokens: 2000, system: promptSistemaIA(), tools, messages }),
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error(`API do Claude ${r.status}: ${(j.error && j.error.message) || "erro"}`);
+  return j;
+}
+
+async function responderIA(chat, pergunta, token, apiKey) {
+  const ref = db.collection("primus_ia_conversa").doc(chat);
+  const s = await ref.get();
+  const historico = (s.exists && s.data().mensagens) || [];
+  const messages = [...historico.map((m) => ({ role: m.role, content: m.texto })), { role: "user", content: pergunta }];
+  const uso = { entrada: 0, saida: 0, cache: 0, ferramentas: 0 };
+  let resposta = null;
+
+  for (let volta = 0; volta < IA_MAX_VOLTAS && resposta === null; volta++) {
+    await tgApi(token, "sendChatAction", { chat_id: chat, action: "typing" });
+    const j = await chamarClaudeIA(apiKey, messages);
+    uso.entrada += (j.usage && j.usage.input_tokens) || 0;
+    uso.saida += (j.usage && j.usage.output_tokens) || 0;
+    uso.cache += (j.usage && j.usage.cache_read_input_tokens) || 0;
+    const usos = (j.content || []).filter((b) => b.type === "tool_use");
+    if (j.stop_reason === "tool_use" && usos.length) {
+      messages.push({ role: "assistant", content: j.content });
+      const resultados = [];
+      for (const u of usos) {
+        uso.ferramentas++;
+        let conteudo, erro = false;
+        try {
+          conteudo = JSON.stringify(await executarFerramentaIA(u.name, u.input || {}));
+        } catch (e) {
+          conteudo = `Erro: ${e.message}`; erro = true;
+        }
+        console.log(`[IA] ${u.name} ${JSON.stringify(u.input)} -> ${conteudo.length} chars${erro ? " (erro)" : ""}`);
+        resultados.push({ type: "tool_result", tool_use_id: u.id, content: conteudo.slice(0, 60000), is_error: erro });
+      }
+      messages.push({ role: "user", content: resultados });
+      continue;
+    }
+    resposta = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+  }
+  if (!resposta) resposta = "Não consegui fechar a análise a tempo (muitas consultas). Tenta perguntar de um jeito mais específico?";
+
+  // guarda só o texto (pergunta e resposta) — as consultas são refeitas quando precisar
+  const novo = [...historico, { role: "user", texto: pergunta }, { role: "assistant", texto: resposta }].slice(-IA_MAX_HISTORICO);
+  await ref.set({ mensagens: novo, atualizadoEm: new Date().toISOString() });
+  const { FieldValue } = require("firebase-admin/firestore");
+  await db.collection("primus_ia_uso").doc(hojeCuiaba()).set({
+    perguntas: FieldValue.increment(1), entrada: FieldValue.increment(uso.entrada), saida: FieldValue.increment(uso.saida),
+    cache: FieldValue.increment(uso.cache), ferramentas: FieldValue.increment(uso.ferramentas) }, { merge: true });
+  return resposta;
+}
+
+async function enviarTextoLongo(token, chat, texto) {
+  for (let i = 0; i < texto.length; i += 3800) {
+    await tgApi(token, "sendMessage", { chat_id: chat, text: texto.slice(i, i + 3800) });
+  }
+}
+
+async function tratarUpdateIA(upd, token, chatDono, apiKey) {
+  const msg = upd.message;
+  if (!msg || !msg.chat) return;
+  const chat = String(msg.chat.id);
+  const texto = (msg.text || "").trim();
+  if (chat !== String(chatDono)) {
+    await tgApi(token, "sendMessage", { chat_id: chat, text: "🔒 Este bot é de uso exclusivo do dono da Primus." });
+    console.log(`[IA] chat nao autorizado: ${chat}`);
+    return;
+  }
+  if (!texto) {
+    await tgApi(token, "sendMessage", { chat_id: chat, text: "Por enquanto eu só entendo texto. 🙂" });
+    return;
+  }
+  if (/^\/(start|ajuda)(@\w+)?$/i.test(texto)) {
+    await tgApi(token, "setMyCommands", { commands: [
+      { command: "nova", description: "Começar uma conversa nova (esquece o contexto)" },
+      { command: "ajuda", description: "Como usar" }] });
+    await tgApi(token, "sendMessage", { chat_id: chat, text:
+      "🧠 I.A. da Primus\n\nSou seu analista. Tenho acesso (só leitura) às vendas desde jun/2024: faturamento, clientes, vendedores, produtos, clima e previsões.\n\n" +
+      "Pergunte ou debata comigo, por exemplo:\n• Como foi novembro x novembro do ano passado?\n• Qual prato mais cresceu nos últimos 3 meses?\n• Vale chamar mais um vendedor no domingo?\n\n/nova começa uma conversa do zero." });
+    return;
+  }
+  if (/^\/nova(@\w+)?$/i.test(texto)) {
+    await db.collection("primus_ia_conversa").doc(chat).delete().catch(() => {});
+    await tgApi(token, "sendMessage", { chat_id: chat, text: "🧹 Conversa nova. Pode perguntar." });
+    return;
+  }
+  let resposta;
+  try {
+    resposta = await responderIA(chat, texto, token, apiKey);
+  } catch (e) {
+    console.error("[IA] erro:", e);
+    resposta = `❌ Deu erro na análise: ${String(e.message || e).slice(0, 200)}`;
+  }
+  await enviarTextoLongo(token, chat, resposta);
+}
+
+exports.telegramIA = onRequest(
+  { region: REGIAO, timeoutSeconds: 300, memory: "512MiB",
+    secrets: [TELEGRAM_IA_TOKEN, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, ANTHROPIC_API_KEY] },
+  async (req, res) => {
+    if (req.method !== "POST") { res.status(200).send("ok"); return; }
+    if (req.get("X-Telegram-Bot-Api-Secret-Token") !== TELEGRAM_WEBHOOK_SECRET.value()) {
+      res.status(403).send("forbidden"); return;
+    }
+    const updId = req.body && req.body.update_id;
+    if (updId && await jaProcessado(`tgia_${updId}`)) { res.status(200).send("ok"); return; }
+    try {
+      await tratarUpdateIA(req.body || {}, TELEGRAM_IA_TOKEN.value(), TELEGRAM_CHAT_ID.value(), ANTHROPIC_API_KEY.value());
+    } catch (e) {
+      console.error("[IA webhook] erro:", e);
+    }
+    res.status(200).send("ok");
+  }
+);
+// ===== GOOGLE MEU NEGÓCIO (avaliações) — módulo separado: functions/avaliacoes.js =====
+// Bot Google Meu Negócio: checarAvaliacoes (todo dia às 10h) + webhook telegramGmn.
+Object.assign(exports, require("./avaliacoes")({ REGIAO, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, ANTHROPIC_API_KEY }));
