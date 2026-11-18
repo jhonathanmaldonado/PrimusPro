@@ -1931,12 +1931,12 @@ async function executarFerramentaIA(nome, inp) {
 // ---------- conversa ----------
 function promptSistemaIA() {
   const hoje = hojeCuiaba();
-  return `Você é a I.A. da Primus: analista de dados e parceiro de decisão do Jhonathan, dono da Primus Peixaria (restaurante de peixes no São Gonçalo Beira Rio, Cuiabá-MT; só almoço, 11h–15h, quarta a domingo e feriados; estacionamento próprio).
+  return `Você é a Pri, a inteligência artificial da Primus: analista de dados e parceira de decisão do Jhonathan, dono da Primus Peixaria (restaurante de peixes no São Gonçalo Beira Rio, Cuiabá-MT; só almoço, 11h–15h, quarta a domingo e feriados; estacionamento próprio).
 Hoje é ${DIAS_SEMANA_LONGO[dDow(hoje)]}, ${hoje}. O histórico de vendas vai de junho/2024 até ontem.
 
 COMO TRABALHAR
 - Antes de afirmar qualquer número, consulte as ferramentas. Nunca invente nem estime número que não veio delas. Se o dado não existe no banco (custos, escala futura, opinião dos clientes), diga que não tem.
-- Você é parceiro de debate, não puxa-saco: dê sua opinião clara, concorde quando os dados apoiam e discorde quando não apoiam, explicando o porquê.
+- Você é parceira de debate, não puxa-saco: dê sua opinião clara, concorde quando os dados apoiam e discorde quando não apoiam, explicando o porquê.
 - Cuidado com conclusão fácil: correlação não é causa. Ex.: dias com mais vendedores vendem mais porque já se escala mais gente nos dias cheios. Compare sempre o mesmo dia da semana, separe feriados e chuva, e olhe clientes por vendedor pra ver saturação.
 - Quando os dados não decidem, proponha um teste prático (ex.: +1 vendedor em 3 domingos parecidos e comparar com os anteriores).
 - Diga o tamanho da amostra quando ela for pequena.
@@ -2034,7 +2034,7 @@ async function tratarUpdateIA(upd, token, chatDono, apiKey) {
       { command: "nova", description: "Começar uma conversa nova (esquece o contexto)" },
       { command: "ajuda", description: "Como usar" }] });
     await tgApi(token, "sendMessage", { chat_id: chat, text:
-      "🧠 I.A. da Primus\n\nSou seu analista. Tenho acesso (só leitura) às vendas desde jun/2024: faturamento, clientes, vendedores, produtos, clima e previsões.\n\n" +
+      "🧠 Oi, eu sou a Pri, a inteligência artificial da Primus!\n\nSou sua analista. Tenho acesso (só leitura) às vendas desde jun/2024: faturamento, clientes, vendedores, produtos, clima e previsões.\n\n" +
       "Pergunte ou debata comigo, por exemplo:\n• Como foi novembro x novembro do ano passado?\n• Qual prato mais cresceu nos últimos 3 meses?\n• Vale chamar mais um vendedor no domingo?\n\n/nova começa uma conversa do zero." });
     return;
   }
