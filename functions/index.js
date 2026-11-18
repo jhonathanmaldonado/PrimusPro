@@ -1929,9 +1929,11 @@ async function executarFerramentaIA(nome, inp) {
 }
 
 // ---------- conversa ----------
-function promptSistemaIA() {
+function promptSistemaIA(nome, ehDono) {
   const hoje = hojeCuiaba();
-  return `Você é a Pri, a inteligência artificial da Primus: analista de dados e parceira de decisão do Jhonathan, dono da Primus Peixaria (restaurante de peixes no São Gonçalo Beira Rio, Cuiabá-MT; só almoço, 11h–15h, quarta a domingo e feriados; estacionamento próprio).
+  const quem = ehDono ? "Você está conversando com o Jhonathan, o dono." : `Você está conversando com ${nome || "alguém da gestão"}, da gestão da Primus (o dono, Jhonathan, liberou o acesso).`;
+  return `Você é a Pri, a inteligência artificial da Primus: analista de dados e parceira de decisão da gestão da Primus Peixaria (restaurante de peixes no São Gonçalo Beira Rio, Cuiabá-MT; só almoço, 11h–15h, quarta a domingo e feriados; estacionamento próprio).
+${quem}
 Hoje é ${DIAS_SEMANA_LONGO[dDow(hoje)]}, ${hoje}. O histórico de vendas vai de junho/2024 até ontem.
 
 COMO TRABALHAR
@@ -1951,19 +1953,19 @@ FORMATO (Telegram, texto puro, sem markdown, sem tabelas)
 - Termine com sua recomendação ou uma pergunta que faça a conversa avançar.`;
 }
 
-async function chamarClaudeIA(apiKey, messages) {
+async function chamarClaudeIA(apiKey, messages, sistema) {
   const tools = FERRAMENTAS_IA.map((t, i) => (i === FERRAMENTAS_IA.length - 1 ? { ...t, cache_control: { type: "ephemeral" } } : t));
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST", signal: AbortSignal.timeout(120000),
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODELO_IA, max_tokens: 2000, system: promptSistemaIA(), tools, messages }),
+    body: JSON.stringify({ model: MODELO_IA, max_tokens: 2000, system: sistema, tools, messages }),
   });
   const j = await r.json();
   if (!r.ok) throw new Error(`API do Claude ${r.status}: ${(j.error && j.error.message) || "erro"}`);
   return j;
 }
 
-async function responderIA(chat, pergunta, token, apiKey) {
+async function responderIA(chat, pergunta, token, apiKey, sistema) {
   const ref = db.collection("primus_ia_conversa").doc(chat);
   const s = await ref.get();
   const historico = (s.exists && s.data().mensagens) || [];
@@ -1973,7 +1975,7 @@ async function responderIA(chat, pergunta, token, apiKey) {
 
   for (let volta = 0; volta < IA_MAX_VOLTAS && resposta === null; volta++) {
     await tgApi(token, "sendChatAction", { chat_id: chat, action: "typing" });
-    const j = await chamarClaudeIA(apiKey, messages);
+    const j = await chamarClaudeIA(apiKey, messages, sistema);
     uso.entrada += (j.usage && j.usage.input_tokens) || 0;
     uso.saida += (j.usage && j.usage.output_tokens) || 0;
     uso.cache += (j.usage && j.usage.cache_read_input_tokens) || 0;
@@ -2015,16 +2017,55 @@ async function enviarTextoLongo(token, chat, texto) {
   }
 }
 
+// Quem pode usar a Pri: o dono (TELEGRAM_CHAT_ID) + primus_config/ia.autorizados { chatId: nome }.
+// O dono libera/bloqueia pelo próprio bot: /liberar <id> [nome] · /bloquear <id> · /acessos
+const REF_IA_CONFIG = () => db.collection("primus_config").doc("ia");
+async function autorizadosIA() {
+  const s = await REF_IA_CONFIG().get();
+  return (s.exists && s.data().autorizados) || {};
+}
+
 async function tratarUpdateIA(upd, token, chatDono, apiKey) {
   const msg = upd.message;
   if (!msg || !msg.chat) return;
   const chat = String(msg.chat.id);
   const texto = (msg.text || "").trim();
-  if (chat !== String(chatDono)) {
-    await tgApi(token, "sendMessage", { chat_id: chat, text: "🔒 Este bot é de uso exclusivo do dono da Primus." });
-    console.log(`[IA] chat nao autorizado: ${chat}`);
-    return;
+  const nome = (msg.from && msg.from.first_name) || "";
+  const ehDono = chat === String(chatDono);
+
+  if (ehDono) {
+    const mLib = texto.match(/^\/liberar(?:@\w+)?\s+(-?\d{5,20})(?:\s+(.+))?$/i);
+    if (mLib) {
+      await REF_IA_CONFIG().set({ autorizados: { [mLib[1]]: (mLib[2] || "").trim() || "sem nome" } }, { merge: true });
+      await tgApi(token, "sendMessage", { chat_id: chat, text: `✅ Acesso liberado pro chat ${mLib[1]}${mLib[2] ? ` (${mLib[2].trim()})` : ""}. Peça pra ${mLib[2] ? mLib[2].trim() : "a pessoa"} mandar /start.` });
+      return;
+    }
+    const mBlo = texto.match(/^\/bloquear(?:@\w+)?\s+(-?\d{5,20})$/i);
+    if (mBlo) {
+      const lista = await autorizadosIA();
+      delete lista[mBlo[1]];
+      await REF_IA_CONFIG().set({ autorizados: lista });
+      await db.collection("primus_ia_conversa").doc(mBlo[1]).delete().catch(() => {});
+      await tgApi(token, "sendMessage", { chat_id: chat, text: `🚫 Acesso removido do chat ${mBlo[1]} (e a conversa dele apagada).` });
+      return;
+    }
+    if (/^\/acessos(@\w+)?$/i.test(texto)) {
+      const lista = await autorizadosIA();
+      const linhas = Object.entries(lista).map(([id, n]) => `• ${n} — ${id}`);
+      await tgApi(token, "sendMessage", { chat_id: chat, text: "🔑 Quem usa a Pri:\n• você (dono)\n" + (linhas.join("\n") || "(ninguém mais)") +
+        "\n\nPra liberar: /liberar <número> <nome>\nPra tirar: /bloquear <número>" });
+      return;
+    }
+  } else {
+    const lista = await autorizadosIA();
+    if (!(chat in lista)) {
+      await tgApi(token, "sendMessage", { chat_id: chat,
+        text: `🔒 Oi${nome ? ", " + nome : ""}! A Pri é de uso da gestão da Primus.\nSeu número: ${chat}\nMande esse número pro Jhonathan liberar o acesso.` });
+      console.log(`[IA] chat nao autorizado: ${chat} (${nome})`);
+      return;
+    }
   }
+
   if (!texto) {
     await tgApi(token, "sendMessage", { chat_id: chat, text: "Por enquanto eu só entendo texto. 🙂" });
     return;
@@ -2032,6 +2073,10 @@ async function tratarUpdateIA(upd, token, chatDono, apiKey) {
   if (/^\/(start|ajuda)(@\w+)?$/i.test(texto)) {
     await tgApi(token, "setMyCommands", { commands: [
       { command: "nova", description: "Começar uma conversa nova (esquece o contexto)" },
+      { command: "ajuda", description: "Como usar" }] });
+    if (ehDono) await tgApi(token, "setMyCommands", { scope: { type: "chat", chat_id: Number(chat) }, commands: [
+      { command: "nova", description: "Começar uma conversa nova (esquece o contexto)" },
+      { command: "acessos", description: "Quem pode usar a Pri" },
       { command: "ajuda", description: "Como usar" }] });
     await tgApi(token, "sendMessage", { chat_id: chat, text:
       "🧠 Oi, eu sou a Pri, a inteligência artificial da Primus!\n\nSou sua analista. Tenho acesso (só leitura) às vendas desde jun/2024: faturamento, clientes, vendedores, produtos, clima e previsões.\n\n" +
@@ -2045,7 +2090,7 @@ async function tratarUpdateIA(upd, token, chatDono, apiKey) {
   }
   let resposta;
   try {
-    resposta = await responderIA(chat, texto, token, apiKey);
+    resposta = await responderIA(chat, texto, token, apiKey, promptSistemaIA(nome, ehDono));
   } catch (e) {
     console.error("[IA] erro:", e);
     resposta = `❌ Deu erro na análise: ${String(e.message || e).slice(0, 200)}`;
