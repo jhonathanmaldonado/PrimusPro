@@ -874,6 +874,11 @@ exports.notificarVendas = onDocumentWritten(
     } catch (e) {
       console.error("[pessoas] erro perguntando produtos novos:", e);
     }
+    try {
+      await conferirRealizado(event.params.dia, after.data() || {}, TELEGRAM_PREVISAO_TOKEN.value(), TELEGRAM_CHAT_ID.value());
+    } catch (e) {
+      console.error("[realizado] erro:", e);
+    }
   }
 );
 
@@ -1101,13 +1106,28 @@ async function historicoVendas(ateExclusivo, mapaPessoas) {
 
 function media(arr) { return arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : 0; }
 
+// Véspera de feriado: feriado nos próximos 1 a 3 dias (o próprio dia não é feriado).
+function vesperaDe(d, feriados) {
+  if (feriados[d]) return null;
+  for (let k = 1; k <= 3; k++) {
+    const dd = dAdd(d, k);
+    if (feriados[dd]) return { nome: feriados[dd], data: dd, dias: k };
+  }
+  return null;
+}
+// Fase do mês (ciclo de pagamento): 1–5, 6–10, 11–20, 21–31.
+function faseMes(d) {
+  const n = Number(d.slice(8, 10));
+  return n <= 5 ? 0 : n <= 10 ? 1 : n <= 20 ? 2 : 3;
+}
+
 // Monta a mensagem. Devolve { texto, aberto }. sobDemanda: manda mesmo em dia fechado.
 // opcoes: { apiKey, usarCache } — eventos/leitura do Claude (cache em primus_previsoes/{dia}).
 async function montarPrevisao(dia, sobDemanda = false, opcoes = {}) {
   const ano = Number(dia.slice(0, 4));
   const dow = dDow(dia);
   const [fAtual, fAnt1, fAnt2] = await Promise.all([feriadosDoAno(ano), feriadosDoAno(ano - 1), feriadosDoAno(ano - 2)]);
-  const todosFeriados = { ...fAnt2, ...fAnt1, ...fAtual };
+  const todosFeriados = { ...fAnt2, ...fAnt1, ...fAtual, ...(await feriadosDoAno(ano + 1)) };
   const feriado = fAtual[dia] || null;
   const aberto = !(dow === 1 || dow === 2) || !!feriado;
 
@@ -1120,6 +1140,7 @@ async function montarPrevisao(dia, sobDemanda = false, opcoes = {}) {
 
   // Clima
   let climaHoje = null;
+  let faixaPrev = null;
   try {
     const c = await climaAtendimento(dia);
     climaHoje = c;
@@ -1216,16 +1237,58 @@ async function montarPrevisao(dia, sobDemanda = false, opcoes = {}) {
       partes.push(`👥 <b>Clientes:</b> média de <b>${Math.round(mc)}</b> ${masc(dow) ? "nesses" : "nessas"} ${DIAS_SEMANA_LONGO[dow]}s` +
         ` · ticket ${brl(ticket)}/pessoa` + (cliVend ? ` · ${Math.round(cliVend)} por vendedor` : ""));
     }
+    const dows = `${DIAS_SEMANA_LONGO[dow]}s`;
+    let efeitoVespera = null;
+    // Tendência: últimas 3 x a média do período de referência
+    if (mesmos.length >= 6) {
+      const mRef = media(mesmos.map((d) => hist[d].total));
+      const m3 = media(mesmos.slice(-3).map((d) => hist[d].total));
+      const dv = m3 / mRef - 1;
+      if (Math.abs(dv) >= 0.10) {
+        partes.push(`${dv < 0 ? "📉" : "📈"} <b>Tendência:</b> média ${masc(dow) ? "dos últimos 3" : "das últimas 3"} ${dows} ${brl(m3)} — ` +
+          `${Math.round(Math.abs(dv) * 100)}% ${dv < 0 ? "abaixo" : "acima"} da média ${masc(dow) ? "dos" : "das"} ${mesmos.length}`);
+      }
+    }
+    // Véspera de feriado: compara com as mesmas vésperas do histórico
+    const vesp = feriado ? null : vesperaDe(dia, todosFeriados);
+    if (vesp) {
+      const doTipo = datas.filter((d) => dDow(d) === dow && !todosFeriados[d]);
+      const vespHist = doTipo.filter((d) => vesperaDe(d, todosFeriados));
+      const normais = doTipo.filter((d) => !vesperaDe(d, todosFeriados)).slice(-12);
+      let txt = `⚠️ <b>Véspera de feriado:</b> ${escHtml(vesp.nome)} ${vesp.dias === 1 ? "amanhã" : `em ${vesp.dias} dias`} (${DIAS_SEMANA_LONGO[dDow(vesp.data)]}, ${dBR(vesp.data)})`;
+      if (vespHist.length >= 2 && normais.length >= 3) {
+        const mv = media(vespHist.map((d) => hist[d].total)), mn = media(normais.map((d) => hist[d].total));
+        const ef = mv / mn - 1;
+        efeitoVespera = ef;
+        txt += `\n${masc(dow) ? "Nos" : "Nas"} ${vespHist.length} ${dows} antes de feriado vendemos em média ${brl(mv)} — ` +
+          `<b>${Math.round(Math.abs(ef) * 100)}% ${ef < 0 ? "menos" : "mais"}</b> que ${masc(dow) ? "nos" : "nas"} ${dows} normais (${brl(mn)})` +
+          `\n<i>${vespHist.slice(-3).map((d) => `${dBRAno(d)} ${brl(hist[d].total)}`).join(" · ")}</i>`;
+      } else {
+        txt += `\n<i>Pouco histórico de ${dows} antes de feriado pra medir o efeito.</i>`;
+      }
+      partes.push(txt);
+    }
     if (mesmos.length < 4) partes.push(`<i>⚠️ histórico curto: só ${mesmos.length} ${DIAS_SEMANA_LONGO[dow]}(s) na base.</i>`);
 
     // Dias parecidos + faixa provável + efeito chuva (clima real guardado em primus_clima)
     try {
       const climaHist = await garantirClimaHistorico(datas);
-      const bloco = blocoDiasParecidos({ dia, dow, feriado, climaHoje, hist, climaHist, todosFeriados });
-      if (bloco) partes.push(bloco);
+      const bloco = blocoDiasParecidos({ dia, dow, feriado, climaHoje, hist, climaHist, todosFeriados, efeitoVespera });
+      if (bloco) { partes.push(bloco.texto); faixaPrev = bloco.faixa; }
     } catch (e) {
       console.error(`[previsao ${dia}] dias parecidos:`, e);
     }
+  }
+
+  // Guarda a faixa pra comparar com o realizado (a das 7h é a oficial)
+  if (faixaPrev) {
+    try {
+      const ref = db.collection("primus_previsoes").doc(dia);
+      const s0 = opcoes.oficial ? null : await ref.get();
+      if (opcoes.oficial || !(s0.exists && s0.data().faixa)) {
+        await ref.set({ faixa: faixaPrev, faixaEm: new Date().toISOString(), faixaOficial: !!opcoes.oficial }, { merge: true });
+      }
+    } catch (e) { console.error(`[previsao ${dia}] gravar faixa:`, e.message); }
   }
 
   // Eventos da cidade + leitura do dia (Claude com busca na web)
@@ -1236,7 +1299,7 @@ async function montarPrevisao(dia, sobDemanda = false, opcoes = {}) {
       if (ia) partes.push(blocoEventosLeitura(ia));
     } catch (e) {
       console.error(`[previsao ${dia}] Claude:`, e);
-      partes.push(`🎉 <b>Eventos:</b> <i>busca indisponível agora (${escHtml(String(e.message || e).slice(0, 120))})</i>`);
+      partes.push("🎉 <b>Eventos na cidade</b>\n<i>Não consegui verificar os eventos hoje.</i>");
     }
   }
 
@@ -1249,7 +1312,7 @@ exports.previsaoManha = onSchedule(
   async () => {
     const dia = hojeCuiaba();
     try {
-      const { aberto, texto } = await montarPrevisao(dia, false, { apiKey: ANTHROPIC_API_KEY.value(), usarCache: false });
+      const { aberto, texto } = await montarPrevisao(dia, false, { apiKey: ANTHROPIC_API_KEY.value(), usarCache: false, oficial: true });
       if (!aberto) { console.log(`[previsao ${dia}] casa fechada — não envia`); return; }
       await enviarTelegram(TELEGRAM_PREVISAO_TOKEN.value(), TELEGRAM_CHAT_ID.value(), texto);
     } catch (e) {
@@ -1488,31 +1551,41 @@ function percentil(arr, p) {
   return a[lo] + (a[hi] - a[lo]) * (i - lo);
 }
 
-function blocoDiasParecidos({ dia, dow, feriado, climaHoje, hist, climaHist, todosFeriados }) {
+function blocoDiasParecidos({ dia, dow, feriado, climaHoje, hist, climaHist, todosFeriados, efeitoVespera }) {
   if (!climaHoje) return null;
   const chuvaHoje = climaHoje.probMax >= 50 || climaHoje.mm >= 1;
   const tHoje = climaHoje.tMax;
   const tipo = (d) => (feriado ? !!todosFeriados[d] : dDow(d) === dow && !todosFeriados[d]);
+  const vespHoje = !feriado && !!vesperaDe(dia, todosFeriados);
+  const faseHoje = faseMes(dia);
   const candidatos = Object.keys(hist).filter((d) => tipo(d) && climaHist[d]);
   if (candidatos.length < 3) return null;
 
   const idadeAnos = (d) => (dParse(dia) - dParse(d)) / (365 * 86400000);
   const score = (d) => {
     const c = climaHist[d];
-    return (c.chuva !== chuvaHoje ? 3 : 0) + Math.abs(c.tMax - tHoje) / 3 + idadeAnos(d) * 1.5;
+    return (c.chuva !== chuvaHoje ? 3 : 0) + Math.abs(c.tMax - tHoje) / 3 + idadeAnos(d) * 1.5 +
+      (!feriado && !!vesperaDe(d, todosFeriados) !== vespHoje ? 3 : 0) +   // véspera de feriado pesa como chuva
+      (faseMes(d) !== faseHoje ? 1 : 0);                                     // fase do mês (ciclo do salário)
   };
   const ordenados = candidatos.sort((a, b) => score(a) - score(b));
   const top = ordenados.slice(0, 5);
-  const faixaBase = ordenados.slice(0, 8).map((d) => hist[d].total);
+  // Véspera de feriado com poucos exemplos: os dias normais que entram na faixa são
+  // ajustados pelo efeito véspera medido (ex.: −35%), pra faixa não ficar otimista.
+  const ajustarVesp = vespHoje && efeitoVespera !== null && efeitoVespera !== undefined;
+  const faixaBase = ordenados.slice(0, 8).map((d) =>
+    hist[d].total * (ajustarVesp && !vesperaDe(d, todosFeriados) ? 1 + efeitoVespera : 1));
 
-  const rotTipo = feriado ? "feriados" : `${DIAS_SEMANA_LONGO[dow]}s`;
+  const rotTipo = feriado ? "feriados" : `${DIAS_SEMANA_LONGO[dow]}s${vespHoje ? " antes de feriado" : ""}`;
   const linhas = top.map((d) => {
     const c = climaHist[d], h = hist[d];
     return `• ${DIAS_SEMANA_LONGO[dDow(d)].slice(0, 3)} ${dBRAno(d)} · ${c.tMax}°C ${c.chuva ? "🌧" : "☀️"} · <b>${brl(h.total)}</b>` +
       (h.clientes ? ` · ${Math.round(h.clientes)} clientes` : "") + (todosFeriados[d] ? ` 🎉` : "");
   });
+  const faixa = { min: Math.round(percentil(faixaBase, 0.25)), max: Math.round(percentil(faixaBase, 0.75)) };
   let txt = `🔁 <b>Dias parecidos</b> <i>(${rotTipo}, ${chuvaHoje ? "com chuva" : "sem chuva"}, ~${tHoje}°C)</i>\n${linhas.join("\n")}` +
-    `\n🎯 <b>Faixa provável: ${brl(percentil(faixaBase, 0.25))} a ${brl(percentil(faixaBase, 0.75))}</b>`;
+    `\n🎯 <b>Faixa provável: ${brl(faixa.min)} a ${brl(faixa.max)}</b>` +
+    (ajustarVesp ? ` <i>(ajustada pela véspera: ${Math.round(efeitoVespera * 100)}%)</i>` : "");
 
   // Efeito chuva no último ano, nesse tipo de dia
   const umAno = candidatos.filter((d) => idadeAnos(d) <= 1);
@@ -1520,24 +1593,47 @@ function blocoDiasParecidos({ dia, dow, feriado, climaHoje, hist, climaHist, tod
   const semChuva = umAno.filter((d) => !climaHist[d].chuva).map((d) => hist[d].total);
   if (comChuva.length >= 3 && semChuva.length >= 3) {
     const ef = media(comChuva) / media(semChuva) - 1;
-    txt += `\n☔ Nos ${rotTipo} do último ano, com chuva no almoço vendeu <b>${Math.round(Math.abs(ef) * 100)}% ${ef < 0 ? "menos" : "mais"}</b>` +
+    txt += `\n☔ ${feriado || masc(dow) ? "Nos" : "Nas"} ${rotTipo} do último ano, com chuva no almoço vendeu <b>${Math.round(Math.abs(ef) * 100)}% ${ef < 0 ? "menos" : "mais"}</b>` +
       ` <i>(${comChuva.length} com chuva × ${semChuva.length} sem)</i>`;
   }
-  return txt;
+  return { texto: txt, faixa };
 }
 
 // ---------- eventos + leitura (Claude com busca na web) ----------
 const MODELO_CLAUDE = "claude-sonnet-5-5";
 
+// Acha o JSON da resposta mesmo com texto em volta: tenta os blocos ```json (do último
+// pro primeiro) e depois cada objeto {...} balanceado. Devolve o 1º com eventos/leitura.
 function extrairJson(texto) {
-  const cerca = texto.match(/```json\s*([\s\S]*?)```/);
-  const bruto = cerca ? cerca[1] : texto.slice(texto.indexOf("{"), texto.lastIndexOf("}") + 1);
-  return JSON.parse(bruto);
+  const candidatos = [];
+  const cercas = [...String(texto).matchAll(/```(?:json)?\s*([\s\S]*?)```/g)].map((m) => m[1]);
+  candidatos.push(...cercas.reverse());
+  const t = String(texto);
+  for (let i = t.lastIndexOf("{"); i >= 0; i = t.lastIndexOf("{", i - 1)) {
+    let prof = 0, emTexto = false, esc = false;
+    for (let k = i; k < t.length; k++) {
+      const ch = t[k];
+      if (emTexto) { if (esc) esc = false; else if (ch === "\\") esc = true; else if (ch === '"') emTexto = false; continue; }
+      if (ch === '"') emTexto = true;
+      else if (ch === "{") prof++;
+      else if (ch === "}" && --prof === 0) { candidatos.push(t.slice(i, k + 1)); break; }
+    }
+    if (i === 0) break;
+  }
+  for (const c of candidatos) {
+    for (const tentativa of [c, c.replace(/,\s*([}\]])/g, "$1")]) {
+      try {
+        const j = JSON.parse(tentativa);
+        if (j && typeof j === "object" && ("eventos" in j || "leitura" in j)) return j;
+      } catch (_) { /* tenta o próximo */ }
+    }
+  }
+  throw new Error("sem JSON válido");
 }
 
-async function chamarClaude(apiKey, prompt) {
-  const tools = [{ type: "web_search_20250305", name: "web_search", max_uses: 4,
-    user_location: { type: "approximate", city: "Cuiabá", region: "Mato Grosso", country: "BR", timezone: "America/Cuiaba" } }];
+async function chamarClaude(apiKey, prompt, comBusca = true) {
+  const tools = comBusca ? [{ type: "web_search_20250305", name: "web_search", max_uses: 4,
+    user_location: { type: "approximate", city: "Cuiabá", region: "Mato Grosso", country: "BR", timezone: "America/Cuiaba" } }] : undefined;
   const messages = [{ role: "user", content: prompt }];
   let uso = { entrada: 0, saida: 0, buscas: 0 };
   for (let volta = 0; volta < 3; volta++) {
@@ -1545,7 +1641,7 @@ async function chamarClaude(apiKey, prompt) {
       method: "POST",
       signal: AbortSignal.timeout(150000),
       headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-      body: JSON.stringify({ model: MODELO_CLAUDE, max_tokens: 2000, tools, messages }),
+      body: JSON.stringify({ model: MODELO_CLAUDE, max_tokens: 4000, ...(tools ? { tools } : {}), messages }),
     });
     const j = await r.json();
     if (!r.ok) throw new Error(`API do Claude ${r.status}: ${(j.error && j.error.message) || "erro"}`);
@@ -1580,23 +1676,59 @@ TAREFA 2 — Escreva a leitura do dia em 3 a 6 tópicos curtos (uma ideia por t�
 FATOS DO DIA:
 ${fatos}
 
-No final da resposta, devolva APENAS este JSON (sem texto depois):
+Seja breve fora do JSON (no máximo 2 frases sobre a pesquisa). No final da resposta, devolva APENAS este JSON (sem texto depois):
 \`\`\`json
 {"eventos":[{"nome":"","quando":"","local":"","impacto":"positivo|negativo|neutro","motivo":""}],"leitura":["tópico 1","tópico 2"]}
 \`\`\``;
 
-  const { texto, uso } = await chamarClaude(apiKey, prompt);
-  let ia;
+  const uso = { entrada: 0, saida: 0, buscas: 0 };
+  const somar = (u) => { uso.entrada += u.entrada; uso.saida += u.saida; uso.buscas += u.buscas; };
+  const normalizar = (j) => ({ eventos: Array.isArray(j.eventos) ? j.eventos.slice(0, 6) : [],
+    leitura: Array.isArray(j.leitura) ? j.leitura.map(String).filter(Boolean) : String(j.leitura || "") });
+  let ia = null, bruto = "";
+
+  // 1) busca + leitura
   try {
-    const j = extrairJson(texto);
-    ia = { eventos: Array.isArray(j.eventos) ? j.eventos.slice(0, 6) : [],
-      leitura: Array.isArray(j.leitura) ? j.leitura.map(String).filter(Boolean) : String(j.leitura || "") };
+    const r = await chamarClaude(apiKey, prompt, true);
+    somar(r.uso); bruto = r.texto;
+    ia = normalizar(extrairJson(r.texto));
   } catch (e) {
-    console.error("[Claude] resposta sem JSON válido:", texto.slice(0, 500));
-    throw new Error("resposta do Claude veio fora do formato");
+    console.error(`[Claude ${dia}] 1ª tentativa falhou:`, e.message, bruto ? `| início: ${bruto.slice(0, 300)}` : "");
   }
-  await ref.set({ ia, uso, modelo: MODELO_CLAUDE, geradoEm: new Date().toISOString() }, { merge: true });
-  console.log(`[Claude ${dia}] entrada ${uso.entrada} · saída ${uso.saida} · buscas ${uso.buscas}`);
+  // 2) veio fora do formato: só reorganiza o que já foi pesquisado (sem nova busca)
+  if (!ia && bruto) {
+    try {
+      const r = await chamarClaude(apiKey,
+        `Reorganize o texto abaixo (pesquisa de eventos e leitura do dia de um restaurante) em APENAS este JSON, sem nenhum texto fora dele:\n` +
+        `{"eventos":[{"nome":"","quando":"","local":"","impacto":"positivo|negativo|neutro","motivo":""}],"leitura":["tópico 1","tópico 2"]}\n` +
+        `Se o texto não tiver leitura, escreva 3 a 6 tópicos curtos usando só estes fatos:\n${fatos}\n\nTEXTO:\n${bruto.slice(-6000)}`, false);
+      somar(r.uso);
+      ia = normalizar(extrairJson(r.texto));
+    } catch (e) {
+      console.error(`[Claude ${dia}] reorganizar falhou:`, e.message);
+    }
+  }
+  // 3) busca falhou de vez: avisa que não viu os eventos e escreve a leitura só com os números
+  if (!ia) {
+    let leitura = [];
+    try {
+      const r = await chamarClaude(apiKey,
+        `Você ajuda o dono da Primus Peixaria (restaurante de peixes em Cuiabá, só almoço). Escreva a leitura do dia em 3 a 6 tópicos curtos, ` +
+        `tom direto de dono pra dono, usando SOMENTE os números destes fatos (não crie números). Não comente eventos da cidade.\n` +
+        `Responda APENAS com o JSON {"leitura":["tópico 1","tópico 2"]}\n\nFATOS:\n${fatos}`, false);
+      somar(r.uso);
+      leitura = normalizar(extrairJson(r.texto)).leitura;
+    } catch (e) {
+      console.error(`[Claude ${dia}] leitura sem eventos falhou:`, e.message);
+    }
+    ia = { eventos: null, leitura };
+  }
+
+  // Só guarda no cache quando os eventos vieram (falha não fica salva: o próximo /previsao tenta de novo)
+  const { FieldValue } = require("firebase-admin/firestore");
+  const usoSomado = { entrada: FieldValue.increment(uso.entrada), saida: FieldValue.increment(uso.saida), buscas: FieldValue.increment(uso.buscas) };
+  await ref.set({ ...(ia.eventos !== null ? { ia } : {}), uso: usoSomado, modelo: MODELO_CLAUDE, geradoEm: new Date().toISOString() }, { merge: true });
+  console.log(`[Claude ${dia}] entrada ${uso.entrada} · saída ${uso.saida} · buscas ${uso.buscas}${ia.eventos === null ? " · SEM eventos" : ""}`);
   return ia;
 }
 
@@ -1609,6 +1741,11 @@ function topicosLeitura(leitura) {
 
 function blocoEventosLeitura(ia) {
   const cor = { positivo: "🟢", negativo: "🔴" };
+  if (ia.eventos === null) {
+    const topicos = topicosLeitura(ia.leitura);
+    return "🎉 <b>Eventos na cidade</b>\n<i>Não consegui verificar os eventos hoje. Se souber de algo na cidade, considere na leitura.</i>" +
+      (topicos.length ? `\n\n🧠 <b>Leitura do dia</b>\n${topicos.map((t) => `• ${escHtml(t)}`).join("\n")}` : "");
+  }
   const ev = (ia.eventos || []).filter((e) => e && e.nome);
   const linhasEv = ev.length
     ? ev.map((e) => `${cor[e.impacto] || "⚪"} <b>${escHtml(e.nome)}</b>` +
@@ -1715,7 +1852,7 @@ exports.telegramPrevisao = onRequest(
 
 const MODELO_IA = "claude-sonnet-5-5";
 const IA_MAX_HISTORICO = 20;      // mensagens (pergunta + resposta) guardadas
-const IA_MAX_VOLTAS = 8;          // rodadas de ferramenta por pergunta
+const IA_MAX_VOLTAS = 12;         // rodadas por pergunta (a última é obrigada a responder, sem ferramenta)
 const IA_MAX_DIAS = 1100;         // maior período que uma ferramenta aceita
 const DIA_ISO = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -1749,10 +1886,13 @@ async function carregarDiasIA(ini, fim, comProdutos = false) {
   try { clima = await garantirClimaHistorico(dias.map((x) => x.data)); } catch (_) { /* segue sem clima */ }
   const anos = [...new Set(dias.map((x) => Number(x.data.slice(0, 4))))];
   const fer = {};
-  for (const a of anos) Object.assign(fer, await feriadosDoAno(a));
+  for (const a of [...anos, Math.max(...anos, 0) + 1]) if (a) Object.assign(fer, await feriadosDoAno(a));
   dias.forEach((x) => {
     x.diaSemana = DIAS_SEMANA_LONGO[dDow(x.data)];
     x.feriado = fer[x.data] || null;
+    const v = vesperaDe(x.data, fer);
+    x.vespera = v ? `${v.nome} em ${v.dias} dia(s)` : null;
+    x.fase = ["1-5", "6-10", "11-20", "21-31"][faseMes(x.data)];
     const c = clima[x.data];
     x.clima = c ? { tMax: c.tMax, chuvaAlmoco: !!c.chuva, mm: c.mm } : null;
   });
@@ -1824,6 +1964,13 @@ const FERRAMENTAS_IA = [
     input_schema: { type: "object", properties: {
       inicio: { type: "string" }, fim: { type: "string" }, dia_semana: { type: "string" } },
       required: ["inicio", "fim"] } },
+  { name: "comparar_tipos_de_dia",
+    description: "Testa hipóteses comparando grupos de dias do mesmo dia da semana (sem feriados): 'vespera' (dias com feriado nos 3 dias seguintes x dias normais), 'fase_mes' (dias 1-5, 6-10, 11-20, 21-31: ciclo do salário), 'chuva' (com x sem chuva no almoço), 'tendencia' (últimas 3, 4-8 e 9-16 ocorrências) e 'ano' (por ano). Traz os indicadores do resumo por grupo e exemplos de datas.",
+    input_schema: { type: "object", properties: {
+      criterio: { type: "string", enum: ["vespera", "fase_mes", "chuva", "tendencia", "ano"] },
+      dia_semana: { type: "string", description: "recomendado (ex.: quarta)" },
+      inicio: { type: "string", description: "padrão: 2024-06-01" }, fim: { type: "string", description: "padrão: ontem" } },
+      required: ["criterio"] } },
   { name: "previsao_dia",
     description: "A previsão calculada de um dia (até 16 dias à frente): clima do almoço, vendas de referência, dias parecidos, faixa provável, efeito chuva e, se já existir, os eventos encontrados de manhã.",
     input_schema: { type: "object", properties: { dia: { type: "string", description: "AAAA-MM-DD" } }, required: ["dia"] } },
@@ -1912,9 +2059,29 @@ async function executarFerramentaIA(nome, inp) {
         faturamento_medio_dia: r0(a.faturamento / a.dias), itens_medio_dia: r1(a.itens / a.dias),
         faturamento_medio_da_casa_nos_dias_dele: r0(a.fatDiaCasa / a.dias) })) };
   }
+  if (nome === "comparar_tipos_de_dia") {
+    const ini = inp.inicio || "2024-06-01", fim = inp.fim || dAdd(hojeCuiaba(), -1);
+    const dias = filtrarDiaSemana(await carregarDiasIA(ini, fim), inp.dia_semana).filter((x) => !x.feriado);
+    const n = dias.length;
+    const chave = {
+      vespera: (x) => (x.vespera ? "antes de feriado" : "normal"),
+      fase_mes: (x) => `dias ${x.fase}`,
+      chuva: (x) => (!x.clima ? "sem dado de clima" : x.clima.chuvaAlmoco ? "com chuva no almoço" : "sem chuva no almoço"),
+      tendencia: (x, i) => (i >= n - 3 ? "últimas 3" : i >= n - 8 ? "4ª a 8ª mais recentes" : i >= n - 16 ? "9ª a 16ª" : null),
+      ano: (x) => x.data.slice(0, 4),
+    }[inp.criterio];
+    if (!chave) throw new Error("criterio inválido");
+    const g = {};
+    dias.forEach((x, i) => { const k = chave(x, i); if (k) (g[k] = g[k] || []).push(x); });
+    return { criterio: inp.criterio, dia_semana: inp.dia_semana || "todos", periodo: [ini, fim],
+      observacao: "Feriados excluídos. Grupos com poucos dias (menos de 4) são fracos pra concluir.",
+      grupos: Object.entries(g).map(([k, ds]) => ({ grupo: k, ...resumoGrupo(ds),
+        exemplos: ds.slice(-4).map((x) => `${x.data} R$${r0(x.total)}${x.vespera ? " (" + x.vespera + ")" : ""}`) })) };
+  }
   if (nome === "dias_detalhe") {
     const dias = filtrarDiaSemana(await carregarDiasIA(inp.inicio, inp.fim), inp.dia_semana).slice(-120);
     return { dias: dias.map((x) => ({ data: x.data, dia_semana: x.diaSemana, feriado: x.feriado,
+      vespera_de_feriado: x.vespera, fase_mes: x.fase,
       faturamento: r0(x.total), clientes: x.clientes, vendedores: x.vendedores,
       temp_max: x.clima ? x.clima.tMax : null, chuva_almoco: x.clima ? x.clima.chuvaAlmoco : null })) };
   }
@@ -1923,7 +2090,9 @@ async function executarFerramentaIA(nome, inp) {
     const r = await montarPrevisao(inp.dia, true, {});   // sem nova busca de eventos (não gasta)
     const s = await db.collection("primus_previsoes").doc(inp.dia).get();
     const ia = s.exists ? s.data().ia : null;
-    return { previsao: r.texto.replace(/<[^>]+>/g, ""), eventos_encontrados_de_manha: ia ? ia.eventos : "ainda não buscados pra esse dia" };
+    return { previsao: r.texto.replace(/<[^>]+>/g, ""), eventos_encontrados_de_manha: ia ? ia.eventos : "ainda não buscados pra esse dia",
+      faixa_oficial_das_7h: s.exists && s.data().faixa ? s.data().faixa : null,
+      realizado: s.exists && s.data().realizado ? s.data().realizado : "ainda não fechou / não lançado" };
   }
   throw new Error(`ferramenta desconhecida: ${nome}`);
 }
@@ -1937,11 +2106,21 @@ ${quem}
 Hoje é ${DIAS_SEMANA_LONGO[dDow(hoje)]}, ${hoje}. O histórico de vendas vai de junho/2024 até ontem.
 
 COMO TRABALHAR
+- Planeje antes: peça de uma vez, na mesma rodada, todas as consultas que precisar (várias ferramentas juntas). Use no máximo umas 5 consultas por pergunta e depois responda com o que tiver.
+- Pra explicar por que um dia vendeu diferente do previsto, use previsao_dia (traz a faixa das 7h e o realizado) e comparar_tipos_de_dia (vespera, fase_mes, chuva, tendencia) no mesmo dia da semana.
 - Antes de afirmar qualquer número, consulte as ferramentas. Nunca invente nem estime número que não veio delas. Se o dado não existe no banco (custos, escala futura, opinião dos clientes), diga que não tem.
 - Você é parceira de debate, não puxa-saco: dê sua opinião clara, concorde quando os dados apoiam e discorde quando não apoiam, explicando o porquê.
 - Cuidado com conclusão fácil: correlação não é causa. Ex.: dias com mais vendedores vendem mais porque já se escala mais gente nos dias cheios. Compare sempre o mesmo dia da semana, separe feriados e chuva, e olhe clientes por vendedor pra ver saturação.
 - Quando os dados não decidem, proponha um teste prático (ex.: +1 vendedor em 3 domingos parecidos e comparar com os anteriores).
 - Diga o tamanho da amostra quando ela for pequena.
+
+COMO A PREVISÃO DAS 7H É FEITA (pra você explicar acertos e erros)
+- Referências: média dos últimos 8 dias iguais (mesmo dia da semana, sem feriado), mesma posição no mês e mesma data nos anos anteriores.
+- Dias parecidos: candidatos do mesmo dia da semana (ou outros feriados, se o dia é feriado). Pontuação: chuva no almoço diferente pesa 3, véspera de feriado diferente pesa 3, cada 3°C de diferença pesa 1, fase do mês diferente (1-5, 6-10, 11-20, 21-31) pesa 1, e cada ano de idade pesa 1,5 (dias recentes valem mais).
+- Faixa provável: do percentil 25 ao 75 dos 8 dias mais parecidos — ou seja, por construção, metade dos dias cai fora da faixa. Em véspera de feriado com efeito medido, os dias normais da faixa são ajustados por esse efeito.
+- Efeito chuva: mesmo tipo de dia no último ano, com x sem chuva no almoço. Tendência: últimos 3 x média de referência (só aparece se passar de 10%).
+- Eventos e a leitura do dia vêm de uma busca na web feita às 7h.
+- O que a previsão NÃO vê: reservas, escala real do dia, problemas de operação, obras/trânsito não noticiados, tempo fechado sem chuva. Quando o realizado fugir muito, considere isso e pergunte.
 
 DEFINIÇÕES
 - Clientes = estimativa (quantidade de cada prato × pessoas que ele serve; bebidas e sobremesas contam 0).
@@ -1953,12 +2132,13 @@ FORMATO (Telegram, texto puro, sem markdown, sem tabelas)
 - Termine com sua recomendação ou uma pergunta que faça a conversa avançar.`;
 }
 
-async function chamarClaudeIA(apiKey, messages, sistema) {
+async function chamarClaudeIA(apiKey, messages, sistema, semFerramenta = false) {
   const tools = FERRAMENTAS_IA.map((t, i) => (i === FERRAMENTAS_IA.length - 1 ? { ...t, cache_control: { type: "ephemeral" } } : t));
   const r = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST", signal: AbortSignal.timeout(120000),
     headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({ model: MODELO_IA, max_tokens: 2000, system: sistema, tools, messages }),
+    body: JSON.stringify({ model: MODELO_IA, max_tokens: 2000, system: sistema, tools, messages,
+      ...(semFerramenta ? { tool_choice: { type: "none" } } : {}) }),
   });
   const j = await r.json();
   if (!r.ok) throw new Error(`API do Claude ${r.status}: ${(j.error && j.error.message) || "erro"}`);
@@ -1970,15 +2150,17 @@ async function responderIA(chat, pergunta, token, apiKey, sistema) {
   const s = await ref.get();
   const historico = (s.exists && s.data().mensagens) || [];
   const messages = [...historico.map((m) => ({ role: m.role, content: m.texto })), { role: "user", content: pergunta }];
-  const uso = { entrada: 0, saida: 0, cache: 0, ferramentas: 0 };
+  const uso = { entrada: 0, saida: 0, cache: 0, cacheEscrita: 0, ferramentas: 0 };
   let resposta = null;
 
   for (let volta = 0; volta < IA_MAX_VOLTAS && resposta === null; volta++) {
     await tgApi(token, "sendChatAction", { chat_id: chat, action: "typing" });
-    const j = await chamarClaudeIA(apiKey, messages, sistema);
+    const ultima = volta === IA_MAX_VOLTAS - 1;   // última rodada: responde com o que já tem
+    const j = await chamarClaudeIA(apiKey, messages, sistema, ultima);
     uso.entrada += (j.usage && j.usage.input_tokens) || 0;
     uso.saida += (j.usage && j.usage.output_tokens) || 0;
     uso.cache += (j.usage && j.usage.cache_read_input_tokens) || 0;
+    uso.cacheEscrita += (j.usage && j.usage.cache_creation_input_tokens) || 0;
     const usos = (j.content || []).filter((b) => b.type === "tool_use");
     if (j.stop_reason === "tool_use" && usos.length) {
       messages.push({ role: "assistant", content: j.content });
@@ -1999,7 +2181,7 @@ async function responderIA(chat, pergunta, token, apiKey, sistema) {
     }
     resposta = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
   }
-  if (!resposta) resposta = "Não consegui fechar a análise a tempo (muitas consultas). Tenta perguntar de um jeito mais específico?";
+  if (!resposta) resposta = "Não consegui fechar a análise dessa vez. Tenta de novo ou divide a pergunta em partes?";
 
   // guarda só o texto (pergunta e resposta) — as consultas são refeitas quando precisar
   const novo = [...historico, { role: "user", texto: pergunta }, { role: "assistant", texto: resposta }].slice(-IA_MAX_HISTORICO);
@@ -2007,7 +2189,8 @@ async function responderIA(chat, pergunta, token, apiKey, sistema) {
   const { FieldValue } = require("firebase-admin/firestore");
   await db.collection("primus_ia_uso").doc(hojeCuiaba()).set({
     perguntas: FieldValue.increment(1), entrada: FieldValue.increment(uso.entrada), saida: FieldValue.increment(uso.saida),
-    cache: FieldValue.increment(uso.cache), ferramentas: FieldValue.increment(uso.ferramentas) }, { merge: true });
+    cache: FieldValue.increment(uso.cache), cacheEscrita: FieldValue.increment(uso.cacheEscrita),
+    ferramentas: FieldValue.increment(uso.ferramentas) }, { merge: true });
   return resposta;
 }
 
@@ -2049,6 +2232,18 @@ async function tratarUpdateIA(upd, token, chatDono, apiKey) {
       await tgApi(token, "sendMessage", { chat_id: chat, text: `🚫 Acesso removido do chat ${mBlo[1]} (e a conversa dele apagada).` });
       return;
     }
+    const mCus = texto.match(/^\/custos(?:@\w+)?\s*(\d{1,2}\/\d{4})?$/i);
+    if (mCus) {
+      await tgApi(token, "sendChatAction", { chat_id: chat, action: "typing" });
+      let ini, fim;
+      if (mCus[1]) {
+        const [m, a] = mCus[1].split("/").map(Number);
+        ini = `${a}-${String(m).padStart(2, "0")}-01`;
+        fim = dAdd(`${m === 12 ? a + 1 : a}-${String(m === 12 ? 1 : m + 1).padStart(2, "0")}-01`, -1);
+      }
+      await tgApi(token, "sendMessage", { chat_id: chat, text: await textoCustos(ini, fim) });
+      return;
+    }
     if (/^\/acessos(@\w+)?$/i.test(texto)) {
       const lista = await autorizadosIA();
       const linhas = Object.entries(lista).map(([id, n]) => `• ${n} — ${id}`);
@@ -2077,6 +2272,7 @@ async function tratarUpdateIA(upd, token, chatDono, apiKey) {
     if (ehDono) await tgApi(token, "setMyCommands", { scope: { type: "chat", chat_id: Number(chat) }, commands: [
       { command: "nova", description: "Começar uma conversa nova (esquece o contexto)" },
       { command: "acessos", description: "Quem pode usar a Pri" },
+      { command: "custos", description: "Quanto a I.A. gastou no mês (ou /custos 10/2026)" },
       { command: "ajuda", description: "Como usar" }] });
     await tgApi(token, "sendMessage", { chat_id: chat, text:
       "🧠 Oi, eu sou a Pri, a inteligência artificial da Primus!\n\nSou sua analista. Tenho acesso (só leitura) às vendas desde jun/2024: faturamento, clientes, vendedores, produtos, clima e previsões.\n\n" +
@@ -2119,3 +2315,124 @@ exports.telegramIA = onRequest(
 // ===== GOOGLE MEU NEGÓCIO (avaliações) — módulo separado: functions/avaliacoes.js =====
 // Bot Google Meu Negócio: checarAvaliacoes (todo dia às 10h) + webhook telegramGmn.
 Object.assign(exports, require("./avaliacoes")({ REGIAO, TELEGRAM_CHAT_ID, TELEGRAM_WEBHOOK_SECRET, ANTHROPIC_API_KEY }));
+
+// ===== PREVISÃO × REALIZADO =====
+// Quando as vendas de um dia recente chegam, compara com a faixa prevista e avisa no
+// Primus Previsão. Não roda pra venda parcial (/vendas hoje antes das 16h) nem pro lote.
+async function conferirRealizado(dia, vendasDia, token, chatPadrao) {
+  if (!token) return;
+  const hoje = hojeCuiaba();
+  if (dia < dAdd(hoje, -2)) return;
+  const horaCuiaba = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "America/Cuiaba", hour: "2-digit", hour12: false }).format(new Date()));
+  if (dia === hoje && horaCuiaba < 16) return;   // ainda no meio do expediente
+  const total = Number((vendasDia.totais && vendasDia.totais.total) || 0);
+  if (total <= 0) return;
+  const ref = db.collection("primus_previsoes").doc(dia);
+  const s = await ref.get();
+  const prev = s.exists ? s.data() : null;
+  if (!prev || !prev.faixa) return;
+  const ant = prev.realizado && prev.realizado.total;
+  if (ant && Math.abs(total - ant) / ant < 0.02) return;   // já avisado com esse valor
+
+  const { min, max } = prev.faixa;
+  let veredito;
+  if (total < min) veredito = `⚠️ <b>${Math.round((1 - total / min) * 100)}% abaixo do piso</b>`;
+  else if (total > max) veredito = `🚀 <b>${Math.round((total / max - 1) * 100)}% acima do teto</b>`;
+  else veredito = "✅ <b>Dentro da faixa</b>";
+  await ref.set({ realizado: { total, em: new Date().toISOString(),
+    resultado: total < min ? "abaixo" : total > max ? "acima" : "dentro" } }, { merge: true });
+
+  // placar dos últimos 30 dias com previsão oficial
+  const snap = await db.collection("primus_previsoes").where(FieldPath.documentId(), ">=", dAdd(hoje, -30)).get();
+  const placar = { dentro: 0, abaixo: 0, acima: 0 };
+  snap.forEach((d) => { const r = d.data().realizado; if (r && placar[r.resultado] !== undefined) placar[r.resultado]++; });
+  const n = placar.dentro + placar.abaixo + placar.acima;
+
+  const texto = `🎯 <b>Previsão × realizado — ${DIAS_SEMANA_LONGO[dDow(dia)]}, ${dBR(dia)}</b>\n` +
+    `Vendemos <b>${brl(total)}</b> · faixa prevista ${brl(min)} a ${brl(max)}\n${veredito}` +
+    (n >= 3 ? `\n<i>Últimos 30 dias: ${placar.dentro} dentro · ${placar.abaixo} abaixo · ${placar.acima} acima (${n} dias)</i>` : "") +
+    (ant ? "\n<i>(valor atualizado)</i>" : "");
+  await enviarTelegram(token, chatPadrao, texto);
+}
+
+// ===== CUSTOS DA I.A. (estimativa pelos tokens registrados) =====
+// Preços do Claude Sonnet 5.5 em US$ por milhão de tokens; busca na web por unidade.
+// Se a Anthropic mudar o preço, atualizar aqui. Valor oficial: Console → Gastos e uso.
+const PRECO_IA = { entrada: 2, saida: 10, cacheLeitura: 0.20, cacheEscrita: 2.50, busca: 0.01 };
+const usd = (v) => "US$ " + (v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const reais = (v) => "R$ " + (v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+async function cotacaoDolar() {
+  try {
+    const j = await buscarJson("https://economia.awesomeapi.com.br/json/last/USD-BRL");
+    const v = Number(j && j.USDBRL && j.USDBRL.bid);
+    return v > 0 ? v : null;
+  } catch (_) { return null; }
+}
+
+async function somarCustos(ini, fim) {
+  const porId = (col) => db.collection(col).where(FieldPath.documentId(), ">=", ini).where(FieldPath.documentId(), "<=", fim).get();
+  const [sPri, sPrev, sGmn] = await Promise.all([porId("primus_ia_uso"), porId("primus_previsoes"), porId("primus_gmn_uso")]);
+  const pri = { perguntas: 0, usd: 0 }, prev = { dias: 0, buscas: 0, usd: 0 }, gmn = { chamadas: 0, usd: 0 };
+  sGmn.forEach((d) => {
+    const u = d.data() || {};
+    gmn.chamadas += u.chamadas || 0;
+    gmn.usd += ((u.entrada || 0) * PRECO_IA.entrada + (u.saida || 0) * PRECO_IA.saida) / 1e6;
+  });
+  sPri.forEach((d) => {
+    const u = d.data() || {};
+    pri.perguntas += u.perguntas || 0;
+    pri.usd += ((u.entrada || 0) * PRECO_IA.entrada + (u.saida || 0) * PRECO_IA.saida +
+      (u.cache || 0) * PRECO_IA.cacheLeitura + (u.cacheEscrita || 0) * PRECO_IA.cacheEscrita) / 1e6;
+  });
+  sPrev.forEach((d) => {
+    const u = (d.data() || {}).uso;
+    if (!u) return;
+    prev.dias++;
+    prev.buscas += u.buscas || 0;
+    prev.usd += ((u.entrada || 0) * PRECO_IA.entrada + (u.saida || 0) * PRECO_IA.saida) / 1e6 + (u.buscas || 0) * PRECO_IA.busca;
+  });
+  return { pri, prev, gmn, total: pri.usd + prev.usd + gmn.usd };
+}
+
+// Texto do /custos e do resumo de segunda. Sem período: mês atual até hoje, com projeção.
+async function textoCustos(ini, fim) {
+  const hoje = hojeCuiaba();
+  const mesAtual = !ini;
+  if (mesAtual) { ini = hoje.slice(0, 8) + "01"; fim = hoje; }
+  const [c, dolar] = await Promise.all([somarCustos(ini, fim), cotacaoDolar()]);
+  const emReais = (v) => (dolar ? ` (≈ ${reais(v * dolar)})` : "");
+  const nomeMes = MESES_PT[Number(ini.slice(5, 7)) - 1];
+  const linhas = [
+    `💰 Custos da I.A. — ${nomeMes}/${ini.slice(0, 4)}${mesAtual ? ` (até ${dBR(hoje)})` : ""}`,
+    "",
+    `🧠 Pri: ${c.pri.perguntas} pergunta(s) · ${usd(c.pri.usd)}`,
+    `🌤 Previsão: ${c.prev.dias} dia(s) · ${c.prev.buscas} busca(s) na web · ${usd(c.prev.usd)}`,
+    `⭐ Avaliações do Google: ${c.gmn.chamadas} sugestão(ões) de resposta · ${usd(c.gmn.usd)}`,
+    `Total: ${usd(c.total)}${emReais(c.total)}`,
+  ];
+  if (mesAtual) {
+    const diasPassados = Number(hoje.slice(8, 10));
+    const diasMes = new Date(Date.UTC(Number(hoje.slice(0, 4)), Number(hoje.slice(5, 7)), 0)).getUTCDate();
+    const proj = c.total / diasPassados * diasMes;
+    const cHoje = await somarCustos(hoje, hoje);
+    linhas.push(`📈 Projeção do mês: ${usd(proj)}${emReais(proj)}`, `Hoje: ${usd(cHoje.total)}`);
+  }
+  linhas.push("", `Estimativa pelos tokens registrados${dolar ? ` · dólar a ${reais(dolar)}` : ""}. Avaliações contam a partir de 19/11. Valor oficial: Console da Anthropic → Gastos e uso.`);
+  return linhas.join("\n");
+}
+
+// Resumo automático: toda segunda às 9h, na conversa do dono com a Pri.
+exports.resumoCustosIA = onSchedule(
+  { schedule: "0 9 * * 1", timeZone: "America/Cuiaba", region: REGIAO, secrets: [TELEGRAM_IA_TOKEN, TELEGRAM_CHAT_ID] },
+  async () => {
+    try {
+      const hoje = hojeCuiaba();
+      const semana = await somarCustos(dAdd(hoje, -7), dAdd(hoje, -1));
+      const texto = `📊 Semana passada: ${usd(semana.total)} (Pri ${usd(semana.pri.usd)} · previsão ${usd(semana.prev.usd)} · avaliações ${usd(semana.gmn.usd)})\n\n` + await textoCustos();
+      await tgApi(TELEGRAM_IA_TOKEN.value(), "sendMessage", { chat_id: TELEGRAM_CHAT_ID.value(), text: texto });
+    } catch (e) {
+      console.error("[custos] erro no resumo semanal:", e);
+    }
+  }
+);

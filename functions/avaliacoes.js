@@ -167,7 +167,23 @@ EXEMPLOS DO TOM:
     });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(`API do Claude ${r.status}: ${(j.error && j.error.message) || "erro"}`);
+    await registrarUso(j.usage);
     return (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
+  }
+
+  // Uso de tokens por dia (Cuiabá) em primus_gmn_uso/{AAAA-MM-DD} — entra no /custos da Pri.
+  async function registrarUso(u) {
+    if (!u) return;
+    try {
+      const dia = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Cuiaba", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+      await db.collection("primus_gmn_uso").doc(dia).set({
+        chamadas: FieldValue.increment(1),
+        entrada: FieldValue.increment(u.input_tokens || 0),
+        saida: FieldValue.increment(u.output_tokens || 0),
+      }, { merge: true });
+    } catch (e) {
+      console.error("[gmn] erro registrando uso:", e.message);
+    }
   }
 
   function rascunhoPadrao(av) {
