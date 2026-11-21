@@ -1689,9 +1689,12 @@ async function chamarClaude(apiKey, prompt, comBusca = true) {
 
 async function eventosELeitura(dia, fatos, apiKey, usarCache) {
   const ref = db.collection("primus_previsoes").doc(dia);
+  // Cache só vale se os números do dia forem os mesmos de quando a leitura foi escrita;
+  // se o clima, a faixa ou o histórico mudaram, escreve de novo (senão a leitura contradiz o resto).
+  const chaveFatos = require("crypto").createHash("sha1").update(fatos).digest("hex").slice(0, 12);
   if (usarCache) {
     const s = await ref.get();
-    if (s.exists && s.data().ia) return s.data().ia;
+    if (s.exists && s.data().ia && s.data().iaFatos === chaveFatos) return s.data().ia;
   }
   const dow = dDow(dia);
   const prompt =
@@ -1756,7 +1759,7 @@ Seja breve fora do JSON (no máximo 2 frases sobre a pesquisa). No final da resp
   // Só guarda no cache quando os eventos vieram (falha não fica salva: o próximo /previsao tenta de novo)
   const { FieldValue } = require("firebase-admin/firestore");
   const usoSomado = { entrada: FieldValue.increment(uso.entrada), saida: FieldValue.increment(uso.saida), buscas: FieldValue.increment(uso.buscas) };
-  await ref.set({ ...(ia.eventos !== null ? { ia } : {}), uso: usoSomado, modelo: MODELO_CLAUDE, geradoEm: new Date().toISOString() }, { merge: true });
+  await ref.set({ ...(ia.eventos !== null ? { ia, iaFatos: chaveFatos } : {}), uso: usoSomado, modelo: MODELO_CLAUDE, geradoEm: new Date().toISOString() }, { merge: true });
   console.log(`[Claude ${dia}] entrada ${uso.entrada} · saída ${uso.saida} · buscas ${uso.buscas}${ia.eventos === null ? " · SEM eventos" : ""}`);
   return ia;
 }
