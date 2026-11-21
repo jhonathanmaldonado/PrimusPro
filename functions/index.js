@@ -948,7 +948,15 @@ const ordinal = (n, dow) => `${n}${masc(dow) ? "º" : "ª"}`;
 const MESES_PT = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
   "agosto", "setembro", "outubro", "novembro", "dezembro"];
 // Feriados municipais/estaduais (MM-DD) que a BrasilAPI não traz.
-const FERIADOS_LOCAIS = { "04-08": "Aniversário de Cuiabá" };
+const FERIADOS_LOCAIS = {
+  "04-08": "Aniversário de Cuiabá",
+  // Véspera de Natal e de Ano Novo contam como feriado (o movimento é de feriado;
+  // a casa não abre no Natal nem no Réveillon) — então 23/12 e 30/12 viram as vésperas.
+  "12-24": "Véspera de Natal",
+  "12-31": "Véspera de Ano Novo",
+};
+// Feriados em que a casa NÃO abre: sem previsão nesses dias.
+const CASA_FECHADA = { "12-25": "Natal", "01-01": "Ano Novo" };
 const AMOSTRA_MESMO_DIA = 8; // últimas N ocorrências do mesmo dia da semana
 
 // ---------- datas (sempre 'YYYY-MM-DD', sem fuso) ----------
@@ -1106,14 +1114,12 @@ async function historicoVendas(ateExclusivo, mapaPessoas) {
 
 function media(arr) { return arr.length ? arr.reduce((s, x) => s + x, 0) / arr.length : 0; }
 
-// Véspera de feriado: feriado nos próximos 1 a 3 dias (o próprio dia não é feriado).
+// Véspera de feriado: SÓ o dia imediatamente anterior ao feriado (o próprio dia não é feriado).
+// 24/12 e 31/12 já contam como feriado (FERIADOS_LOCAIS), então as vésperas deles são 23/12 e 30/12.
 function vesperaDe(d, feriados) {
   if (feriados[d]) return null;
-  for (let k = 1; k <= 3; k++) {
-    const dd = dAdd(d, k);
-    if (feriados[dd]) return { nome: feriados[dd], data: dd, dias: k };
-  }
-  return null;
+  const amanha = dAdd(d, 1);
+  return feriados[amanha] ? { nome: feriados[amanha], data: amanha, dias: 1 } : null;
 }
 // Fase do mês (ciclo de pagamento): 1–5, 6–10, 11–20, 21–31.
 function faseMes(d) {
@@ -1129,11 +1135,12 @@ async function montarPrevisao(dia, sobDemanda = false, opcoes = {}) {
   const [fAtual, fAnt1, fAnt2] = await Promise.all([feriadosDoAno(ano), feriadosDoAno(ano - 1), feriadosDoAno(ano - 2)]);
   const todosFeriados = { ...fAnt2, ...fAnt1, ...fAtual, ...(await feriadosDoAno(ano + 1)) };
   const feriado = fAtual[dia] || null;
-  const aberto = !(dow === 1 || dow === 2) || !!feriado;
+  const fechadoFeriado = CASA_FECHADA[dia.slice(5)] || null;
+  const aberto = !fechadoFeriado && (!(dow === 1 || dow === 2) || !!feriado);
 
   const titulo = `📅 <b>Previsão — ${DIAS_SEMANA_LONGO[dow]}, ${dBR(dia)}</b>`;
   if (!aberto) {
-    return { aberto, texto: `${titulo}\n💤 Casa fechada (${DIAS_SEMANA_LONGO[dow]} sem feriado).` };
+    return { aberto, texto: `${titulo}\n💤 Casa fechada (${fechadoFeriado || `${DIAS_SEMANA_LONGO[dow]} sem feriado`}).` };
   }
 
   const partes = [titulo + (feriado ? `\n🎉 <b>Feriado:</b> ${escHtml(feriado)}` : "")];
@@ -1558,43 +1565,65 @@ function blocoDiasParecidos({ dia, dow, feriado, climaHoje, hist, climaHist, tod
   const tipo = (d) => (feriado ? !!todosFeriados[d] : dDow(d) === dow && !todosFeriados[d]);
   const vespHoje = !feriado && !!vesperaDe(dia, todosFeriados);
   const faseHoje = faseMes(dia);
-  const candidatos = Object.keys(hist).filter((d) => tipo(d) && climaHist[d]);
+
+  // "Média da época" de um dia: média dos mesmos dias da semana (sem feriado)
+  // nas 8 semanas anteriores. Serve pra comparar comportamento, não patamar:
+  // uma quinta de 2024 que vendeu 30% abaixo da época vale tanto quanto uma de 2026.
+  const datasOrd = Object.keys(hist).sort();
+  const cacheBase = {};
+  const baseDe = (d) => {
+    if (d in cacheBase) return cacheBase[d];
+    const ini = dAdd(d, -56), w = dDow(d);
+    const vals = datasOrd.filter((x) => x >= ini && x < d && dDow(x) === w && !todosFeriados[x]).map((x) => hist[x].total);
+    return (cacheBase[d] = vals.length >= 3 ? media(vals) : null);
+  };
+  const razao = (d) => { const b = baseDe(d); return b ? hist[d].total / b : null; };
+
+  // Patamar de hoje: média das últimas 8 do mesmo dia da semana (sem feriado)
+  const ultimas = datasOrd.filter((x) => x < dia && dDow(x) === dow && !todosFeriados[x]).slice(-8);
+  if (ultimas.length < 3) return null;
+  const baseHoje = media(ultimas.map((x) => hist[x].total));
+
+  const candidatos = Object.keys(hist).filter((d) => d < dia && tipo(d) && climaHist[d] && razao(d) !== null);
   if (candidatos.length < 3) return null;
 
   const idadeAnos = (d) => (dParse(dia) - dParse(d)) / (365 * 86400000);
   const score = (d) => {
     const c = climaHist[d];
-    return (c.chuva !== chuvaHoje ? 3 : 0) + Math.abs(c.tMax - tHoje) / 3 + idadeAnos(d) * 1.5 +
+    return (c.chuva !== chuvaHoje ? 3 : 0) + Math.abs(c.tMax - tHoje) / 3 +
       (!feriado && !!vesperaDe(d, todosFeriados) !== vespHoje ? 3 : 0) +   // véspera de feriado pesa como chuva
-      (faseMes(d) !== faseHoje ? 1 : 0);                                     // fase do mês (ciclo do salário)
+      (faseMes(d) !== faseHoje ? 1 : 0) +                                    // fase do mês (ciclo do salário)
+      idadeAnos(d) * 0.3;                                                    // idade quase não pesa: só desempata
   };
   const ordenados = candidatos.sort((a, b) => score(a) - score(b));
   const top = ordenados.slice(0, 5);
-  // Véspera de feriado com poucos exemplos: os dias normais que entram na faixa são
-  // ajustados pelo efeito véspera medido (ex.: −35%), pra faixa não ficar otimista.
+  // Véspera com poucos exemplos: dias normais que entram na faixa são ajustados pelo efeito véspera medido.
   const ajustarVesp = vespHoje && efeitoVespera !== null && efeitoVespera !== undefined;
   const faixaBase = ordenados.slice(0, 8).map((d) =>
-    hist[d].total * (ajustarVesp && !vesperaDe(d, todosFeriados) ? 1 + efeitoVespera : 1));
+    baseHoje * razao(d) * (ajustarVesp && !vesperaDe(d, todosFeriados) ? 1 + efeitoVespera : 1));
 
   const rotTipo = feriado ? "feriados" : `${DIAS_SEMANA_LONGO[dow]}s${vespHoje ? " antes de feriado" : ""}`;
+  const pct = (r) => { const p = Math.round((r - 1) * 100); return p === 0 ? "na média" : `${p > 0 ? "+" : ""}${p}%`; };
   const linhas = top.map((d) => {
     const c = climaHist[d], h = hist[d];
-    return `• ${DIAS_SEMANA_LONGO[dDow(d)].slice(0, 3)} ${dBRAno(d)} · ${c.tMax}°C ${c.chuva ? "🌧" : "☀️"} · <b>${brl(h.total)}</b>` +
-      (h.clientes ? ` · ${Math.round(h.clientes)} clientes` : "") + (todosFeriados[d] ? ` 🎉` : "");
+    return `• ${DIAS_SEMANA_LONGO[dDow(d)].slice(0, 3)} ${dBRAno(d)} · ${c.tMax}°C ${c.chuva ? "🌧" : "☀️"} · ${brl(h.total)} <b>(${pct(razao(d))})</b>` +
+      (todosFeriados[d] ? ` 🎉` : "") + (!feriado && vesperaDe(d, todosFeriados) ? ` 📅` : "");
   });
   const faixa = { min: Math.round(percentil(faixaBase, 0.25)), max: Math.round(percentil(faixaBase, 0.75)) };
-  let txt = `🔁 <b>Dias parecidos</b> <i>(${rotTipo}, ${chuvaHoje ? "com chuva" : "sem chuva"}, ~${tHoje}°C)</i>\n${linhas.join("\n")}` +
+  let txt = `🔁 <b>Dias parecidos</b> <i>(${rotTipo}, ${chuvaHoje ? "com chuva" : "sem chuva"}, ~${tHoje}°C)</i>\n` +
+    `<i>% = quanto o dia vendeu em relação ${feriado ? "aos dias normais (mesmo dia da semana)" : (masc(dow) ? "aos " : "às ") + DIAS_SEMANA_LONGO[dow] + "s"} daquela época</i>\n${linhas.join("\n")}` +
     `\n🎯 <b>Faixa provável: ${brl(faixa.min)} a ${brl(faixa.max)}</b>` +
-    (ajustarVesp ? ` <i>(ajustada pela véspera: ${Math.round(efeitoVespera * 100)}%)</i>` : "");
+    `\n<i>(média atual ${feriado || masc(dow) ? "dos" : "das"} ${DIAS_SEMANA_LONGO[dow]}s ${brl(baseHoje)} × desempenho dos dias parecidos` +
+    (ajustarVesp ? `; ajustada pela véspera: ${Math.round(efeitoVespera * 100)}%` : "") + `)</i>`;
 
-  // Efeito chuva no último ano, nesse tipo de dia
-  const umAno = candidatos.filter((d) => idadeAnos(d) <= 1);
-  const comChuva = umAno.filter((d) => climaHist[d].chuva).map((d) => hist[d].total);
-  const semChuva = umAno.filter((d) => !climaHist[d].chuva).map((d) => hist[d].total);
+  // Efeito chuva: todo o histórico desse dia da semana, comparando desempenho relativo
+  const doDia = Object.keys(hist).filter((d) => d < dia && dDow(d) === dow && !todosFeriados[d] && climaHist[d] && razao(d) !== null);
+  const comChuva = doDia.filter((d) => climaHist[d].chuva).map(razao);
+  const semChuva = doDia.filter((d) => !climaHist[d].chuva).map(razao);
   if (comChuva.length >= 3 && semChuva.length >= 3) {
     const ef = media(comChuva) / media(semChuva) - 1;
-    txt += `\n☔ ${feriado || masc(dow) ? "Nos" : "Nas"} ${rotTipo} do último ano, com chuva no almoço vendeu <b>${Math.round(Math.abs(ef) * 100)}% ${ef < 0 ? "menos" : "mais"}</b>` +
-      ` <i>(${comChuva.length} com chuva × ${semChuva.length} sem)</i>`;
+    txt += `\n☔ ${masc(dow) ? "Nos" : "Nas"} ${DIAS_SEMANA_LONGO[dow]}s com chuva no almoço a venda fica <b>${Math.round(Math.abs(ef) * 100)}% ${ef < 0 ? "abaixo" : "acima"}</b>` +
+      ` <i>(${comChuva.length} com chuva × ${semChuva.length} sem, desde ${dBRAno(doDia.sort()[0])})</i>`;
   }
   return { texto: txt, faixa };
 }
@@ -1965,7 +1994,7 @@ const FERRAMENTAS_IA = [
       inicio: { type: "string" }, fim: { type: "string" }, dia_semana: { type: "string" } },
       required: ["inicio", "fim"] } },
   { name: "comparar_tipos_de_dia",
-    description: "Testa hipóteses comparando grupos de dias do mesmo dia da semana (sem feriados): 'vespera' (dias com feriado nos 3 dias seguintes x dias normais), 'fase_mes' (dias 1-5, 6-10, 11-20, 21-31: ciclo do salário), 'chuva' (com x sem chuva no almoço), 'tendencia' (últimas 3, 4-8 e 9-16 ocorrências) e 'ano' (por ano). Traz os indicadores do resumo por grupo e exemplos de datas.",
+    description: "Testa hipóteses comparando grupos de dias do mesmo dia da semana (sem feriados): 'vespera' (dia imediatamente antes de feriado x dias normais; 24/12 e 31/12 contam como feriado), 'fase_mes' (dias 1-5, 6-10, 11-20, 21-31: ciclo do salário), 'chuva' (com x sem chuva no almoço), 'tendencia' (últimas 3, 4-8 e 9-16 ocorrências) e 'ano' (por ano). Traz os indicadores do resumo por grupo e exemplos de datas.",
     input_schema: { type: "object", properties: {
       criterio: { type: "string", enum: ["vespera", "fase_mes", "chuva", "tendencia", "ano"] },
       dia_semana: { type: "string", description: "recomendado (ex.: quarta)" },
@@ -2116,7 +2145,8 @@ COMO TRABALHAR
 
 COMO A PREVISÃO DAS 7H É FEITA (pra você explicar acertos e erros)
 - Referências: média dos últimos 8 dias iguais (mesmo dia da semana, sem feriado), mesma posição no mês e mesma data nos anos anteriores.
-- Dias parecidos: candidatos do mesmo dia da semana (ou outros feriados, se o dia é feriado). Pontuação: chuva no almoço diferente pesa 3, véspera de feriado diferente pesa 3, cada 3°C de diferença pesa 1, fase do mês diferente (1-5, 6-10, 11-20, 21-31) pesa 1, e cada ano de idade pesa 1,5 (dias recentes valem mais).
+- Feriados: os nacionais + 08/04 (Cuiabá); 24/12 e 31/12 contam como feriado. A casa não abre em 25/12 nem em 01/01. Véspera de feriado = só o dia imediatamente anterior.
+- Dias parecidos: candidatos do mesmo dia da semana (ou outros feriados, se o dia é feriado), de qualquer ano. Cada dia é medido pelo DESEMPENHO RELATIVO: quanto vendeu em relação à média do mesmo dia da semana (sem feriado) nas 8 semanas anteriores a ele ("+15%", "−30%"). Pontuação de parecença: chuva no almoço diferente pesa 3, véspera de feriado diferente pesa 3, cada 3°C de diferença pesa 1, fase do mês diferente (1-5, 6-10, 11-20, 21-31) pesa 1, e a idade só desempata (0,3 por ano). Faixa provável = média atual das últimas 8 do dia da semana × desempenho dos 8 dias mais parecidos (percentis 25 a 75). O efeito chuva também é calculado no desempenho relativo, com todo o histórico daquele dia da semana.
 - Faixa provável: do percentil 25 ao 75 dos 8 dias mais parecidos — ou seja, por construção, metade dos dias cai fora da faixa. Em véspera de feriado com efeito medido, os dias normais da faixa são ajustados por esse efeito.
 - Efeito chuva: mesmo tipo de dia no último ano, com x sem chuva no almoço. Tendência: últimos 3 x média de referência (só aparece se passar de 10%).
 - Eventos e a leitura do dia vêm de uma busca na web feita às 7h.
