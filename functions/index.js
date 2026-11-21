@@ -1127,6 +1127,28 @@ function faseMes(d) {
   return n <= 5 ? 0 : n <= 10 ? 1 : n <= 20 ? 2 : 3;
 }
 
+// ---------- dias atípicos ----------
+// Dias que não servem de comparação (eleição com lei seca, falta de luz, reforma...).
+// Eleições (anos pares): 1º turno no 1º domingo de outubro, 2º turno no último domingo de outubro.
+// Marcação manual em primus_config/dias_atipicos.mapa { "AAAA-MM-DD": "motivo" | false }
+// (false = "esse dia foi normal", desfaz a marcação automática da eleição).
+const REF_ATIPICOS = () => db.collection("primus_config").doc("dias_atipicos");
+function diasEleicao(ano) {
+  if (ano % 2) return {};
+  const domingos = [];
+  for (let d = 1; d <= 31; d++) { const dt = new Date(Date.UTC(ano, 9, d)); if (dt.getUTCDay() === 0) domingos.push(dIso(dt)); }
+  return { [domingos[0]]: "Eleição (1º turno) — lei seca", [domingos[domingos.length - 1]]: "Eleição (2º turno) — lei seca" };
+}
+async function lerDiasAtipicos() {
+  let manual = {};
+  try { const s = await REF_ATIPICOS().get(); manual = (s.exists && s.data().mapa) || {}; } catch (_) { /* segue só com eleições */ }
+  const anoAtual = Number(hojeCuiaba().slice(0, 4));
+  const out = {};
+  for (let a = 2024; a <= anoAtual + 1; a++) Object.assign(out, diasEleicao(a));
+  for (const [d, motivo] of Object.entries(manual)) { if (motivo === false) delete out[d]; else out[d] = String(motivo); }
+  return out;
+}
+
 // Monta a mensagem. Devolve { texto, aberto }. sobDemanda: manda mesmo em dia fechado.
 // opcoes: { apiKey, usarCache } — eventos/leitura do Claude (cache em primus_previsoes/{dia}).
 async function montarPrevisao(dia, sobDemanda = false, opcoes = {}) {
@@ -1165,6 +1187,30 @@ async function montarPrevisao(dia, sobDemanda = false, opcoes = {}) {
   // Vendas de referência
   const mapaPessoas = await lerPessoasPorProduto();
   const hist = await historicoVendas(dia, mapaPessoas);
+  // Dias atípicos saem de todas as comparações (média, dias parecidos, efeito chuva...).
+  const atipicos = await lerDiasAtipicos();
+  const atipicoHoje = atipicos[dia] || null;
+  const histAtipico = {};
+  let efeitoAtipico = null;
+  for (const d of Object.keys(hist)) if (atipicos[d]) { histAtipico[d] = hist[d]; delete hist[d]; }
+  if (atipicoHoje) {
+    // Como foram os dias atípicos do mesmo tipo, em relação aos mesmos dias da semana da época
+    const chave = atipicoHoje.split(" ")[0].toLowerCase();
+    const ds = Object.keys(hist).sort();
+    const efs = [];
+    const linhasAt = Object.keys(histAtipico).filter((d) => atipicos[d].split(" ")[0].toLowerCase() === chave).sort().map((d) => {
+      const base = ds.filter((x) => x < d && x >= dAdd(d, -56) && dDow(x) === dDow(d) && !todosFeriados[x]).map((x) => hist[x].total);
+      const r = base.length >= 3 ? histAtipico[d].total / media(base) - 1 : null;
+      if (r !== null) efs.push(r);
+      return `• ${DIAS_SEMANA_LONGO[dDow(d)].slice(0, 3)} ${dBRAno(d)} · ${brl(histAtipico[d].total)}` +
+        (r !== null ? ` <b>(${r > 0 ? "+" : ""}${Math.round(r * 100)}% vs ${masc(dDow(d)) ? "os" : "as"} ${DIAS_SEMANA_LONGO[dDow(d)]}s da época)</b>` : "");
+    });
+    if (efs.length) efeitoAtipico = media(efs);
+    partes.push(`⚠️ <b>Dia atípico:</b> ${escHtml(atipicoHoje)}` +
+      (linhasAt.length ? `\nComo foram os anteriores:\n${linhasAt.join("\n")}` : "") +
+      (efeitoAtipico !== null ? `\n<i>A faixa abaixo já vem ajustada pela média desses dias (${Math.round(efeitoAtipico * 100)}%).</i>`
+        : `\n<i>Sem dias anteriores desse tipo: a faixa abaixo é de um dia normal.</i>`));
+  }
   const datas = Object.keys(hist).sort();
   if (!datas.length) {
     partes.push("📊 Sem histórico de vendas ainda.");
@@ -1280,7 +1326,7 @@ async function montarPrevisao(dia, sobDemanda = false, opcoes = {}) {
     // Dias parecidos + faixa provável + efeito chuva (clima real guardado em primus_clima)
     try {
       const climaHist = await garantirClimaHistorico(datas);
-      const bloco = blocoDiasParecidos({ dia, dow, feriado, climaHoje, hist, climaHist, todosFeriados, efeitoVespera });
+      const bloco = blocoDiasParecidos({ dia, dow, feriado, climaHoje, hist, climaHist, todosFeriados, efeitoVespera, efeitoAtipico });
       if (bloco) { partes.push(bloco.texto); faixaPrev = bloco.faixa; }
     } catch (e) {
       console.error(`[previsao ${dia}] dias parecidos:`, e);
@@ -1558,7 +1604,7 @@ function percentil(arr, p) {
   return a[lo] + (a[hi] - a[lo]) * (i - lo);
 }
 
-function blocoDiasParecidos({ dia, dow, feriado, climaHoje, hist, climaHist, todosFeriados, efeitoVespera }) {
+function blocoDiasParecidos({ dia, dow, feriado, climaHoje, hist, climaHist, todosFeriados, efeitoVespera, efeitoAtipico }) {
   if (!climaHoje) return null;
   const chuvaHoje = climaHoje.probMax >= 50 || climaHoje.mm >= 1;
   const tHoje = climaHoje.tMax;
@@ -1600,7 +1646,8 @@ function blocoDiasParecidos({ dia, dow, feriado, climaHoje, hist, climaHist, tod
   // Véspera com poucos exemplos: dias normais que entram na faixa são ajustados pelo efeito véspera medido.
   const ajustarVesp = vespHoje && efeitoVespera !== null && efeitoVespera !== undefined;
   const faixaBase = ordenados.slice(0, 8).map((d) =>
-    baseHoje * razao(d) * (ajustarVesp && !vesperaDe(d, todosFeriados) ? 1 + efeitoVespera : 1));
+    baseHoje * razao(d) * (ajustarVesp && !vesperaDe(d, todosFeriados) ? 1 + efeitoVespera : 1) *
+    (efeitoAtipico !== null && efeitoAtipico !== undefined ? 1 + efeitoAtipico : 1));
 
   const rotTipo = feriado ? "feriados" : `${DIAS_SEMANA_LONGO[dow]}s${vespHoje ? " antes de feriado" : ""}`;
   const pct = (r) => { const p = Math.round((r - 1) * 100); return p === 0 ? "na média" : `${p > 0 ? "+" : ""}${p}%`; };
@@ -1614,7 +1661,8 @@ function blocoDiasParecidos({ dia, dow, feriado, climaHoje, hist, climaHist, tod
     `<i>% = quanto o dia vendeu em relação ${feriado ? "aos dias normais (mesmo dia da semana)" : (masc(dow) ? "aos " : "às ") + DIAS_SEMANA_LONGO[dow] + "s"} daquela época</i>\n${linhas.join("\n")}` +
     `\n🎯 <b>Faixa provável: ${brl(faixa.min)} a ${brl(faixa.max)}</b>` +
     `\n<i>(média atual ${feriado || masc(dow) ? "dos" : "das"} ${DIAS_SEMANA_LONGO[dow]}s ${brl(baseHoje)} × desempenho dos dias parecidos` +
-    (ajustarVesp ? `; ajustada pela véspera: ${Math.round(efeitoVespera * 100)}%` : "") + `)</i>`;
+    (ajustarVesp ? `; ajustada pela véspera: ${Math.round(efeitoVespera * 100)}%` : "") +
+    (efeitoAtipico !== null && efeitoAtipico !== undefined ? `; ajustada pelo dia atípico: ${Math.round(efeitoAtipico * 100)}%` : "") + `)</i>`;
 
   // Efeito chuva: todo o histórico desse dia da semana, comparando desempenho relativo
   const doDia = Object.keys(hist).filter((d) => d < dia && dDow(d) === dow && !todosFeriados[d] && climaHist[d] && razao(d) !== null);
@@ -1824,6 +1872,32 @@ async function tratarUpdatePrevisao(upd, token, chatPadrao) {
     return;
   }
 
+  // /atipico 25/10/26 lei seca · /normal 25/10/26 · /atipicos
+  const mAt = texto.match(/^\/(atipico|normal)(?:@\w+)?\s+(\S+)\s*(.*)$/i);
+  if (mAt) {
+    const d = resolverDiaPrevisao(mAt[2]);
+    const motivo = mAt[3].trim();
+    if (!d || (mAt[1].toLowerCase() === "atipico" && !motivo)) {
+      await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML",
+        text: "\u2753 Use <code>/atipico 25/10/26 lei seca</code> ou <code>/normal 25/10/26</code>." });
+      return;
+    }
+    const valor = mAt[1].toLowerCase() === "atipico" ? motivo.slice(0, 80) : false;
+    await REF_ATIPICOS().set({ mapa: { [d]: valor } }, { merge: true });
+    await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML",
+      text: valor ? `⚠️ <b>${dBRAno(d)}</b> marcado como atípico (${escHtml(valor)}). Não entra mais nas comparações.`
+        : `✅ <b>${dBRAno(d)}</b> volta a contar como dia normal nas comparações.` });
+    return;
+  }
+  if (/^\/atipicos(@\w+)?$/i.test(texto)) {
+    const at = await lerDiasAtipicos();
+    const ls = Object.keys(at).sort().map((d) => `• ${DIAS_SEMANA_LONGO[dDow(d)].slice(0, 3)} ${dBRAno(d)} — ${escHtml(at[d])}`);
+    await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML",
+      text: `⚠️ <b>Dias atípicos</b> (fora das comparações)\n${ls.join("\n") || "nenhum"}` +
+        `\n\n<i>Marcar: /atipico 25/10/26 motivo · Desmarcar: /normal 25/10/26</i>` });
+    return;
+  }
+
   const mPrev = texto.match(/^\/previsao(?:@\w+)?\s*(.*)$/i);
   if (texto === BOTAO_PREVISAO || mPrev) {
     const dia = resolverDiaPrevisao(mPrev ? mPrev[1] : "");
@@ -1851,6 +1925,7 @@ async function tratarUpdatePrevisao(upd, token, chatPadrao) {
   await tgApi(token, "setMyCommands", { commands: [
     { command: "previsao", description: "Previsão do dia (ou /previsao 22/11)" },
     { command: "pessoas", description: "Quantas pessoas cada prato serve" },
+    { command: "atipicos", description: "Dias fora das comparações (eleição, lei seca...)" },
     { command: "meuid", description: "Mostra o seu chat id" }] });
   await tgApi(token, "sendMessage", { chat_id: chat, parse_mode: "HTML", reply_markup: TECLADO_PREVISAO,
     text: "🌤 <b>Primus Previsão</b>\nTodo dia de casa aberta, às 7h, chega aqui a previsão do dia: clima do almoço, vendas de referência, dias parecidos, eventos na cidade e a leitura do dia.\nToque em <b>🌤 Previsão</b> pra ver a de hoje, ou mande <code>/previsao 22/11</code>." });
@@ -1919,8 +1994,10 @@ async function carregarDiasIA(ini, fim, comProdutos = false) {
   const anos = [...new Set(dias.map((x) => Number(x.data.slice(0, 4))))];
   const fer = {};
   for (const a of [...anos, Math.max(...anos, 0) + 1]) if (a) Object.assign(fer, await feriadosDoAno(a));
+  const atip = await lerDiasAtipicos();
   dias.forEach((x) => {
     x.diaSemana = DIAS_SEMANA_LONGO[dDow(x.data)];
+    x.atipico = atip[x.data] || null;
     x.feriado = fer[x.data] || null;
     const v = vesperaDe(x.data, fer);
     x.vespera = v ? `${v.nome} em ${v.dias} dia(s)` : null;
@@ -2093,7 +2170,7 @@ async function executarFerramentaIA(nome, inp) {
   }
   if (nome === "comparar_tipos_de_dia") {
     const ini = inp.inicio || "2024-06-01", fim = inp.fim || dAdd(hojeCuiaba(), -1);
-    const dias = filtrarDiaSemana(await carregarDiasIA(ini, fim), inp.dia_semana).filter((x) => !x.feriado);
+    const dias = filtrarDiaSemana(await carregarDiasIA(ini, fim), inp.dia_semana).filter((x) => !x.feriado && !x.atipico);
     const n = dias.length;
     const chave = {
       vespera: (x) => (x.vespera ? "antes de feriado" : "normal"),
@@ -2106,14 +2183,14 @@ async function executarFerramentaIA(nome, inp) {
     const g = {};
     dias.forEach((x, i) => { const k = chave(x, i); if (k) (g[k] = g[k] || []).push(x); });
     return { criterio: inp.criterio, dia_semana: inp.dia_semana || "todos", periodo: [ini, fim],
-      observacao: "Feriados excluídos. Grupos com poucos dias (menos de 4) são fracos pra concluir.",
+      observacao: "Feriados e dias atípicos (eleição/lei seca, marcados pelo dono) excluídos. Grupos com poucos dias (menos de 4) são fracos pra concluir.",
       grupos: Object.entries(g).map(([k, ds]) => ({ grupo: k, ...resumoGrupo(ds),
         exemplos: ds.slice(-4).map((x) => `${x.data} R$${r0(x.total)}${x.vespera ? " (" + x.vespera + ")" : ""}`) })) };
   }
   if (nome === "dias_detalhe") {
     const dias = filtrarDiaSemana(await carregarDiasIA(inp.inicio, inp.fim), inp.dia_semana).slice(-120);
     return { dias: dias.map((x) => ({ data: x.data, dia_semana: x.diaSemana, feriado: x.feriado,
-      vespera_de_feriado: x.vespera, fase_mes: x.fase,
+      vespera_de_feriado: x.vespera, fase_mes: x.fase, dia_atipico: x.atipico,
       faturamento: r0(x.total), clientes: x.clientes, vendedores: x.vendedores,
       temp_max: x.clima ? x.clima.tMax : null, chuva_almoco: x.clima ? x.clima.chuvaAlmoco : null })) };
   }
@@ -2150,6 +2227,7 @@ COMO A PREVISÃO DAS 7H É FEITA (pra você explicar acertos e erros)
 - Referências: média dos últimos 8 dias iguais (mesmo dia da semana, sem feriado), mesma posição no mês e mesma data nos anos anteriores.
 - Feriados: os nacionais + 08/04 (Cuiabá); 24/12 e 31/12 contam como feriado. A casa não abre em 25/12 nem em 01/01. Véspera de feriado = só o dia imediatamente anterior.
 - Dias parecidos: candidatos do mesmo dia da semana (ou outros feriados, se o dia é feriado), de qualquer ano. Cada dia é medido pelo DESEMPENHO RELATIVO: quanto vendeu em relação à média do mesmo dia da semana (sem feriado) nas 8 semanas anteriores a ele ("+15%", "−30%"). Pontuação de parecença: chuva no almoço diferente pesa 3, véspera de feriado diferente pesa 3, cada 3°C de diferença pesa 1, fase do mês diferente (1-5, 6-10, 11-20, 21-31) pesa 1, e a idade só desempata (0,3 por ano). Faixa provável = média atual das últimas 8 do dia da semana × desempenho dos 8 dias mais parecidos (percentis 25 a 75). O efeito chuva também é calculado no desempenho relativo, com todo o histórico daquele dia da semana.
+- Dias atípicos (dia_atipico): dias de eleição (1º domingo e último domingo de outubro em anos pares, com lei seca em Cuiabá — a Primus cumpre e perde cliente pra concorrente que vende) e dias marcados pelo dono com /atipico no bot da previsão. Eles ficam FORA da média, dos dias parecidos e do efeito chuva. Ao comparar períodos, avise quando um deles cair no meio e não use como dia normal.
 - Faixa provável: do percentil 25 ao 75 dos 8 dias mais parecidos — ou seja, por construção, metade dos dias cai fora da faixa. Em véspera de feriado com efeito medido, os dias normais da faixa são ajustados por esse efeito.
 - Efeito chuva: mesmo tipo de dia no último ano, com x sem chuva no almoço. Tendência: últimos 3 x média de referência (só aparece se passar de 10%).
 - Eventos e a leitura do dia vêm de uma busca na web feita às 7h.
